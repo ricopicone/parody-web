@@ -1,0 +1,19 @@
+# /etc/systemd/system/parody-book-host.service
+# One unit per book site (copy + rename for additional sites on one box, e.g.
+# parody-book-host@<site>.service with a templated EnvironmentFile).
+[Unit]
+Description=parody book-host (gunicorn)
+After=network.target
+
+[Service]
+User=bookhost
+Group=bookhost
+WorkingDirectory=/opt/parody-book-host
+EnvironmentFile=/etc/parody-book-host/site.env
+ExecStart=/opt/parody-book-host/.venv/bin/gunicorn booksite.wsgi:application \
+  -k uvicorn.workers.UvicornWorker --bind 127.0.0.1:8001 --workers 2 --log-file -
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+[
+  {
+    "name": "rtcbook",
+    "region": "us-east-1",
+    "instance_id": "i-0123456789abcdef0",
+    "app_dir": "/opt/parody-book-host"
+  }
+]

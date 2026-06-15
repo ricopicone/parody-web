@@ -41,6 +41,12 @@ python manage.py runserver         # http://127.0.0.1:8000
 The public sees only `online_only` sections; sign in at `/accounts/login/` to
 read the whole book.
 
+## Deploy
+
+Platform-agnostic basics: [`DEPLOY.md`](DEPLOY.md). The supported production
+path is **AWS via SSM + GitHub Actions**, designed for **multi-book reuse** (one
+repo, deployed per book; update once, redeploy all): [`deploy/AWS.md`](deploy/AWS.md).
+
 Re-running `import_artifact` is idempotent (upsert by slug; rows absent from the
 artifact are pruned).
 
