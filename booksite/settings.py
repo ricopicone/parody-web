@@ -30,6 +30,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # WhiteNoise serves static files directly (no separate static host needed).
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -58,16 +60,38 @@ LOGOUT_REDIRECT_URL = "/"
 
 WSGI_APPLICATION = "booksite.wsgi.application"
 
-DATABASES = {
-    "default": {
+# Postgres in production via DATABASE_URL (auth + content must persist across
+# restarts); sqlite is the zero-config local fallback.
+if os.getenv("DATABASE_URL"):
+    import dj_database_url
+    DATABASES = {"default": dj_database_url.config(
+        conn_max_age=600, ssl_require=True)}
+else:
+    DATABASES = {"default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
-    }
-}
+    }}
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(os.getenv("BOOKSITE_MEDIA_ROOT", BASE_DIR / "media"))
+
+# Behind a TLS-terminating proxy in production; harden cookies + redirects.
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = os.getenv("BOOKSITE_SSL_REDIRECT", "1") == "1"
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    CSRF_TRUSTED_ORIGINS = [
+        o for o in os.getenv("BOOKSITE_CSRF_TRUSTED_ORIGINS", "").split(",") if o]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
