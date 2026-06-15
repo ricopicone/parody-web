@@ -1,8 +1,12 @@
-"""Book-host: artifact import + Django-native rendering of the flavored html."""
+"""Book-host: artifact import, native Django rendering, and auth gating.
+
+The host imports the FULL artifact; the public sees only online-only sections,
+the private parts are gated behind login (only the owner has an account)."""
 import json
 import tempfile
 from pathlib import Path
 
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 
@@ -18,14 +22,14 @@ ARTIFACT = {
     "chapters": [{
         "title": "Hardware", "slug": "hardware", "hash": "h1",
         "sections": [
-            {"title": "Specific T1", "slug": "specific-t1", "hash": "ef",
+            {"title": "Specific T1 (public)", "slug": "specific-t1", "hash": "ef",
              "online_only": True,
              "html": '<p>The myRIO via {% media \'notebooks/x.jpg\' %}.</p>'
                      '<details><summary>Specs</summary>'
                      '<div class="version-list-item">SoC: Xilinx</div></details>',
-             "anchors": []},
-            {"title": "Licensed Section", "slug": "licensed", "hash": "lz",
              "online_resources": '<p>Extra: {% cite \'knuth1997\' %}.</p>'},
+            {"title": "Licensed Chapter (private)", "slug": "licensed", "hash": "lz",
+             "html": "<p>Copyrighted prose.</p>"},
         ],
     }],
 }
@@ -51,37 +55,50 @@ class RenderBookFilterTests(TestCase):
 
 
 @override_settings(BOOK_SLUG="demo-book")
-class BookHostViewTests(TestCase):
+class BookHostGatingTests(TestCase):
     def setUp(self):
         _import()
-        self.c = Client()
+        self.owner = get_user_model().objects.create_superuser(
+            "owner", "owner@example.com", "pw")
+        self.anon = Client()
+        self.signed_in = Client()
+        self.signed_in.force_login(self.owner)
 
     def test_import_stored_fields(self):
         book = Book.objects.get(slug="demo-book")
         self.assertEqual(book.book_metadata["editions"][0]["isbn"], "978-test")
         self.assertTrue(Section.objects.get(slug="specific-t1").online_only)
-        self.assertTrue(Section.objects.get(slug="licensed").online_resources)
+        self.assertFalse(Section.objects.get(slug="licensed").online_only)
 
-    def test_index_lists_book(self):
-        r = self.c.get("/")
+    def test_public_index_lists_only_online_only(self):
+        r = self.anon.get("/")
         self.assertEqual(r.status_code, 200)
-        self.assertContains(r, "Demo Book")
-        self.assertContains(r, "978-test")
+        self.assertContains(r, "Specific T1 (public)")
+        self.assertNotContains(r, "Licensed Chapter (private)")
 
-    def test_online_only_section_renders_with_tags_resolved(self):
-        r = self.c.get("/hardware/specific-t1/")
+    def test_owner_index_lists_everything(self):
+        r = self.signed_in.get("/")
+        self.assertContains(r, "Specific T1 (public)")
+        self.assertContains(r, "Licensed Chapter (private)")
+
+    def test_public_section_renders_with_tags_resolved(self):
+        r = self.anon.get("/hardware/specific-t1/")
         self.assertEqual(r.status_code, 200)
         html = r.content.decode()
         self.assertIn("/media/notebooks/x.jpg", html)
         self.assertNotIn("{%", html)
         self.assertIn("<details>", html)
-        self.assertIn("Xilinx", html)
+        self.assertIn("Online resources", html)  # online_resources rendered
 
-    def test_online_resources_render(self):
-        r = self.c.get("/hardware/licensed/")
+    def test_private_section_redirects_anonymous_to_login(self):
+        r = self.anon.get("/hardware/licensed/")
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/accounts/login", r["Location"])
+
+    def test_owner_sees_private_section(self):
+        r = self.signed_in.get("/hardware/licensed/")
         self.assertEqual(r.status_code, 200)
-        self.assertContains(r, "Online resources")
-        self.assertContains(r, "citation")  # {% cite %} resolved
+        self.assertContains(r, "Copyrighted prose")
 
     def test_reimport_is_idempotent(self):
         before = Section.objects.count()

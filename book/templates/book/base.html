@@ -26,6 +26,14 @@ a.download-button { display: inline-block; font-family: system-ui, sans-serif;
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
+<div style="font-family:system-ui,sans-serif;font-size:.8rem;text-align:right;color:#999">
+{% if user.is_authenticated %}
+  owner view ({{ user.get_username }}) ·
+  <form action="{% url 'logout' %}" method="post" style="display:inline">{% csrf_token %}<button type="submit" style="border:none;background:none;color:#7a6ff0;cursor:pointer;font:inherit;padding:0">sign out</button></form>
+{% else %}
+  <a href="{% url 'login' %}">owner sign in</a>
+{% endif %}
+</div>
 {% block body %}{% endblock %}
 </body>
 </html>

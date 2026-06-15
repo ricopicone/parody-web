@@ -19,13 +19,22 @@ ALLOWED_HOSTS = os.getenv("BOOKSITE_ALLOWED_HOSTS", "*").split(",")
 BOOK_SLUG = os.getenv("BOOKSITE_BOOK_SLUG", "")
 
 INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
     "django.contrib.staticfiles",
     "book",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
 ]
 
 ROOT_URLCONF = "booksite.urls"
@@ -36,8 +45,16 @@ TEMPLATES = [{
     "APP_DIRS": True,
     "OPTIONS": {"context_processors": [
         "django.template.context_processors.request",
+        "django.contrib.auth.context_processors.auth",
+        "django.contrib.messages.context_processors.messages",
     ]},
 }]
+
+# Auth: private (non-online-only) sections require login. Only the owner has an
+# account (create one superuser); the public sees only online-only sections.
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/"
 
 WSGI_APPLICATION = "booksite.wsgi.application"
 
