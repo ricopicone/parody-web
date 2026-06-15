@@ -1,0 +1,31 @@
+{% extends "book/base.html" %}
+{% block body %}
+<h1>{{ book.title }}</h1>
+{% if book.authors %}<p><em>{{ book.authors|join:", " }}</em></p>{% endif %}
+{% if book.description %}<p>{{ book.description }}</p>{% endif %}
+{% if book.book_metadata.editions %}
+  <p class="note">
+  {% with ed=book.book_metadata.editions.0 %}
+    {% if ed.publisher %}{{ ed.publisher }}{% endif %}
+    {% if ed.year %}({{ ed.year }}){% endif %}
+    {% if ed.isbn %}· ISBN {{ ed.isbn }}{% endif %}
+  {% endwith %}
+  {% if book.book_metadata.companion_url %}
+    · <a href="{{ book.book_metadata.companion_url }}">companion</a>{% endif %}
+  </p>
+{% endif %}
+
+{% for chapter, sections in chapters %}
+  <h2>{{ chapter.title }}{% if chapter.appendix %} <span class="note">(appendix)</span>{% endif %}</h2>
+  <ul>
+  {% for section in sections %}
+    <li><a href="{% url 'book:section' chapter.slug section.slug %}">{{ section.title }}</a>
+      {% if not section.online_only and section.online_resources %}<span class="note">— online resources</span>{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+{% endfor %}
+
+<p class="note">A partial web edition. Published from a parody artifact
+{% if book.built_at %}({{ book.built_at }}){% endif %}.</p>
+{% endblock %}
