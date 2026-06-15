@@ -1,0 +1,43 @@
+name: Deploy (reusable)
+# Called by a book-site repo to deploy ITS instance via SSM. One shared
+# workflow across all book sites — improve it here, every site picks it up.
+on:
+  workflow_call:
+    inputs:
+      region:      { type: string, required: true }
+      instance_id: { type: string, required: true }
+      app_dir:     { type: string, required: true }
+      release_tag: { type: string, required: false, default: "" }
+    secrets:
+      aws_role_arn: { required: true }
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.aws_role_arn }}
+          aws-region: ${{ inputs.region }}
+      - name: Deploy via SSM
+        env:
+          INSTANCE: ${{ inputs.instance_id }}
+          APP_DIR: ${{ inputs.app_dir }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          script="cd $APP_DIR && sudo git fetch --quiet origin && sudo git reset --hard $GITHUB_SHA && sudo -E env GIT_REF=$GITHUB_SHA RELEASE_TAG='$RELEASE_TAG' bash deploy/deploy.sh"
+          cmd_id=$(aws ssm send-command --instance-ids "$INSTANCE" \
+            --document-name "AWS-RunShellScript" \
+            --comment "deploy @ ${GITHUB_SHA::7}" \
+            --parameters commands="$script" --query "Command.CommandId" --output text)
+          echo "SSM command: $cmd_id"
+          aws ssm wait command-executed --command-id "$cmd_id" --instance-id "$INSTANCE" || true
+          aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$INSTANCE" --query StandardOutputContent --output text
+          status=$(aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$INSTANCE" --query Status --output text)
+          if [ "$status" != "Success" ]; then
+            aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$INSTANCE" --query StandardErrorContent --output text
+            exit 1
+          fi

@@ -74,7 +74,7 @@ def render_book(html):
     """Render stored Django-flavored html (defaults to '' for empty fields)."""
     if not html:
         return ""
-    source = "{% load book_tags %}" + _CSRF_RE.sub("", html)
+    source = "{% load parody_web %}" + _CSRF_RE.sub("", html)
     try:
         return mark_safe(Template(source).render(Context({})))
     except TemplateSyntaxError as exc:

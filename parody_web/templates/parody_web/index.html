@@ -1,4 +1,4 @@
-{% extends "book/base.html" %}
+{% extends "parody_web/base.html" %}
 {% block body %}
 <h1>{{ book.title }}</h1>
 {% if book.authors %}<p><em>{{ book.authors|join:", " }}</em></p>{% endif %}
@@ -19,7 +19,7 @@
   <h2>{{ chapter.title }}{% if chapter.appendix %} <span class="note">(appendix)</span>{% endif %}</h2>
   <ul>
   {% for section in sections %}
-    <li><a href="{% url 'book:section' chapter.slug section.slug %}">{{ section.title }}</a>
+    <li><a href="{% url 'parody_web:section' chapter.slug section.slug %}">{{ section.title }}</a>
       {% if not section.online_only and section.online_resources %}<span class="note">— online resources</span>{% endif %}
     </li>
   {% endfor %}

@@ -10,8 +10,8 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 
-from book.models import Book, Section
-from book.templatetags.book_tags import render_book
+from parody_web.models import Book, Section
+from parody_web.templatetags.parody_web import render_book
 
 ARTIFACT = {
     "schema_version": 2,

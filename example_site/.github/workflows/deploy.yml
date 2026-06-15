@@ -1,0 +1,21 @@
+name: Deploy
+# This book site's deploy. Targets are this repo's own Variables
+# (AWS_REGION / INSTANCE_ID / APP_DIR) + secret AWS_DEPLOY_ROLE_ARN.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "content release tag to import (blank = latest)"
+        required: false
+jobs:
+  deploy:
+    uses: ricopicone/parody-web/.github/workflows/deploy-reusable.yml@main
+    with:
+      region: ${{ vars.AWS_REGION }}
+      instance_id: ${{ vars.INSTANCE_ID }}
+      app_dir: ${{ vars.APP_DIR }}
+      release_tag: ${{ inputs.release_tag || '' }}
+    secrets:
+      aws_role_arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}

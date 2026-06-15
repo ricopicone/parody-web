@@ -9,7 +9,7 @@ import json
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from book.models import Book, Chapter, Section
+from parody_web.models import Book, Chapter, Section
 
 
 class Command(BaseCommand):

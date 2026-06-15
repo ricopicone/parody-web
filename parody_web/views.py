@@ -15,8 +15,8 @@ from .models import Book, Section
 
 
 def _current_book():
-    if settings.BOOK_SLUG:
-        return get_object_or_404(Book, slug=settings.BOOK_SLUG)
+    if getattr(settings, "BOOK_SLUG", ""):
+        return get_object_or_404(Book, slug=getattr(settings, "BOOK_SLUG", ""))
     book = Book.objects.first()
     if book is None:
         raise Http404("no book imported")
@@ -41,7 +41,7 @@ def index(request):
             sections = [s for s in sections if s.online_only]
         if sections:
             chapters.append((ch, sections))
-    return render(request, "book/index.html", {
+    return render(request, "parody_web/index.html", {
         "book": book, "chapters": chapters, "public": public})
 
 
@@ -57,7 +57,7 @@ def section_detail(request, chapter_slug, section_slug):
     idx = next((i for i, s in enumerate(flat) if s.pk == section.pk), None)
     prev_s = flat[idx - 1] if idx else None
     next_s = flat[idx + 1] if idx is not None and idx + 1 < len(flat) else None
-    return render(request, "book/section.html", {
+    return render(request, "parody_web/section.html", {
         "book": book, "section": section, "chapter": section.chapter,
         "prev": prev_s, "next": next_s,
     })

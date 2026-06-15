@@ -8,7 +8,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/login/", auth_views.LoginView.as_view(), name="login"),
     path("accounts/logout/", auth_views.LogoutView.as_view(), name="logout"),
-    path("", include("book.urls")),
+    path("", include("parody_web.urls")),
 ]
 
 # Dev media serving; in production a web server / CDN serves MEDIA_ROOT.

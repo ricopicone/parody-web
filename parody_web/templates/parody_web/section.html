@@ -1,8 +1,8 @@
-{% extends "book/base.html" %}
-{% load book_tags %}
+{% extends "parody_web/base.html" %}
+{% load parody_web %}
 {% block title %}{{ section.title }} — {{ book.title }}{% endblock %}
 {% block body %}
-<nav class="crumbs"><a href="{% url 'book:index' %}">{{ book.title }}</a>
+<nav class="crumbs"><a href="{% url 'parody_web:index' %}">{{ book.title }}</a>
   › {{ chapter.title }}</nav>
 
 <h1>{{ section.title }}</h1>
@@ -19,7 +19,7 @@
 {% endif %}
 
 <nav class="pager">
-  {% if prev %}<a href="{% url 'book:section' prev.chapter.slug prev.slug %}">← {{ prev.title }}</a>{% else %}<span></span>{% endif %}
-  {% if next %}<a href="{% url 'book:section' next.chapter.slug next.slug %}">{{ next.title }} →</a>{% else %}<span></span>{% endif %}
+  {% if prev %}<a href="{% url 'parody_web:section' prev.chapter.slug prev.slug %}">← {{ prev.title }}</a>{% else %}<span></span>{% endif %}
+  {% if next %}<a href="{% url 'parody_web:section' next.chapter.slug next.slug %}">{{ next.title }} →</a>{% else %}<span></span>{% endif %}
 </nav>
 {% endblock %}

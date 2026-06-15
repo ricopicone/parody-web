@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "parody-web"
+version = "0.1.0"
+description = "Django app that serves a parody build artifact as a public book site, with section-level auth gating (public = online-only subset; owner = full book)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Rico Picone", email = "dr@ricopic.one" }]
+keywords = ["parody", "django", "publishing", "book", "textbook"]
+classifiers = [
+  "Framework :: Django",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Development Status :: 3 - Alpha",
+]
+dependencies = ["Django>=5.0,<6.0"]
+
+[project.urls]
+Homepage = "https://github.com/ricopicone/parody-web"
+Issues = "https://github.com/ricopicone/parody-web/issues"
+
+[tool.setuptools.packages.find]
+include = ["parody_web*"]
+
+[tool.setuptools.package-data]
+parody_web = ["templates/parody_web/*.html", "templates/registration/*.html"]
