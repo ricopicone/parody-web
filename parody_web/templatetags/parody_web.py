@@ -9,6 +9,7 @@ with this library loaded and renders it; ``{% csrf_token %}`` is stripped first
 (server-form-only, and it collides with the builtin), and a malformed tag
 degrades to escaped output rather than 500-ing the page.
 """
+import os
 import re
 
 from django import template
@@ -20,9 +21,21 @@ from django.utils.safestring import mark_safe
 register = template.Library()
 
 
+_IMG_EXTS = (".svg", ".png", ".jpg", ".jpeg", ".pdf")
+
+
 @register.simple_tag
 def media(path):
-    return settings.MEDIA_URL + str(path).lstrip("/")
+    p = str(path).lstrip("/")
+    # meta-migrated figure refs are extensionless (resolve to <ref>.<ext> on
+    # disk); find the staged file under MEDIA_ROOT and serve its real name.
+    if not os.path.splitext(p)[1]:
+        root = getattr(settings, "MEDIA_ROOT", None)
+        if root:
+            for ext in _IMG_EXTS:
+                if os.path.exists(os.path.join(root, p + ext)):
+                    return settings.MEDIA_URL + p + ext
+    return settings.MEDIA_URL + p
 
 
 @register.simple_tag
