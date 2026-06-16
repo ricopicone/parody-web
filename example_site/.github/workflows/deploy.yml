@@ -9,8 +9,12 @@ on:
       release_tag:
         description: "content release tag to import (blank = latest)"
         required: false
+permissions:
+  id-token: write   # required so the reusable deploy workflow can use AWS OIDC
+  contents: read
 jobs:
   deploy:
+    if: ${{ vars.INSTANCE_ID != '' }}   # skip until an instance is provisioned
     uses: ricopicone/parody-web/.github/workflows/deploy-reusable.yml@main
     with:
       region: ${{ vars.AWS_REGION }}
