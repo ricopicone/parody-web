@@ -29,6 +29,38 @@ _HASHREF_RE = re.compile(r'<span class="hashref">([^<]*)</span>')
 _CITE_RE = re.compile(
     r'<span class="citation" data-cites="([^"]+)">\[@([^\]]*)\]</span>')
 
+# raw LaTeX that leaked into table cells etc. as `\cmd`{=latex}. (Math is in
+# <span class="math">…</span>, never backtick-{=latex}, so it's untouched.)
+_RAWTEX_RE = re.compile(r'`([^`]*)`\{=latex\}')
+_RAWTEX_ICONS = {"faTree": "\U0001F332", "textbullet": "•",
+                 "faTimes": "✕", "faCheck": "✓", "faWindows": "⊞"}
+_RAWTEX_DROP = {"raggedleft", "arraybackslash", "cmidrule", "newpage",
+                "clearpage", "ifdefined", "centering", "hline", "toprule",
+                "midrule", "bottomrule", "fi", "vspace", "hspace"}
+
+
+def _clean_rawtex(html, targets):
+    def sub(mo):
+        c = mo.group(1).strip()
+        mm = re.match(r"\\([a-zA-Z]+)", c)
+        cmd = mm.group(1) if mm else ""
+        if cmd in _RAWTEX_ICONS:
+            return _RAWTEX_ICONS[cmd]
+        fb = re.match(r"\\fbox\{(.*)\}$", c)
+        if fb:
+            return fb.group(1)
+        mc = re.match(r"\\mc\{[^}]*\}\{[^}]*\}\{(.*)\}$", c)  # multicolumn: keep content
+        if mc:
+            return mc.group(1)
+        cr = re.match(r"\\[cC]ref\{([^}]*)\}", c)  # leaked cross-ref
+        if cr:
+            t = targets.get(cr.group(1))
+            return (f'<a class="xref" href="{t["url"] or "#"}">{t["label"]}</a>'
+                    if t else "")
+        return ""  # formatting-only latex (raggedleft, cmidrule, …) → drop
+    return _RAWTEX_RE.sub(sub, html)
+
+
 # anchor type -> cross-reference label word (per-chapter numbered: "Table 3.1")
 _TYPE_LABELS = {
     "figure": "Figure", "table": "Table", "equation": "Equation",
@@ -156,6 +188,7 @@ def number_artifact(data, references=None):
             html = sec.get("html") or ""
             if not html:
                 continue
+            html = _clean_rawtex(html, targets)
             hn = heading_numbers.get(sec["slug"], {})
             labels = {"lab": sec["number"] if _section_kind(sec) == "lab" else None}
 
