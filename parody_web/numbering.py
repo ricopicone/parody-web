@@ -24,6 +24,13 @@ _FIG_RE = re.compile(r'<figure\b[^>]*\bid="(?P<id>fig:[^"]+)"[^>]*>(?P<rest>.*?)
 _FIGCAP_RE = re.compile(r'(<figcaption[^>]*>)', re.S)
 _HASHREF_RE = re.compile(r'<span class="hashref">([^<]*)</span>')
 
+# anchor type -> cross-reference label word (per-chapter numbered: "Table 3.1")
+_TYPE_LABELS = {
+    "figure": "Figure", "table": "Table", "equation": "Equation",
+    "exercise": "Exercise", "example": "Example", "theorem": "Theorem",
+    "definition": "Definition", "listing": "Listing", "algorithm": "Algorithm",
+}
+
 
 def _chapter_label(ch, idx_state):
     if ch.get("appendix"):
@@ -68,7 +75,7 @@ def number_artifact(data):
             targets[ch["hash"]] = {"label": f"Chapter {cnum}", "url": None,
                                    "chapter": ch}
         sec_m = 0
-        fig_k = 0
+        type_counters = {}  # per-chapter counters for figure/table/equation/…
         for sec in ch.get("sections", []):
             kind = _section_kind(sec)
             url = f"/{ch['slug']}/{sec['slug']}/"
@@ -118,13 +125,23 @@ def number_artifact(data):
                                       "url": f"{url}#{anchor_id}"}
                         heading_numbers.setdefault(sec["slug"], {})[h] = sub
 
-            # figures (document order in html)
-            for m in _FIG_RE.finditer(sec.get("html") or ""):
-                fig_k += 1
-                fid = m.group("id")
-                fnum = f"{cnum}.{fig_k}"
-                targets[fid] = {"label": f"Figure {fnum}", "url": f"{url}#{fid}"}
-                fig_numbers.setdefault(sec["slug"], {})[fid] = fnum
+            # non-heading targets (figures, tables, equations, exercises, …),
+            # numbered per chapter per type in anchor (document) order. The
+            # registry keys on both id (fig:…/tbl:…) and 2-char hash (exercises).
+            for a in sec.get("anchors", []):
+                t = a.get("type")
+                if t == "heading" or t not in _TYPE_LABELS:
+                    continue
+                type_counters[t] = type_counters.get(t, 0) + 1
+                num = f"{cnum}.{type_counters[t]}"
+                entry = {"label": f"{_TYPE_LABELS[t]} {num}",
+                         "url": f"{url}#{a.get('id', '')}"}
+                if a.get("id"):
+                    targets[a["id"]] = entry
+                if a.get("hash"):
+                    targets[a["hash"]] = entry
+                if t == "figure" and a.get("id"):
+                    fig_numbers.setdefault(sec["slug"], {})[a["id"]] = num
 
     # ---- pass 2: rewrite html (numbers in headings/figs, resolve hashrefs) ----
     for ch in data.get("chapters", []):
@@ -159,8 +176,10 @@ def number_artifact(data):
             def resolve(mo):
                 tgt = mo.group(1)
                 t = targets.get(tgt)
+                if not t and tgt[:1].isupper():  # sentence-start "Fig:"/"Tbl:"
+                    t = targets.get(tgt[:1].lower() + tgt[1:])
                 if not t:
-                    return mo.group(0)  # leave unresolved refs (tbl:/eq:/…) as-is
+                    return mo.group(0)  # leave unresolved refs (missing targets) as-is
                 url = t["url"]
                 if url is None and t.get("chapter"):  # chapter ref → first section
                     secs = t["chapter"].get("sections", [])

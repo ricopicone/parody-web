@@ -8,10 +8,14 @@
 {% if not title_in_html %}<h1>{{ section.title }}</h1>{% endif %}
 
 {% if preview %}
-  {% if section.html %}<div class="preview">{{ section.html|render_book|truncatewords_html:70 }}</div>{% endif %}
-  <p class="signin-gate"><strong>Preview.</strong>
-    <a href="{% url 'login' %}?next={{ next_path|urlencode }}">Sign in</a>
-    to read the full section.</p>
+  {% if section.html %}<div class="preview">{{ section.html|render_book|truncatewords_html:150 }}</div>{% endif %}
+  <div class="signin-gate">
+    {% with ed=book.book_metadata.editions.0 %}
+    <p><strong>This is a preview.</strong> Read the full book in print or ebook —
+      {% if ed.url_publisher %}<a href="{{ ed.url_publisher }}">get it from {{ ed.publisher|default:"the publisher" }}</a>{% else %}available from the publisher{% endif %}{% if ed.isbn %} (ISBN {{ ed.isbn }}){% endif %}.</p>
+    {% endwith %}
+    <p class="note">Instructor with access? <a href="{% url 'login' %}?next={{ next_path|urlencode }}">Instructor login</a>.</p>
+  </div>
 {% else %}
   {% if section.html %}
     {{ section.html|render_book }}
