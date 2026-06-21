@@ -20,6 +20,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--slug", help="book slug (defaults to the artifact's slug or filename)"
         )
+        parser.add_argument(
+            "--preview-hashes",
+            help="path to a file of section hashes (whitespace/comma separated) "
+            "that should be PREVIEW-only to the public (in-print but not fully "
+            "online). Sections not listed are full public.",
+        )
 
     def handle(self, *args, **opts):
         path = opts["artifact"]
@@ -28,6 +34,15 @@ class Command(BaseCommand):
                 data = json.load(f)
         except (OSError, ValueError) as e:
             raise CommandError(f"could not read artifact {path}: {e}")
+
+        self.preview_hashes = set()
+        ph = opts.get("preview_hashes")
+        if ph:
+            try:
+                with open(ph, encoding="utf-8") as f:
+                    self.preview_hashes = set(f.read().replace(",", " ").split())
+            except OSError as e:
+                raise CommandError(f"could not read preview-hashes {ph}: {e}")
 
         version = data.get("schema_version", 0)
         if not isinstance(version, int) or version < 2:
@@ -71,6 +86,8 @@ class Command(BaseCommand):
                         "html": sec.get("html", ""),
                         "online_resources": sec.get("online_resources", ""),
                         "online_only": bool(sec.get("online_only", False)),
+                        "preview": bool(sec.get("preview"))
+                        or (sec.get("hash") in self.preview_hashes),
                         "anchors": sec.get("anchors", []),
                     })
                 seen_sec.add((chapter.slug, sec["slug"]))

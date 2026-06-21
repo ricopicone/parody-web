@@ -47,9 +47,9 @@ def section_detail(request, chapter_slug, section_slug):
     book = _current_book()
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
-    # Gated (non-online-only) sections show a preview + sign-in to the public;
-    # the owner (authenticated) sees the full section.
-    preview = not section.online_only and not request.user.is_authenticated
+    # Sections flagged `preview` (in-print but not fully online) show a preview
+    # + sign-in to the public; everything else is full. The owner sees all full.
+    preview = section.preview and not request.user.is_authenticated
 
     flat = _all_sections_ordered(book)
     idx = next((i for i, s in enumerate(flat) if s.pk == section.pk), None)

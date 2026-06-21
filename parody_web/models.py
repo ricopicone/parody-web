@@ -49,6 +49,9 @@ class Section(models.Model):
     html = models.TextField(blank=True)
     online_resources = models.TextField(blank=True)
     online_only = models.BooleanField(default=False)
+    # preview = public sees only a truncated excerpt + sign-in (old "versionless":
+    # in print, not fully online). Full sections are everything else.
+    preview = models.BooleanField(default=False)
     anchors = models.JSONField(default=list, blank=True)
 
     class Meta:
