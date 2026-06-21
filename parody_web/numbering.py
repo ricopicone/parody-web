@@ -17,6 +17,7 @@ Conventions (Problems unnumbered, labs get an exercise prefix) match the book's
 print layout. Targets it can't resolve (tbl:/eq:/… for now) are left as-is.
 """
 import re
+from html import escape as _esc
 
 _HEADING_RE = re.compile(r'(<(h[1-6])\b[^>]*\bdata-h="(?P<hash>[^"]+)"[^>]*>)')
 _FIG_RE = re.compile(r'<figure\b[^>]*\bid="(?P<id>fig:[^"]+)"[^>]*>(?P<rest>.*?)</figure>',
@@ -61,10 +62,12 @@ def _section_kind(sec):
     return "normal"
 
 
-def number_artifact(data):
+def number_artifact(data, references=None):
     """Mutate `data` in place: set chapter['number'] / section['number'] and
     rewrite section['html'] with numbered headings/figures and resolved refs.
-    Returns the hash→{label,url} map (handy for tests)."""
+    `references` maps a bib key -> {"label","full"}; bibliography citations are
+    linked and a per-section References list is appended. Returns the target map."""
+    references = references or {}
     targets = {}          # hash/id -> {"label":..., "url":...}
     heading_numbers = {}  # per-section: hash -> number string (for html rewrite)
     fig_numbers = {}      # per-section: fig-id -> number string
@@ -191,17 +194,31 @@ def number_artifact(data):
                 return f'<a class="xref" href="{url or "#"}">{t["label"]}</a>'
             html = _HASHREF_RE.sub(resolve, html)
 
+            cited = []  # bib keys cited in this section, in order
+
             def resolve_cite(mo):
                 keys = mo.group(1).split()
-                # only rewrite when every cited key is a known cross-ref target
-                # (figures/tables/eqs/sections); leave real bibliography cites.
-                entries = [targets.get(k) for k in keys]
-                if not keys or any(e is None for e in entries):
-                    return mo.group(0)
-                links = [f'<a class="xref" href="{e["url"] or "#"}">{e["label"]}</a>'
-                         for e in entries]
-                return ", ".join(links)
+                parts = []
+                for k in keys:
+                    t = targets.get(k)
+                    if t:  # cross-reference written as [@fig:x]/[@tbl:x]
+                        parts.append(
+                            f'<a class="xref" href="{t["url"] or "#"}">{t["label"]}</a>')
+                    elif k in references:  # real bibliography citation
+                        if k not in cited:
+                            cited.append(k)
+                        parts.append(f'<a class="cite" href="#ref-{k}">'
+                                     f'{_esc(references[k]["label"])}</a>')
+                    else:
+                        return mo.group(0)  # unknown key → leave span as-is
+                return ", ".join(parts)
             html = _CITE_RE.sub(resolve_cite, html)
+
+            if cited:
+                items = "".join(f'<li id="ref-{k}">{_esc(references[k]["full"])}</li>'
+                                for k in cited)
+                html += ('<section class="references"><h2>References</h2>'
+                         f'<ol>{items}</ol></section>')
 
             sec["html"] = html
     return targets

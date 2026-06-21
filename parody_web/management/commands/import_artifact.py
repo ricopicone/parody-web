@@ -27,6 +27,11 @@ class Command(BaseCommand):
             "that should be PREVIEW-only to the public (in-print but not fully "
             "online). Sections not listed are full public.",
         )
+        parser.add_argument(
+            "--references",
+            help="path to a JSON map {bibkey: {label, full}} for resolving "
+            "bibliography citations and per-section reference lists.",
+        )
 
     def handle(self, *args, **opts):
         path = opts["artifact"]
@@ -53,8 +58,17 @@ class Command(BaseCommand):
 
         slug = opts.get("slug") or data.get("slug") or path.rsplit("/", 1)[-1][:-5]
 
+        references = {}
+        rp = opts.get("references")
+        if rp:
+            try:
+                with open(rp, encoding="utf-8") as f:
+                    references = json.load(f)
+            except (OSError, ValueError) as e:
+                raise CommandError(f"could not read references {rp}: {e}")
+
         # number chapters/sections/figures + resolve cross-references in-place
-        number_artifact(data)
+        number_artifact(data, references=references)
 
         with transaction.atomic():
             self._import(slug, data)
