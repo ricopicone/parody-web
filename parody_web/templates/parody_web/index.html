@@ -1,18 +1,27 @@
 {% extends "parody_web/base.html" %}
+{% block head_extra %}
+<meta name="description" content="{{ meta_description }}">
+<link rel="canonical" href="{{ canonical_url }}">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Book","name":"{{ book.title|escapejs }}",
+"author":[{% for a in book.authors %}{"@type":"Person","name":"{{ a|escapejs }}"}{% if not forloop.last %},{% endif %}{% endfor %}]
+{% with ed=book.book_metadata.editions.0 %}{% if ed.isbn %},"isbn":"{{ ed.isbn|escapejs }}"{% endif %}{% if ed.publisher %},"publisher":{"@type":"Organization","name":"{{ ed.publisher|escapejs }}"}{% endif %}{% if ed.year %},"datePublished":"{{ ed.year|escapejs }}"{% endif %}{% endwith %}
+,"url":"{{ canonical_url }}"}
+</script>
+{% endblock %}
 {% block body %}
 <h1>{{ book.title }}</h1>
 {% if book.authors %}<p><em>{{ book.authors|join:", " }}</em></p>{% endif %}
 {% if book.description %}<p>{{ book.description }}</p>{% endif %}
 {% if book.book_metadata.editions %}
-  <p class="note">
   {% with ed=book.book_metadata.editions.0 %}
+  <p class="note">
     {% if ed.publisher %}{{ ed.publisher }}{% endif %}
     {% if ed.year %}({{ ed.year }}){% endif %}
     {% if ed.isbn %}· ISBN {{ ed.isbn }}{% endif %}
-  {% endwith %}
-  {% if book.book_metadata.companion_url %}
-    · <a href="{{ book.book_metadata.companion_url }}">companion</a>{% endif %}
   </p>
+  {% if ed.url_publisher %}<p><a class="download-button" href="{{ ed.url_publisher }}">Get the book — {{ ed.publisher|default:"publisher" }}</a></p>{% endif %}
+  {% endwith %}
 {% endif %}
 
 {% for chapter, sections in chapters %}
@@ -26,6 +35,6 @@
   </ul>
 {% endfor %}
 
-<p class="note">A partial web edition. Published from a parody artifact
-{% if book.built_at %}({{ book.built_at }}){% endif %}.</p>
+<p class="note">A partial web edition — selected sections are free to read; the
+rest are previews. Get the full book from the publisher (above).</p>
 {% endblock %}

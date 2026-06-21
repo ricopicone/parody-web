@@ -29,8 +29,37 @@ a.download-button { display: inline-block; font-family: system-ui, sans-serif;
     font-size: .9rem; border: 1px solid #7a6ff0; border-radius: 4px;
     padding: .25rem .7rem; text-decoration: none; }
 .note { color:#999; font-size:.8rem; }
+a.xref { text-decoration: none; color: #5a4fd0; white-space: nowrap; }
+a.xref:hover { text-decoration: underline; }
+/* keyboard keys / menu items (.key spans are empty; glyph via ::after) */
+.key, .keys, .menu { font-family: system-ui, sans-serif; font-size: .85em;
+    border: 1px solid #c8c8c8; border-radius: 4px; padding: 0 .35em;
+    background: #f8f8f8; box-shadow: 0 1px 0 #c8c8c8; white-space: nowrap; }
+.menu { background: #eef0fb; box-shadow: none; }
+.key.enter::after, .key.return::after { content: "\21B5"; }
+.key.leftarrow::after, .key.left::after { content: "\2190"; }
+.key.rightarrow::after, .key.right::after { content: "\2192"; }
+.key.up::after, .keys.uparrow::after { content: "\2191"; }
+.key.down::after, .keys.downarrow::after { content: "\2193"; }
+.key.windows::after { content: "\229E"; }
+/* pandoc/skylighting syntax highlighting */
+code span.kw { color: #007020; font-weight: bold; }
+code span.dt { color: #902000; }
+code span.dv, code span.bn, code span.fl { color: #40a070; }
+code span.ch, code span.st, code span.vs { color: #4070a0; }
+code span.co { color: #60a0b0; font-style: italic; }
+code span.cf, code span.im { color: #007020; font-weight: bold; }
+code span.op { color: #666; }
+code span.fu { color: #06287e; }
+code span.cn, code span.sc, code span.ss { color: #880000; }
+code span.va { color: #19177c; }
+code span.bu, code span.at { color: #007020; }
+code span.pp { color: #bc7a00; }
+code span.al, code span.er { color: #ff0000; font-weight: bold; }
+pre.sourceCode a { text-decoration: none; color: inherit; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+{% block head_extra %}{% endblock %}
 </head>
 <body>
 <div style="font-family:system-ui,sans-serif;font-size:.8rem;text-align:right;color:#999">

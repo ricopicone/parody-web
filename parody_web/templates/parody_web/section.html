@@ -1,6 +1,13 @@
 {% extends "parody_web/base.html" %}
 {% load parody_web %}
 {% block title %}{{ section.title }} — {{ book.title }}{% endblock %}
+{% block head_extra %}
+<meta name="description" content="{{ meta_description }}">
+<link rel="canonical" href="{{ canonical_url }}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{{ section.title }} — {{ book.title }}">
+<meta property="og:description" content="{{ meta_description }}">
+{% endblock %}
 {% block body %}
 <nav class="crumbs"><a href="{% url 'parody_web:index' %}">{{ book.title }}</a>
   › {{ chapter.title }}</nav>

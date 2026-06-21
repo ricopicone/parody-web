@@ -1,16 +1,24 @@
 """Views for the book site.
 
-Public visitors see only the online-only sections (the licensed public subset);
-the private parts of the book are gated behind login — only the owner has an
-account. This lets one deployment hold the full artifact yet expose only the
+Public visitors get the full table of contents, a preview of gated sections,
+and the full text of the publicly-licensed sections; the owner (authenticated)
+sees everything. One deployment holds the full artifact yet exposes only the
 permitted subset publicly.
 """
 
 from django.conf import settings
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.utils.html import strip_tags
 
 from .models import Book, Section
+
+
+def _excerpt(html, n=155):
+    """Plain-text snippet for <meta description> / og:description (never the
+    full text — just the opening, safe to expose and good for SEO)."""
+    text = " ".join(strip_tags(html or "").split())
+    return text[:n].rsplit(" ", 1)[0] + "…" if len(text) > n else text
 
 
 def _current_book():
@@ -40,7 +48,9 @@ def index(request):
         if sections:
             chapters.append((ch, sections))
     return render(request, "parody_web/index.html", {
-        "book": book, "chapters": chapters, "public": public})
+        "book": book, "chapters": chapters, "public": public,
+        "meta_description": book.description or f"{book.title} — companion site.",
+        "canonical_url": request.build_absolute_uri(request.path)})
 
 
 def section_detail(request, chapter_slug, section_slug):
@@ -63,4 +73,26 @@ def section_detail(request, chapter_slug, section_slug):
         "title_in_html": "<h1" in (section.html or ""),
         "preview": preview,
         "next_path": request.get_full_path(),
+        "meta_description": _excerpt(section.html),
+        "canonical_url": request.build_absolute_uri(request.path),
     })
+
+
+def sitemap_xml(request):
+    """Plain XML sitemap (index + every section); no contrib.sitemaps/sites dep."""
+    book = _current_book()
+    urls = [request.build_absolute_uri("/")]
+    for s in _all_sections_ordered(book):
+        urls.append(request.build_absolute_uri(
+            f"/{s.chapter.slug}/{s.slug}/"))
+    body = ['<?xml version="1.0" encoding="UTF-8"?>',
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    body += [f"<url><loc>{u}</loc></url>" for u in urls]
+    body.append("</urlset>")
+    return HttpResponse("\n".join(body), content_type="application/xml")
+
+
+def robots_txt(request):
+    sm = request.build_absolute_uri("/sitemap.xml")
+    return HttpResponse(f"User-agent: *\nAllow: /\nSitemap: {sm}\n",
+                        content_type="text/plain")

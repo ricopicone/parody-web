@@ -23,6 +23,10 @@ _FIG_RE = re.compile(r'<figure\b[^>]*\bid="(?P<id>fig:[^"]+)"[^>]*>(?P<rest>.*?)
                      re.S)
 _FIGCAP_RE = re.compile(r'(<figcaption[^>]*>)', re.S)
 _HASHREF_RE = re.compile(r'<span class="hashref">([^<]*)</span>')
+# pandoc rendered some cross-refs (written [@fig:x]) as citations because
+# pandoc-crossref didn't run; resolve those against the same target map.
+_CITE_RE = re.compile(
+    r'<span class="citation" data-cites="([^"]+)">\[@([^\]]*)\]</span>')
 
 # anchor type -> cross-reference label word (per-chapter numbered: "Table 3.1")
 _TYPE_LABELS = {
@@ -186,6 +190,18 @@ def number_artifact(data):
                     url = f"/{t['chapter']['slug']}/{secs[0]['slug']}/" if secs else "#"
                 return f'<a class="xref" href="{url or "#"}">{t["label"]}</a>'
             html = _HASHREF_RE.sub(resolve, html)
+
+            def resolve_cite(mo):
+                keys = mo.group(1).split()
+                # only rewrite when every cited key is a known cross-ref target
+                # (figures/tables/eqs/sections); leave real bibliography cites.
+                entries = [targets.get(k) for k in keys]
+                if not keys or any(e is None for e in entries):
+                    return mo.group(0)
+                links = [f'<a class="xref" href="{e["url"] or "#"}">{e["label"]}</a>'
+                         for e in entries]
+                return ", ".join(links)
+            html = _CITE_RE.sub(resolve_cite, html)
 
             sec["html"] = html
     return targets
