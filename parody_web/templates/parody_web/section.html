@@ -7,15 +7,21 @@
 
 {% if not title_in_html %}<h1>{{ section.title }}</h1>{% endif %}
 
-{% if section.html %}
-  {{ section.html|render_book }}
-{% endif %}
-
-{% if section.online_resources %}
-  <section class="online-resources">
-    <h2>Online resources</h2>
-    {{ section.online_resources|render_book }}
-  </section>
+{% if preview %}
+  {% if section.html %}<div class="preview">{{ section.html|render_book|truncatewords_html:70 }}</div>{% endif %}
+  <p class="signin-gate"><strong>Preview.</strong>
+    <a href="{% url 'login' %}?next={{ next_path|urlencode }}">Sign in</a>
+    to read the full section.</p>
+{% else %}
+  {% if section.html %}
+    {{ section.html|render_book }}
+  {% endif %}
+  {% if section.online_resources %}
+    <section class="online-resources">
+      <h2>Online resources</h2>
+      {{ section.online_resources|render_book }}
+    </section>
+  {% endif %}
 {% endif %}
 
 <nav class="pager">

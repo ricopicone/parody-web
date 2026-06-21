@@ -7,7 +7,6 @@ permitted subset publicly.
 """
 
 from django.conf import settings
-from django.contrib.auth.views import redirect_to_login
 from django.http import Http404
 from django.shortcuts import get_object_or_404, render
 
@@ -23,12 +22,13 @@ def _current_book():
     return book
 
 
-def _visible_sections(book, user):
-    """All sections for the owner; only online-only for the public."""
-    qs = Section.objects.filter(book=book).select_related("chapter")
-    if not user.is_authenticated:
-        qs = qs.filter(online_only=True)
-    return list(qs)
+def _all_sections_ordered(book):
+    """Every section in reading order. The full TOC/nav is public; gating is
+    per-section at view time (full vs preview), not by hiding from the index."""
+    return list(
+        Section.objects.filter(book=book)
+        .select_related("chapter")
+        .order_by("chapter__order", "order"))
 
 
 def index(request):
@@ -37,8 +37,6 @@ def index(request):
     chapters = []
     for ch in book.chapters.all():
         sections = list(ch.sections.all())
-        if public:
-            sections = [s for s in sections if s.online_only]
         if sections:
             chapters.append((ch, sections))
     return render(request, "parody_web/index.html", {
@@ -49,11 +47,11 @@ def section_detail(request, chapter_slug, section_slug):
     book = _current_book()
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
-    # private (non-online-only) sections are owner-only
-    if not section.online_only and not request.user.is_authenticated:
-        return redirect_to_login(request.get_full_path())
+    # Gated (non-online-only) sections show a preview + sign-in to the public;
+    # the owner (authenticated) sees the full section.
+    preview = not section.online_only and not request.user.is_authenticated
 
-    flat = _visible_sections(book, request.user)
+    flat = _all_sections_ordered(book)
     idx = next((i for i, s in enumerate(flat) if s.pk == section.pk), None)
     prev_s = flat[idx - 1] if idx else None
     next_s = flat[idx + 1] if idx is not None and idx + 1 < len(flat) else None
@@ -63,4 +61,6 @@ def section_detail(request, chapter_slug, section_slug):
         # The artifact html usually carries its own <h1>; only render the
         # template title when it doesn't (e.g. chapter "lead-in" intros).
         "title_in_html": "<h1" in (section.html or ""),
+        "preview": preview,
+        "next_path": request.get_full_path(),
     })

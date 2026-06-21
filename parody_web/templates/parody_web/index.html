@@ -20,7 +20,7 @@
   <ul>
   {% for section in sections %}
     <li><a href="{% url 'parody_web:section' chapter.slug section.slug %}">{{ section.title }}</a>
-      {% if not section.online_only and section.online_resources %}<span class="note">— online resources</span>{% endif %}
+      {% if public and not section.online_only %}<span class="note">— preview</span>{% endif %}
     </li>
   {% endfor %}
   </ul>
