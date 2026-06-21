@@ -10,7 +10,7 @@ User=bookhost
 Group=bookhost
 WorkingDirectory=/opt/parody-book-host
 EnvironmentFile=/etc/parody-book-host/site.env
-ExecStart=/opt/parody-book-host/.venv/bin/gunicorn booksite.wsgi:application \
+ExecStart=/opt/parody-book-host/.venv/bin/gunicorn booksite.asgi:application \
   -k uvicorn.workers.UvicornWorker --bind 127.0.0.1:8001 --workers 2 --log-file -
 Restart=always
 RestartSec=3
