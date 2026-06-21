@@ -15,6 +15,7 @@ import re
 from django import template
 from django.conf import settings
 from django.template import Context, Template, TemplateSyntaxError
+from django.urls import NoReverseMatch, reverse
 from django.utils.html import conditional_escape
 from django.utils.safestring import mark_safe
 
@@ -59,8 +60,16 @@ def cite_many(*keys, **kwargs):
 
 @register.simple_tag
 def url(*args, **kwargs):
-    # server-side routes don't exist on the standalone book site
-    return "#"
+    # Page templates load this library (for render_book), which shadows Django's
+    # builtin {% url %}. Resolve real routes (breadcrumb/pager/login) and degrade
+    # unknown ones (legacy homepage-django routes embedded in artifact html) to "#".
+    if not args:
+        return "#"
+    name, params = args[0], list(args[1:])
+    try:
+        return reverse(name, args=params, kwargs=kwargs)
+    except NoReverseMatch:
+        return "#"
 
 
 @register.simple_tag

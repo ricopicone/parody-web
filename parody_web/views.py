@@ -60,4 +60,7 @@ def section_detail(request, chapter_slug, section_slug):
     return render(request, "parody_web/section.html", {
         "book": book, "section": section, "chapter": section.chapter,
         "prev": prev_s, "next": next_s,
+        # The artifact html usually carries its own <h1>; only render the
+        # template title when it doesn't (e.g. chapter "lead-in" intros).
+        "title_in_html": "<h1" in (section.html or ""),
     })

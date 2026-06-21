@@ -5,7 +5,7 @@
 <nav class="crumbs"><a href="{% url 'parody_web:index' %}">{{ book.title }}</a>
   › {{ chapter.title }}</nav>
 
-<h1>{{ section.title }}</h1>
+{% if not title_in_html %}<h1>{{ section.title }}</h1>{% endif %}
 
 {% if section.html %}
   {{ section.html|render_book }}
