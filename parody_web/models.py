@@ -30,6 +30,7 @@ class Chapter(models.Model):
     order = models.PositiveIntegerField(default=0)
     hash = models.CharField(max_length=100, blank=True, default="")
     appendix = models.BooleanField(default=False)
+    number = models.CharField(max_length=16, blank=True, default="")
 
     class Meta:
         unique_together = ("book", "slug")
@@ -52,6 +53,8 @@ class Section(models.Model):
     # preview = public sees only a truncated excerpt + sign-in (old "versionless":
     # in print, not fully online). Full sections are everything else.
     preview = models.BooleanField(default=False)
+    # display number/label, e.g. "3.2", "Lab Exercise 4", or "" (Problems/lead-in)
+    number = models.CharField(max_length=32, blank=True, default="")
     anchors = models.JSONField(default=list, blank=True)
 
     class Meta:

@@ -10,6 +10,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from parody_web.models import Book, Chapter, Section
+from parody_web.numbering import number_artifact
 
 
 class Command(BaseCommand):
@@ -52,6 +53,9 @@ class Command(BaseCommand):
 
         slug = opts.get("slug") or data.get("slug") or path.rsplit("/", 1)[-1][:-5]
 
+        # number chapters/sections/figures + resolve cross-references in-place
+        number_artifact(data)
+
         with transaction.atomic():
             self._import(slug, data)
 
@@ -75,6 +79,7 @@ class Command(BaseCommand):
                     "order": ci + 1,
                     "hash": ch.get("hash", ""),
                     "appendix": bool(ch.get("appendix", False)),
+                    "number": ch.get("number", ""),
                 })
             seen_ch.add(chapter.slug)
             for si, sec in enumerate(ch.get("sections", [])):
@@ -88,6 +93,7 @@ class Command(BaseCommand):
                         "online_only": bool(sec.get("online_only", False)),
                         "preview": bool(sec.get("preview"))
                         or (sec.get("hash") in self.preview_hashes),
+                        "number": sec.get("number", ""),
                         "anchors": sec.get("anchors", []),
                     })
                 seen_sec.add((chapter.slug, sec["slug"]))
