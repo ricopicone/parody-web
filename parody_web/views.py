@@ -78,7 +78,7 @@ def index(request, edition_id=None):
             chapters.append((ch, sections))
     return render(request, "parody_web/index.html", {
         "book": book, "editions": editions, "chapters": chapters,
-        "public": public,
+        "public": public, "systems_list": book.parts or [],
         "meta_description": book.description or f"{book.title} — companion site.",
         "canonical_url": request.build_absolute_uri(request.path)})
 
@@ -109,6 +109,23 @@ def section_detail(request, chapter_slug, section_slug, edition_id=None):
     })
 
 
+def systems(request, version, edition_id=None):
+    """The specific-parts catalog for one system (ts or ds version) of the
+    current edition — every component with its specs and device choices +
+    suppliers, from the artifact's structured `parts`."""
+    book, editions = _resolve_book(edition_id)
+    system = next((s for s in (book.parts or []) if s.get("version") == version),
+                  None)
+    if system is None:
+        raise Http404(f"no system {version!r}")
+    return render(request, "parody_web/systems.html", {
+        "book": book, "editions": editions, "system": system,
+        "systems_list": book.parts or [],
+        "meta_description": f"Parts catalog for the {system.get('title', version)} "
+                            f"— {book.title}.",
+        "canonical_url": request.build_absolute_uri(request.path)})
+
+
 def sitemap_xml(request):
     """Plain XML sitemap (index + every section, across all editions); no
     contrib.sitemaps/sites dep. The default edition sits at the root; other
@@ -122,6 +139,9 @@ def sitemap_xml(request):
         for s in _all_sections_ordered(book):
             urls.append(request.build_absolute_uri(
                 f"/{prefix}{s.chapter.slug}/{s.slug}/"))
+        for sys_ in (book.parts or []):
+            urls.append(request.build_absolute_uri(
+                f"/{prefix}systems/{sys_.get('version')}/"))
     body = ['<?xml version="1.0" encoding="UTF-8"?>',
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     body += [f"<url><loc>{u}</loc></url>" for u in urls]

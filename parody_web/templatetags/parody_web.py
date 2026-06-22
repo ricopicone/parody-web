@@ -92,6 +92,14 @@ def section_url(book, chapter_slug, section_slug):
 
 
 @register.simple_tag
+def systems_url(book, version):
+    """URL of a system's parts catalog within the current edition."""
+    if book is None or book.is_default_edition:
+        return reverse("parody_web:systems", args=[version])
+    return reverse("parody_web:edition_systems", args=[book.edition_id, version])
+
+
+@register.simple_tag
 def get_cell(*args, **kwargs):
     return mark_safe(
         '<span class="get-cell-placeholder" '

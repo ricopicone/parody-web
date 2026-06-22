@@ -194,3 +194,70 @@ class EditionTests(TestCase):
             book = Book.objects.get(slug="demo-book")
             self.assertTrue(book.is_default_edition)
             self.assertEqual(book.edition_id, "")
+
+
+PARTS_ARTIFACT = {
+    "schema_version": 2, "slug": "pbook", "title": "P Book",
+    "author": ["A. Author"],
+    "parts": [{
+        "track": "ts", "version": "T1", "title": "T1 target system",
+        "description": "The T1 system.",
+        "components": [{
+            "subsystem": "target-computer", "subsystem_title": "Target computer",
+            "name": "NI myRIO 1900", "kind": "single-board computer",
+            "description": "An SBC.", "hash": "tc", "quantity": "1",
+            "specs": [["System on a chip (SoC)", "Xilinx Z-7010"]],
+            "suppliers": [{"name": "NI", "url": "https://ni.com"}],
+            "choices": [{"kind": "specific", "name": "Grayhill 88BB2",
+                         "description": "A keypad.", "hash": "g8", "fields": [],
+                         "suppliers": [{"name": "Digi-Key",
+                                        "url": "https://digikey.com/x"}]}],
+        }],
+    }],
+    "chapters": [{"title": "Ch", "slug": "ch", "hash": "c1", "sections": [
+        {"title": "Overview", "slug": "overview", "hash": "o1",
+         "html": "<p>body</p>"}]}],
+}
+
+
+@override_settings(BOOK_SLUG="pbook")
+class SystemsTests(TestCase):
+    def setUp(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "a.json")
+            p.write_text(json.dumps(PARTS_ARTIFACT))
+            call_command("import_artifact", str(p), "--slug", "pbook")
+        self.client = Client()
+
+    def test_parts_stored_on_book(self):
+        book = Book.objects.get(slug="pbook")
+        self.assertEqual(book.parts[0]["version"], "T1")
+
+    def test_systems_page_renders_components_and_suppliers(self):
+        r = self.client.get("/systems/T1/")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "NI myRIO 1900")
+        self.assertContains(r, "Xilinx Z-7010")
+        self.assertContains(r, "https://ni.com")
+        # specific device choice + its supplier link
+        self.assertContains(r, "Grayhill 88BB2")
+        self.assertContains(r, "https://digikey.com/x")
+
+    def test_unknown_system_404(self):
+        self.assertEqual(self.client.get("/systems/T9/").status_code, 404)
+
+    def test_index_links_to_systems(self):
+        r = self.client.get("/")
+        self.assertContains(r, "Hardware systems")
+        self.assertContains(r, "/systems/T1/")
+
+    def test_sitemap_includes_systems(self):
+        r = self.client.get("/sitemap.xml")
+        self.assertIn("/systems/T1/", r.content.decode())
+
+    def test_book_without_parts_has_no_systems_section(self):
+        _import()  # demo-book, no parts
+        with override_settings(BOOK_SLUG="demo-book"):
+            r = self.client.get("/")
+            self.assertNotContains(r, "Hardware systems")
+            self.assertEqual(self.client.get("/systems/T1/").status_code, 404)

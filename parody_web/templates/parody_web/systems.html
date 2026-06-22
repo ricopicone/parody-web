@@ -1,0 +1,55 @@
+{% extends "parody_web/base.html" %}
+{% load parody_web %}
+{% block title %}{{ system.title }} — {{ book.title }}{% endblock %}
+{% block head_extra %}
+<meta name="description" content="{{ meta_description }}">
+<link rel="canonical" href="{{ canonical_url }}">
+{% endblock %}
+{% block body %}
+<nav class="crumbs"><a href="{% index_url book %}">{{ book.title }}</a>
+  › {{ system.title }}</nav>
+
+<h1>{{ system.title }}</h1>
+{% if system.description %}<p>{{ system.description }}</p>{% endif %}
+
+{% if systems_list|length > 1 %}
+<p class="note">Systems:
+{% for s in systems_list %}{% if s.version == system.version %}<strong>{{ s.version }}</strong>{% else %}<a href="{% systems_url book s.version %}">{{ s.version }}</a>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
+</p>
+{% endif %}
+
+{% for c in system.components %}
+<section class="component" id="{{ c.subsystem }}">
+  <h2>{% if c.name %}{{ c.name }}{% else %}{{ c.subsystem_title }}{% endif %}
+    {% if c.kind %}<span class="note">— {{ c.kind }}</span>{% endif %}</h2>
+  {% if c.description %}<p>{{ c.description }}</p>{% endif %}
+  {% if c.quantity %}<p class="note">Quantity: {{ c.quantity }}</p>{% endif %}
+
+  {% if c.specs %}
+  <table class="specs">
+    {% for label, value in c.specs %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+
+  {% if c.suppliers %}
+  <p class="suppliers">Suppliers:
+    {% for sup in c.suppliers %}<a href="{{ sup.url }}" target="_blank" rel="noopener">{{ sup.name }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+
+  {% if c.choices %}
+  <div class="choices">
+    {% for ch in c.choices %}
+    <details{% if forloop.first %} open{% endif %}>
+      <summary>{{ ch.name }}{% if ch.kind == "specific" %} <span class="note">(recommended)</span>{% endif %}</summary>
+      {% if ch.description %}<p>{{ ch.description }}</p>{% endif %}
+      {% if ch.fields %}<table class="specs">{% for label, value in ch.fields %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>{% endif %}
+      {% if ch.suppliers %}<p class="suppliers">Suppliers:
+        {% for sup in ch.suppliers %}<a href="{{ sup.url }}" target="_blank" rel="noopener">{{ sup.name }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

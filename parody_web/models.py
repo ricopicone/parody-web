@@ -30,6 +30,9 @@ class Book(models.Model):
     built_at = models.CharField(max_length=40, blank=True)
     cover_image = models.CharField(max_length=200, blank=True, default="")
     errata = models.TextField(blank=True, default="")  # rendered html, optional
+    # structured systems catalog (artifact `parts`): list of systems for this
+    # edition's active versions; rendered by the /systems/<version>/ pages.
+    parts = models.JSONField(null=True, blank=True)
 
     class Meta:
         unique_together = ("slug", "edition_id")

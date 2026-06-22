@@ -121,6 +121,7 @@ class Command(BaseCommand):
                 "built_at": data.get("built_at") or "",
                 "cover_image": self.cover,
                 "errata": self.errata,
+                "parts": data.get("parts"),
             })
 
         seen_ch, seen_sec = set(), set()

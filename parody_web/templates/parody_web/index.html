@@ -37,6 +37,15 @@
   </ul>
 {% endfor %}
 
+{% if systems_list %}
+<h2>Hardware systems</h2>
+<ul>
+{% for s in systems_list %}
+  <li><a href="{% systems_url book s.version %}">{{ s.title }}</a> — parts &amp; suppliers</li>
+{% endfor %}
+</ul>
+{% endif %}
+
 <p class="note">A partial web edition — selected sections are free to read; the
 rest are previews. Get the full book from the publisher (above).{% if book.errata %}
 · <a href="{% url 'parody_web:errata' %}">Errata</a>{% endif %}</p>
