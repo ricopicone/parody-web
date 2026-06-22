@@ -62,6 +62,8 @@ class Command(BaseCommand):
 
         slug = opts.get("slug") or data.get("slug") or path.rsplit("/", 1)[-1][:-5]
 
+        # references / errata / cover: prefer the artifact (parody build emits
+        # them); fall back to CLI-provided files for older artifacts.
         references = {}
         rp = opts.get("references")
         if rp:
@@ -70,8 +72,11 @@ class Command(BaseCommand):
                     references = json.load(f)
             except (OSError, ValueError) as e:
                 raise CommandError(f"could not read references {rp}: {e}")
+        if not references:
+            references = data.get("references") or {}
 
-        self.cover = opts.get("cover") or ""
+        self.cover = opts.get("cover") or data.get("cover_image") or ""
+
         self.errata = ""
         ep = opts.get("errata")
         if ep:
@@ -80,6 +85,8 @@ class Command(BaseCommand):
                     self.errata = f.read()
             except OSError as e:
                 raise CommandError(f"could not read errata {ep}: {e}")
+        if not self.errata:
+            self.errata = data.get("errata") or ""
 
         # number chapters/sections/figures + resolve cross-references in-place
         number_artifact(data, references=references)

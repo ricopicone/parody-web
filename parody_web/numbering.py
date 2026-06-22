@@ -103,8 +103,8 @@ def _style_menus(html):
         val = mo.group(1).strip()
         if val in _ECLIPSE_ICONS:
             icon, label = _ECLIPSE_ICONS[val]
-            return (f'<img class="ebtn" src="{{% media \'{icon}.svg\' %}}" '
-                    f'alt="{label}" title="{label}">')
+            return (f'<img class="ebtn" src="{{% static \'parody_web/eclipse/'
+                    f'{icon}.svg\' %}}" alt="{label}" title="{label}">')
         parts = [p.strip() for p in mo.group(1).split(",") if p.strip()]
         inner = '<span class="m-arrow">›</span>'.join(
             f'<span class="m-item">{p}</span>' for p in (parts or [mo.group(1)]))

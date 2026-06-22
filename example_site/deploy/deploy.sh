@@ -45,7 +45,20 @@ if [ -n "${CONTENT_REPO:-}" ] && [ -n "${ARTIFACT_ASSET:-}" ]; then
     [ -f "$TMP/$MEDIA_ASSET" ] && unzip -oq "$TMP/$MEDIA_ASSET" \
       -d "${BOOKSITE_MEDIA_ROOT:?set BOOKSITE_MEDIA_ROOT for media}"
   fi
-  "$VENV/bin/python" manage.py import_artifact "$TMP/$ARTIFACT_ASSET" --slug "$BOOK_SLUG"
+  # optional site-provided extra media (icons, cover, errata figures)
+  [ -d "$APP_DIR/deploy/extra-media" ] && \
+    cp -f "$APP_DIR/deploy/extra-media"/* "${BOOKSITE_MEDIA_ROOT}/" 2>/dev/null || true
+  PREVIEW_ARG=""
+  [ -f "$APP_DIR/deploy/preview-hashes.txt" ] && \
+    PREVIEW_ARG="--preview-hashes $APP_DIR/deploy/preview-hashes.txt"
+  REFS_ARG=""
+  [ -f "$APP_DIR/deploy/references.json" ] && \
+    REFS_ARG="--references $APP_DIR/deploy/references.json"
+  COVER_ARG=""
+  [ -f "$APP_DIR/deploy/extra-media/cover.jpg" ] && COVER_ARG="--cover cover.jpg"
+  ERRATA_ARG=""
+  [ -f "$APP_DIR/deploy/errata.html" ] && ERRATA_ARG="--errata $APP_DIR/deploy/errata.html"
+  "$VENV/bin/python" manage.py import_artifact "$TMP/$ARTIFACT_ASSET" --slug "$BOOK_SLUG" $PREVIEW_ARG $REFS_ARG $COVER_ARG $ERRATA_ARG
 else
   echo "==> no CONTENT_REPO/ARTIFACT_ASSET set; skipping content import"
 fi
