@@ -19,6 +19,10 @@ class Book(models.Model):
     edition_title = models.CharField(max_length=200, blank=True, default="")
     edition_default = models.BooleanField(default=False)
     edition_order = models.PositiveIntegerField(default=0)  # switcher order
+    # draft = built but not yet released: visible only to the authenticated
+    # owner (hidden from the public switcher; its pages 404 for anonymous
+    # visitors) until published. Toggle live with the publish_edition command.
+    draft = models.BooleanField(default=False)
     title = models.CharField(max_length=300)
     description = models.TextField(blank=True)
     authors = models.JSONField(default=list, blank=True)

@@ -267,3 +267,73 @@ class SystemsTests(TestCase):
             r = self.client.get("/")
             self.assertNotContains(r, "Hardware systems")
             self.assertEqual(self.client.get("/systems/T1/").status_code, 404)
+
+
+def _draft_artifact(edition_id, title, default, draft, body):
+    return {
+        "schema_version": 2, "slug": "dbook", "title": "D Book",
+        "author": ["A. Author"],
+        "edition": {"id": edition_id, "title": title, "default": default,
+                    "draft": draft},
+        "editions": [{"id": "ed1", "title": "First", "default": True,
+                      "draft": False},
+                     {"id": "ed2", "title": "Second", "default": False,
+                      "draft": True}],
+        "chapters": [{"title": "Ch", "slug": "ch", "hash": "c1", "sections": [
+            {"title": "Overview", "slug": "overview", "hash": "o" + edition_id,
+             "html": f"<p>{body}</p>"}]}],
+    }
+
+
+@override_settings(BOOK_SLUG="dbook")
+class DraftEditionTests(TestCase):
+    def setUp(self):
+        for art in (_draft_artifact("ed1", "First", True, False, "ed1 body"),
+                    _draft_artifact("ed2", "Second", False, True, "ed2 body")):
+            with tempfile.TemporaryDirectory() as d:
+                p = Path(d, "a.json")
+                p.write_text(json.dumps(art))
+                call_command("import_artifact", str(p), "--slug", "dbook")
+        self.owner = get_user_model().objects.create_superuser(
+            "owner", "owner@example.com", "pw")
+        self.anon = Client()
+        self.signed_in = Client()
+        self.signed_in.force_login(self.owner)
+
+    def test_draft_flag_stored(self):
+        self.assertTrue(Book.objects.get(slug="dbook", edition_id="ed2").draft)
+        self.assertFalse(Book.objects.get(slug="dbook", edition_id="ed1").draft)
+
+    def test_public_cannot_see_draft(self):
+        # the default (public) edition is served at the root; draft is hidden
+        self.assertContains(self.anon.get("/ch/overview/"), "ed1 body")
+        self.assertNotContains(self.anon.get("/"), "(in development)")
+        # draft pages 404 for the public
+        self.assertEqual(self.anon.get("/editions/ed2/").status_code, 404)
+        self.assertEqual(
+            self.anon.get("/editions/ed2/ch/overview/").status_code, 404)
+
+    def test_owner_can_see_draft(self):
+        r = self.signed_in.get("/editions/ed2/")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "in development")    # banner
+        self.assertContains(r, "(in development)")  # switcher flag
+        # and the draft edition's actual content
+        self.assertContains(
+            self.signed_in.get("/editions/ed2/ch/overview/"), "ed2 body")
+
+    def test_sitemap_excludes_draft(self):
+        body = self.anon.get("/sitemap.xml").content.decode()
+        self.assertIn("/ch/overview/", body)         # ed1 (default, root)
+        self.assertNotIn("/editions/ed2/", body)
+
+    def test_publish_edition_command_makes_it_public(self):
+        call_command("publish_edition", "ed2", "--slug", "dbook")
+        self.assertFalse(Book.objects.get(slug="dbook", edition_id="ed2").draft)
+        self.assertEqual(self.anon.get("/editions/ed2/").status_code, 200)
+
+    def test_unpublish_edition_command_hides_it(self):
+        call_command("publish_edition", "ed2", "--slug", "dbook")
+        call_command("unpublish_edition", "ed2", "--slug", "dbook")
+        self.assertTrue(Book.objects.get(slug="dbook", edition_id="ed2").draft)
+        self.assertEqual(self.anon.get("/editions/ed2/").status_code, 404)

@@ -44,24 +44,35 @@ def _editions(slug):
     return list(Book.objects.filter(slug=slug).order_by("edition_order", "id"))
 
 
-def _resolve_book(edition_id=None):
-    """Select the edition to serve and the full edition roster. With no
-    edition_id, serve the default edition (flagged, else the latest by order,
-    else the single row)."""
-    editions = _editions(_book_slug())
-    if not editions:
+def _is_owner(request):
+    return bool(request and request.user.is_authenticated)
+
+
+def _resolve_book(request, edition_id=None):
+    """Select the edition to serve and the visible edition roster.
+
+    Draft editions are owner-only: hidden from the public switcher, skipped for
+    the public default, and their pages 404 for anonymous visitors. With no
+    edition_id, serve the default edition (flagged, else the latest by order)
+    among the visible ones."""
+    everything = _editions(_book_slug())
+    if not everything:
         raise Http404("no book imported")
+    owner = _is_owner(request)
+    visible = everything if owner else [b for b in everything if not b.draft]
     if edition_id:
-        book = next((b for b in editions if b.edition_id == edition_id), None)
-        if book is None:
+        book = next((b for b in everything if b.edition_id == edition_id), None)
+        if book is None or (book.draft and not owner):
             raise Http404(f"no edition {edition_id!r}")
-        return book, editions
-    book = next((b for b in editions if b.edition_default), None) or editions[-1]
-    return book, editions
+        return book, visible
+    if not visible:
+        raise Http404("no published edition")
+    book = next((b for b in visible if b.edition_default), None) or visible[-1]
+    return book, visible
 
 
-def _current_book():
-    book, _ = _resolve_book()
+def _current_book(request=None):
+    book, _ = _resolve_book(request)
     return book
 
 
@@ -75,7 +86,7 @@ def _all_sections_ordered(book):
 
 
 def index(request, edition_id=None):
-    book, editions = _resolve_book(edition_id)
+    book, editions = _resolve_book(request, edition_id)
     public = not request.user.is_authenticated
     chapters = []
     for ch in book.chapters.all():
@@ -90,7 +101,7 @@ def index(request, edition_id=None):
 
 
 def section_detail(request, chapter_slug, section_slug, edition_id=None):
-    book, editions = _resolve_book(edition_id)
+    book, editions = _resolve_book(request, edition_id)
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
     # Sections flagged `preview` (in-print but not fully online) show a preview
@@ -119,7 +130,7 @@ def systems(request, version, edition_id=None):
     """The specific-parts catalog for one system (ts or ds version) of the
     current edition — every component with its specs and device choices +
     suppliers, from the artifact's structured `parts`."""
-    book, editions = _resolve_book(edition_id)
+    book, editions = _resolve_book(request, edition_id)
     system = next((s for s in (book.parts or []) if s.get("version") == version),
                   None)
     if system is None:
@@ -136,7 +147,8 @@ def sitemap_xml(request):
     """Plain XML sitemap (index + every section, across all editions); no
     contrib.sitemaps/sites dep. The default edition sits at the root; other
     editions under /editions/<id>/."""
-    editions = _editions(_book_slug())
+    # public sitemap: skip draft (unreleased) editions
+    editions = [b for b in _editions(_book_slug()) if not b.draft]
     urls = [request.build_absolute_uri("/")]
     for book in editions:
         prefix = "" if book.is_default_edition else f"editions/{book.edition_id}/"
@@ -156,7 +168,7 @@ def sitemap_xml(request):
 
 
 def errata(request):
-    book = _current_book()
+    book = _current_book(request)
     if not book.errata:
         raise Http404("no errata")
     return render(request, "parody_web/errata.html", {

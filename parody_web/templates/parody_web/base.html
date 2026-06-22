@@ -52,6 +52,9 @@ p.suppliers { font-family: system-ui, sans-serif; font-size: .9rem; }
     float: right; clear: right; margin: .1rem 0 .2rem .5rem; }
 .version-icon.ds { background: #2a9d8f; }
 @media (min-width: 62rem) { .version-icon { margin-right: -3.6rem; } }
+.draft-banner { font-family: system-ui, sans-serif; font-size: .85rem;
+    background: #fff7e6; border: 1px solid #f0c060; border-radius: 6px;
+    padding: .5rem .8rem; margin: .3rem 0 1rem; }
 a.xref { text-decoration: none; color: #5a4fd0; white-space: nowrap; }
 a.xref:hover { text-decoration: underline; }
 a.cite { text-decoration: none; color: #5a4fd0; }
@@ -94,8 +97,11 @@ pre.sourceCode a { text-decoration: none; color: inherit; }
 <body>
 {% if editions and editions|length > 1 %}
 <nav class="edition-switcher">Edition:
-{% for ed in editions %}{% if ed.pk == book.pk %}<strong>{{ ed.edition_title|default:ed.edition_id }}</strong>{% else %}<a href="{% index_url ed %}">{{ ed.edition_title|default:ed.edition_id }}</a>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
+{% for ed in editions %}{% if ed.pk == book.pk %}<strong>{{ ed.edition_title|default:ed.edition_id }}</strong>{% else %}<a href="{% index_url ed %}">{{ ed.edition_title|default:ed.edition_id }}</a>{% endif %}{% if ed.draft %} <span class="note">(in development)</span>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
 </nav>
+{% endif %}
+{% if book.draft %}
+<div class="draft-banner">This edition is <strong>in development</strong> and not yet public — you are viewing it as the owner.</div>
 {% endif %}
 <div style="font-family:system-ui,sans-serif;font-size:.8rem;text-align:right;color:#999">
 {% if user.is_authenticated %}

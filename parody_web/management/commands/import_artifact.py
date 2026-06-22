@@ -111,6 +111,7 @@ class Command(BaseCommand):
                 "edition_title": edition.get("title", ""),
                 "edition_default": bool(edition.get("default", False)),
                 "edition_order": edition_order,
+                "draft": bool(edition.get("draft", False)),
                 "title": data.get("title", slug),
                 "description": data.get("description", ""),
                 "authors": data.get("author", []),
