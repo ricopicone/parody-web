@@ -29,7 +29,7 @@ ARTIFACT = {
                      '<div class="version-list-item">SoC: Xilinx</div></details>',
              "online_resources": '<p>Extra: {% cite \'knuth1997\' %}.</p>'},
             {"title": "Licensed Chapter (private)", "slug": "licensed", "hash": "lz",
-             "html": "<p>Copyrighted prose.</p>"},
+             "preview": True, "html": "<p>Copyrighted prose.</p>"},
         ],
     }],
 }
@@ -70,11 +70,14 @@ class BookHostGatingTests(TestCase):
         self.assertTrue(Section.objects.get(slug="specific-t1").online_only)
         self.assertFalse(Section.objects.get(slug="licensed").online_only)
 
-    def test_public_index_lists_only_online_only(self):
+    def test_public_index_lists_all_sections(self):
+        # The full TOC is public; gating is per-section at view time (a preview
+        # section is teased, not hidden from the index).
         r = self.anon.get("/")
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "Specific T1 (public)")
-        self.assertNotContains(r, "Licensed Chapter (private)")
+        self.assertContains(r, "Licensed Chapter (private)")
+        self.assertContains(r, "preview")  # the preview section is flagged
 
     def test_owner_index_lists_everything(self):
         r = self.signed_in.get("/")
@@ -90,10 +93,13 @@ class BookHostGatingTests(TestCase):
         self.assertIn("<details>", html)
         self.assertIn("Online resources", html)  # online_resources rendered
 
-    def test_private_section_redirects_anonymous_to_login(self):
+    def test_preview_section_gates_anonymous(self):
+        # A preview section shows the public a teaser + sign-in gate (200, not a
+        # redirect); the owner sees the full text.
         r = self.anon.get("/hardware/licensed/")
-        self.assertEqual(r.status_code, 302)
-        self.assertIn("/accounts/login", r["Location"])
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "This is a preview")
+        self.assertContains(r, "Instructor login")
 
     def test_owner_sees_private_section(self):
         r = self.signed_in.get("/hardware/licensed/")

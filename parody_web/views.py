@@ -6,6 +6,8 @@ sees everything. One deployment holds the full artifact yet exposes only the
 permitted subset publicly.
 """
 
+import re
+
 from django.conf import settings
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -13,11 +15,15 @@ from django.utils.html import strip_tags
 
 from .models import Book, Section
 
+# Django-template tags embedded in stored html ({% media %}, {{ x }}); strip
+# them from meta-description snippets so raw tags never leak into <meta>.
+_TEMPLATE_TAG_RE = re.compile(r"\{%.*?%\}|\{\{.*?\}\}", re.DOTALL)
+
 
 def _excerpt(html, n=155):
     """Plain-text snippet for <meta description> / og:description (never the
     full text — just the opening, safe to expose and good for SEO)."""
-    text = " ".join(strip_tags(html or "").split())
+    text = " ".join(strip_tags(_TEMPLATE_TAG_RE.sub("", html or "")).split())
     return text[:n].rsplit(" ", 1)[0] + "…" if len(text) > n else text
 
 
