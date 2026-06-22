@@ -39,26 +39,69 @@ _RAWTEX_DROP = {"raggedleft", "arraybackslash", "cmidrule", "newpage",
                 "midrule", "bottomrule", "fi", "vspace", "hspace"}
 
 
+# Some math leaked as single-dollar $…$ (MathJax 3 only processes \(…\)). Convert
+# $…$ runs that contain a TeX math indicator (\ _ ^ {) to \(…\); prose dollar
+# amounts ($5) have none of those and are left alone.
+_DOLLAR_MATH_RE = re.compile(r'(?<!\$)\$(?!\$)([^$<\n]{1,60}?)\$(?!\$)')
+
+
+def _fix_dollar_math(html):
+    def conv(mo):
+        c = mo.group(1)
+        # math if it has a TeX indicator, or is a short space-free token ($10/$b);
+        # "$10 to $20" (spaces, no indicator) is left as prose.
+        if re.search(r"[\\_^{]", c) or (" " not in c and len(c) <= 30):
+            return f'<span class="math inline">\\({c}\\)</span>'
+        return mo.group(0)
+    return _DOLLAR_MATH_RE.sub(conv, html)
+
+
+def _cref_link(key, targets):
+    t = targets.get(key)
+    return f'<a class="xref" href="{t["url"] or "#"}">{t["label"]}</a>' if t else ""
+
+
+# formatting-only LaTeX commands (with an optional {arg}/star) — strip, keep text
+_FMT_CMD_RE = re.compile(
+    r"\\(?:raggedleft|arraybackslash|centering|cmidrule|hline|toprule|midrule|"
+    r"bottomrule|newpage|clearpage|ifdefined|fi|small|footnotesize|normalsize|"
+    r"vspace\*?|hspace\*?)\b(?:\{[^}]*\})?")
+
+
 def _clean_rawtex(html, targets):
+    """Clean `\\cmd…`{=latex} spans: map icons, keep content of wrappers, resolve
+    leaked \\cref, strip formatting-only commands — but KEEP any real cell text
+    (e.g. `\\arraybackslash 0`{=latex} → "0", not "")."""
     def sub(mo):
-        c = mo.group(1).strip()
-        mm = re.match(r"\\([a-zA-Z]+)", c)
-        cmd = mm.group(1) if mm else ""
-        if cmd in _RAWTEX_ICONS:
-            return _RAWTEX_ICONS[cmd]
-        fb = re.match(r"\\fbox\{(.*)\}$", c)
-        if fb:
-            return fb.group(1)
-        mc = re.match(r"\\mc\{[^}]*\}\{[^}]*\}\{(.*)\}$", c)  # multicolumn: keep content
-        if mc:
-            return mc.group(1)
-        cr = re.match(r"\\[cC]ref\{([^}]*)\}", c)  # leaked cross-ref
-        if cr:
-            t = targets.get(cr.group(1))
-            return (f'<a class="xref" href="{t["url"] or "#"}">{t["label"]}</a>'
-                    if t else "")
-        return ""  # formatting-only latex (raggedleft, cmidrule, …) → drop
+        c = mo.group(1)
+        for cmd, g in _RAWTEX_ICONS.items():
+            c = c.replace("\\" + cmd, g)
+        c = re.sub(r"\\fbox\{(.*?)\}", r"\1", c)
+        c = re.sub(r"\\mc\{[^}]*\}\{[^}]*\}\{(.*?)\}", r"\1", c)  # multicolumn
+        c = re.sub(r"\\(?:textbf|textit|texttt|emph|textsf)\{(.*?)\}", r"\1", c)
+        c = re.sub(r"\\[cC]ref\{([^}]*)\}",
+                   lambda m: _cref_link(m.group(1), targets), c)
+        c = _FMT_CMD_RE.sub("", c)
+        return c.strip()
     return _RAWTEX_RE.sub(sub, html)
+
+
+_TABLE_RE = re.compile(r"<table\b.*?</table>", re.S)
+
+
+def _clean_tables(html):
+    """Table cells often came from raw LaTeX un-processed: bare column-format
+    commands, literal `code` backticks, and single-$ math. Clean within tables
+    only (prose is untouched)."""
+    def fix(mo):
+        t = _FMT_CMD_RE.sub("", mo.group(0))
+        t = re.sub(r"`([^`\n]+)`",
+                   lambda m: "<code>" + m.group(1) + "</code>", t)
+        t = re.sub(r"(?<!\$)\$(?!\$)([^$<\n]+?)\$(?!\$)",
+                   lambda m: '<span class="math inline">\\(' + m.group(1)
+                   + '\\)</span>', t)
+        return t
+    return _TABLE_RE.sub(fix, html)
 
 
 # anchor type -> cross-reference label word (per-chapter numbered: "Table 3.1")
@@ -189,6 +232,8 @@ def number_artifact(data, references=None):
             if not html:
                 continue
             html = _clean_rawtex(html, targets)
+            html = _clean_tables(html)
+            html = _fix_dollar_math(html)
             hn = heading_numbers.get(sec["slug"], {})
             labels = {"lab": sec["number"] if _section_kind(sec) == "lab" else None}
 
