@@ -58,7 +58,17 @@ if [ -n "${CONTENT_REPO:-}" ] && [ -n "${ARTIFACT_ASSET:-}" ]; then
   [ -f "$APP_DIR/deploy/extra-media/cover.jpg" ] && COVER_ARG="--cover cover.jpg"
   ERRATA_ARG=""
   [ -f "$APP_DIR/deploy/errata.html" ] && ERRATA_ARG="--errata $APP_DIR/deploy/errata.html"
-  "$VENV/bin/python" manage.py import_artifact "$TMP/$ARTIFACT_ASSET" --slug "$BOOK_SLUG" $PREVIEW_ARG $REFS_ARG $COVER_ARG $ERRATA_ARG
+  # Import every downloaded artifact JSON. Edition-aware books ship one artifact
+  # per edition (set ARTIFACT_ASSET to a glob, e.g. "rtc.*.json"); each carries
+  # its own edition id and imports into its own row. Single-edition books match
+  # one file. Re-import is idempotent.
+  shopt -s nullglob
+  imported=0
+  for art in "$TMP"/*.json; do
+    "$VENV/bin/python" manage.py import_artifact "$art" --slug "$BOOK_SLUG" $PREVIEW_ARG $REFS_ARG $COVER_ARG $ERRATA_ARG
+    imported=$((imported + 1))
+  done
+  [ "$imported" -eq 0 ] && echo "==> warning: no artifact JSON matched '$ARTIFACT_ASSET'"
 else
   echo "==> no CONTENT_REPO/ARTIFACT_ASSET set; skipping content import"
 fi

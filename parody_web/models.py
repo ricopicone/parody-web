@@ -8,7 +8,17 @@ from django.db import models
 
 
 class Book(models.Model):
-    slug = models.SlugField(unique=True)
+    # A row is one *edition* of a book. Editions of the same book share a slug
+    # and are distinguished by edition_id; a single-edition book has
+    # edition_id="" and behaves exactly as before. parody build emits one
+    # artifact per edition (top-level `edition`/`editions` keys), each imported
+    # into its own row. The default (latest) edition serves at the site root;
+    # the others under /editions/<id>/. See parody's editions-p1-implementation.
+    slug = models.SlugField()
+    edition_id = models.CharField(max_length=64, blank=True, default="")
+    edition_title = models.CharField(max_length=200, blank=True, default="")
+    edition_default = models.BooleanField(default=False)
+    edition_order = models.PositiveIntegerField(default=0)  # switcher order
     title = models.CharField(max_length=300)
     description = models.TextField(blank=True)
     authors = models.JSONField(default=list, blank=True)
@@ -21,7 +31,19 @@ class Book(models.Model):
     cover_image = models.CharField(max_length=200, blank=True, default="")
     errata = models.TextField(blank=True, default="")  # rendered html, optional
 
+    class Meta:
+        unique_together = ("slug", "edition_id")
+        ordering = ["slug", "edition_order"]
+
+    @property
+    def is_default_edition(self):
+        """Default/latest edition (or a single-edition book) — served at the
+        site root with no /editions/<id>/ prefix."""
+        return self.edition_default or not self.edition_id
+
     def __str__(self):
+        if self.edition_id:
+            return f"{self.title} ({self.edition_title or self.edition_id})"
         return self.title
 
 

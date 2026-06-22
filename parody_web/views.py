@@ -21,12 +21,41 @@ def _excerpt(html, n=155):
     return text[:n].rsplit(" ", 1)[0] + "…" if len(text) > n else text
 
 
-def _current_book():
-    if getattr(settings, "BOOK_SLUG", ""):
-        return get_object_or_404(Book, slug=getattr(settings, "BOOK_SLUG", ""))
+def _book_slug():
+    """The slug of the book this deployment serves (BOOK_SLUG, else the only
+    imported book's slug)."""
+    s = getattr(settings, "BOOK_SLUG", "")
+    if s:
+        return s
     book = Book.objects.first()
     if book is None:
         raise Http404("no book imported")
+    return book.slug
+
+
+def _editions(slug):
+    """Every edition row for a book slug, in switcher order."""
+    return list(Book.objects.filter(slug=slug).order_by("edition_order", "id"))
+
+
+def _resolve_book(edition_id=None):
+    """Select the edition to serve and the full edition roster. With no
+    edition_id, serve the default edition (flagged, else the latest by order,
+    else the single row)."""
+    editions = _editions(_book_slug())
+    if not editions:
+        raise Http404("no book imported")
+    if edition_id:
+        book = next((b for b in editions if b.edition_id == edition_id), None)
+        if book is None:
+            raise Http404(f"no edition {edition_id!r}")
+        return book, editions
+    book = next((b for b in editions if b.edition_default), None) or editions[-1]
+    return book, editions
+
+
+def _current_book():
+    book, _ = _resolve_book()
     return book
 
 
@@ -39,8 +68,8 @@ def _all_sections_ordered(book):
         .order_by("chapter__order", "order"))
 
 
-def index(request):
-    book = _current_book()
+def index(request, edition_id=None):
+    book, editions = _resolve_book(edition_id)
     public = not request.user.is_authenticated
     chapters = []
     for ch in book.chapters.all():
@@ -48,13 +77,14 @@ def index(request):
         if sections:
             chapters.append((ch, sections))
     return render(request, "parody_web/index.html", {
-        "book": book, "chapters": chapters, "public": public,
+        "book": book, "editions": editions, "chapters": chapters,
+        "public": public,
         "meta_description": book.description or f"{book.title} — companion site.",
         "canonical_url": request.build_absolute_uri(request.path)})
 
 
-def section_detail(request, chapter_slug, section_slug):
-    book = _current_book()
+def section_detail(request, chapter_slug, section_slug, edition_id=None):
+    book, editions = _resolve_book(edition_id)
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
     # Sections flagged `preview` (in-print but not fully online) show a preview
@@ -66,7 +96,8 @@ def section_detail(request, chapter_slug, section_slug):
     prev_s = flat[idx - 1] if idx else None
     next_s = flat[idx + 1] if idx is not None and idx + 1 < len(flat) else None
     return render(request, "parody_web/section.html", {
-        "book": book, "section": section, "chapter": section.chapter,
+        "book": book, "editions": editions,
+        "section": section, "chapter": section.chapter,
         "prev": prev_s, "next": next_s,
         # The artifact html usually carries its own <h1>; only render the
         # template title when it doesn't (e.g. chapter "lead-in" intros).
@@ -79,12 +110,18 @@ def section_detail(request, chapter_slug, section_slug):
 
 
 def sitemap_xml(request):
-    """Plain XML sitemap (index + every section); no contrib.sitemaps/sites dep."""
-    book = _current_book()
+    """Plain XML sitemap (index + every section, across all editions); no
+    contrib.sitemaps/sites dep. The default edition sits at the root; other
+    editions under /editions/<id>/."""
+    editions = _editions(_book_slug())
     urls = [request.build_absolute_uri("/")]
-    for s in _all_sections_ordered(book):
-        urls.append(request.build_absolute_uri(
-            f"/{s.chapter.slug}/{s.slug}/"))
+    for book in editions:
+        prefix = "" if book.is_default_edition else f"editions/{book.edition_id}/"
+        if prefix:
+            urls.append(request.build_absolute_uri(f"/{prefix}"))
+        for s in _all_sections_ordered(book):
+            urls.append(request.build_absolute_uri(
+                f"/{prefix}{s.chapter.slug}/{s.slug}/"))
     body = ['<?xml version="1.0" encoding="UTF-8"?>',
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     body += [f"<url><loc>{u}</loc></url>" for u in urls]

@@ -9,7 +9,7 @@
 <meta property="og:description" content="{{ meta_description }}">
 {% endblock %}
 {% block body %}
-<nav class="crumbs"><a href="{% url 'parody_web:index' %}">{{ book.title }}</a>
+<nav class="crumbs"><a href="{% index_url book %}">{{ book.title }}</a>
   › {{ chapter.title }}</nav>
 
 {% if not title_in_html %}<h1>{{ section.title }}</h1>{% endif %}
@@ -36,7 +36,7 @@
 {% endif %}
 
 <nav class="pager">
-  {% if prev %}<a href="{% url 'parody_web:section' prev.chapter.slug prev.slug %}">← {{ prev.title }}</a>{% else %}<span></span>{% endif %}
-  {% if next %}<a href="{% url 'parody_web:section' next.chapter.slug next.slug %}">{{ next.title }} →</a>{% else %}<span></span>{% endif %}
+  {% if prev %}<a href="{% section_url book prev.chapter.slug prev.slug %}">← {{ prev.title }}</a>{% else %}<span></span>{% endif %}
+  {% if next %}<a href="{% section_url book next.chapter.slug next.slug %}">{{ next.title }} →</a>{% else %}<span></span>{% endif %}
 </nav>
 {% endblock %}

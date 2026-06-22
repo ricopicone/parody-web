@@ -95,18 +95,33 @@ class Command(BaseCommand):
             self._import(slug, data)
 
     def _import(self, slug, data):
-        book, _ = Book.objects.update_or_create(slug=slug, defaults={
-            "title": data.get("title", slug),
-            "description": data.get("description", ""),
-            "authors": data.get("author", []),
-            "book_metadata": data.get("book"),
-            "videos": data.get("videos"),
-            "apocrypha": data.get("apocrypha"),
-            "source_commit": data.get("source_commit") or "",
-            "built_at": data.get("built_at") or "",
-            "cover_image": self.cover,
-            "errata": self.errata,
-        })
+        # Edition metadata (parody build emits `edition` per-edition artifacts +
+        # an `editions` roster). Key the row by (slug, edition_id) so each
+        # edition is its own Book row; a non-edition artifact keys by (slug, "")
+        # and upserts a single row exactly as before.
+        edition = data.get("edition") or {}
+        edition_id = str(edition.get("id", ""))
+        roster = data.get("editions") or []
+        edition_order = next(
+            (i for i, e in enumerate(roster) if str(e.get("id")) == edition_id),
+            0)
+
+        book, _ = Book.objects.update_or_create(
+            slug=slug, edition_id=edition_id, defaults={
+                "edition_title": edition.get("title", ""),
+                "edition_default": bool(edition.get("default", False)),
+                "edition_order": edition_order,
+                "title": data.get("title", slug),
+                "description": data.get("description", ""),
+                "authors": data.get("author", []),
+                "book_metadata": data.get("book"),
+                "videos": data.get("videos"),
+                "apocrypha": data.get("apocrypha"),
+                "source_commit": data.get("source_commit") or "",
+                "built_at": data.get("built_at") or "",
+                "cover_image": self.cover,
+                "errata": self.errata,
+            })
 
         seen_ch, seen_sec = set(), set()
         for ci, ch in enumerate(data.get("chapters", [])):
@@ -144,6 +159,7 @@ class Command(BaseCommand):
                 ch.delete()
 
         n_sec = book.sections.count()
+        label = f"{slug} / {book.edition_id}" if book.edition_id else slug
         self.stdout.write(self.style.SUCCESS(
-            f"imported '{book.title}' ({slug}): {book.chapters.count()} chapters, "
+            f"imported '{book.title}' ({label}): {book.chapters.count()} chapters, "
             f"{n_sec} sections"))

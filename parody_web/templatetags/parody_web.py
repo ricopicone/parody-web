@@ -73,6 +73,25 @@ def url(*args, **kwargs):
 
 
 @register.simple_tag
+def index_url(book):
+    """TOC URL for a book edition — root for the default edition, else the
+    /editions/<id>/ prefix."""
+    if book is None or book.is_default_edition:
+        return reverse("parody_web:index")
+    return reverse("parody_web:edition_index", args=[book.edition_id])
+
+
+@register.simple_tag
+def section_url(book, chapter_slug, section_slug):
+    """Section URL within a book edition, keeping the edition prefix so all
+    in-edition navigation (TOC, breadcrumb, pager) stays on the same edition."""
+    if book is None or book.is_default_edition:
+        return reverse("parody_web:section", args=[chapter_slug, section_slug])
+    return reverse("parody_web:edition_section",
+                   args=[book.edition_id, chapter_slug, section_slug])
+
+
+@register.simple_tag
 def get_cell(*args, **kwargs):
     return mark_safe(
         '<span class="get-cell-placeholder" '
