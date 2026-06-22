@@ -20,7 +20,7 @@ import re
 from html import escape as _esc
 
 _HEADING_RE = re.compile(r'(<(h[1-6])\b[^>]*\bdata-h="(?P<hash>[^"]+)"[^>]*>)')
-_FIG_RE = re.compile(r'<figure\b[^>]*\bid="(?P<id>fig:[^"]+)"[^>]*>(?P<rest>.*?)</figure>',
+_FIG_RE = re.compile(r'<figure\b[^>]*\bid="(?P<id>[^"]+)"[^>]*>(?P<rest>.*?)</figure>',
                      re.S)
 _FIGCAP_RE = re.compile(r'(<figcaption[^>]*>)', re.S)
 _HASHREF_RE = re.compile(r'<span class="hashref">([^<]*)</span>')
@@ -86,6 +86,20 @@ def _clean_rawtex(html, targets):
     return _RAWTEX_RE.sub(sub, html)
 
 
+_MENU_RE = re.compile(r'<span class="menu">([^<]*)</span>')
+
+
+def _style_menus(html):
+    """A .menu span like "Run, Debug Configurations" is a menu path; the commas
+    are submenu delimiters → render boxed segments separated by › arrows."""
+    def sub(mo):
+        parts = [p.strip() for p in mo.group(1).split(",") if p.strip()]
+        inner = '<span class="m-arrow">›</span>'.join(
+            f'<span class="m-item">{p}</span>' for p in (parts or [mo.group(1)]))
+        return f'<span class="menu">{inner}</span>'
+    return _MENU_RE.sub(sub, html)
+
+
 _TABLE_RE = re.compile(r"<table\b.*?</table>", re.S)
 
 
@@ -145,7 +159,8 @@ def number_artifact(data, references=None):
     references = references or {}
     targets = {}          # hash/id -> {"label":..., "url":...}
     heading_numbers = {}  # per-section: hash -> number string (for html rewrite)
-    fig_numbers = {}      # per-section: fig-id -> number string
+    float_caps = {}       # per-section: float-id -> (label_word, number)
+    listing_caps = {}     # per-section: lst-id -> (number, caption)
     idx_state = {"arabic": 0, "appendix": 0}
     lab_n = 0
 
@@ -223,7 +238,25 @@ def number_artifact(data, references=None):
                 if a.get("hash"):
                     targets[a["hash"]] = entry
                 if t == "figure" and a.get("id"):
-                    fig_numbers.setdefault(sec["slug"], {})[a["id"]] = num
+                    float_caps.setdefault(sec["slug"], {})[a["id"]] = ("Figure", num)
+
+            # algorithms render as <figure id="al:.."|"alg:.."> (pseudocode SVGs)
+            # and listings as <div id="lst:.." class="listing" data-caption="..">;
+            # neither is in `anchors`, so scan the html in document order.
+            sh = sec.get("html") or ""
+            for fm in re.finditer(r'<figure\b[^>]*\bid="((?:al|alg):[^"]+)"', sh):
+                type_counters["algorithm"] = type_counters.get("algorithm", 0) + 1
+                num = f"{cnum}.{type_counters['algorithm']}"
+                targets[fm.group(1)] = {"label": f"Algorithm {num}",
+                                        "url": f"{url}#{fm.group(1)}"}
+                float_caps.setdefault(sec["slug"], {})[fm.group(1)] = ("Algorithm", num)
+            for lm in re.finditer(
+                    r'<div\b[^>]*\bid="(lst:[^"]+)"[^>]*\bdata-caption="([^"]*)"', sh):
+                type_counters["listing"] = type_counters.get("listing", 0) + 1
+                num = f"{cnum}.{type_counters['listing']}"
+                targets[lm.group(1)] = {"label": f"Listing {num}",
+                                        "url": f"{url}#{lm.group(1)}"}
+                listing_caps.setdefault(sec["slug"], {})[lm.group(1)] = (num, lm.group(2))
 
     # ---- pass 2: rewrite html (numbers in headings/figs, resolve hashrefs) ----
     for ch in data.get("chapters", []):
@@ -234,6 +267,7 @@ def number_artifact(data, references=None):
             html = _clean_rawtex(html, targets)
             html = _clean_tables(html)
             html = _fix_dollar_math(html)
+            html = _style_menus(html)
             hn = heading_numbers.get(sec["slug"], {})
             labels = {"lab": sec["number"] if _section_kind(sec) == "lab" else None}
 
@@ -246,17 +280,25 @@ def number_artifact(data, references=None):
                 return full
             html = _HEADING_RE.sub(num_heading, html)
 
-            fn = fig_numbers.get(sec["slug"], {})
-            if fn:
+            fc = float_caps.get(sec["slug"], {})
+            if fc:
                 def num_fig(mo):
                     fid = mo.group("id")
                     block = mo.group(0)
-                    if fid in fn:
+                    if fid in fc:
+                        word, num = fc[fid]
                         block = _FIGCAP_RE.sub(
-                            r'\1<span class="fignum">Figure ' + fn[fid] + r':</span> ',
-                            block, count=1)
+                            r'\1<span class="fignum">' + word + " " + num
+                            + r':</span> ', block, count=1)
                     return block
                 html = _FIG_RE.sub(num_fig, html)
+
+            for lid, (lnum, cap) in listing_caps.get(sec["slug"], {}).items():
+                cap_html = re.sub(r"`([^`]+)`", r"<code>\1</code>", cap)
+                inject = (f'<div class="listing-caption"><span class="fignum">'
+                          f'Listing {lnum}:</span> {cap_html}</div>')
+                html = re.sub(r'(<div\b[^>]*\bid="' + re.escape(lid) + r'"[^>]*>)',
+                              lambda mo, inj=inject: mo.group(1) + inj, html, count=1)
 
             def resolve(mo):
                 tgt = mo.group(1)

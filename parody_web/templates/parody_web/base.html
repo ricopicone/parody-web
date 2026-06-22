@@ -19,6 +19,7 @@ img { max-width: 100%; }
     padding: .8rem 1rem; font-family: system-ui, sans-serif; font-size: .95rem; }
 .secnum { color: #555; font-variant-numeric: tabular-nums; }
 .fignum { font-weight: bold; }
+.listing-caption { font-size: .9rem; color: #555; margin: .3rem 0; }
 pre { background: #f6f6f4; padding: .8rem 1rem; overflow-x: auto; font-size: .85rem; }
 table { border-collapse: collapse; } th, td { border: 1px solid #ccc; padding: .3rem .6rem; }
 details { margin: .4rem 0; } summary { cursor: pointer; }
@@ -37,10 +38,12 @@ section.references { border-top: 1px solid #ddd; margin-top: 2.5rem; font-size: 
 section.references ol { padding-left: 1.2rem; }
 section.references li { margin: .3rem 0; }
 /* keyboard keys / menu items (.key spans are empty; glyph via ::after) */
-.key, .keys, .menu { font-family: system-ui, sans-serif; font-size: .85em;
+.key, .keys, .menu .m-item { font-family: system-ui, sans-serif; font-size: .85em;
     border: 1px solid #c8c8c8; border-radius: 4px; padding: 0 .35em;
     background: #f8f8f8; box-shadow: 0 1px 0 #c8c8c8; white-space: nowrap; }
-.menu { background: #eef0fb; box-shadow: none; }
+.menu { white-space: nowrap; }
+.menu .m-item { background: #eef0fb; box-shadow: none; }
+.menu .m-arrow { color: #999; margin: 0 .15em; }
 .key.enter::after, .key.return::after { content: "\21B5"; }
 .key.leftarrow::after, .key.left::after { content: "\2190"; }
 .key.rightarrow::after, .key.right::after { content: "\2192"; }
