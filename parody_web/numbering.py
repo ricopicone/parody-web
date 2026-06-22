@@ -87,12 +87,24 @@ def _clean_rawtex(html, targets):
 
 
 _MENU_RE = re.compile(r'<span class="menu">([^<]*)</span>')
+# Eclipse debugger toolbar buttons referenced by token → icon (staged in media)
+_ECLIPSE_ICONS = {
+    "estepover": ("stepover", "Step Over"), "estepinto": ("stepinto", "Step Into"),
+    "estepreturn": ("stepreturn", "Step Return"), "eresume": ("resume", "Resume"),
+    "eterminate": ("terminate", "Terminate"),
+}
 
 
 def _style_menus(html):
     """A .menu span like "Run, Debug Configurations" is a menu path; the commas
-    are submenu delimiters → render boxed segments separated by › arrows."""
+    are submenu delimiters → boxed segments separated by › arrows. A few tokens
+    name Eclipse debugger buttons → render the toolbar icon instead."""
     def sub(mo):
+        val = mo.group(1).strip()
+        if val in _ECLIPSE_ICONS:
+            icon, label = _ECLIPSE_ICONS[val]
+            return (f'<img class="ebtn" src="{{% media \'{icon}.svg\' %}}" '
+                    f'alt="{label}" title="{label}">')
         parts = [p.strip() for p in mo.group(1).split(",") if p.strip()]
         inner = '<span class="m-arrow">›</span>'.join(
             f'<span class="m-item">{p}</span>' for p in (parts or [mo.group(1)]))

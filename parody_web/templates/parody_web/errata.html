@@ -1,0 +1,10 @@
+{% extends "parody_web/base.html" %}
+{% block title %}Errata — {{ book.title }}{% endblock %}
+{% block head_extra %}
+<meta name="description" content="{{ meta_description }}">
+<link rel="canonical" href="{{ canonical_url }}">
+{% endblock %}
+{% block body %}
+<nav class="crumbs"><a href="{% url 'parody_web:index' %}">{{ book.title }}</a> › Errata</nav>
+{{ book.errata|safe }}
+{% endblock %}

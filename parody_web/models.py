@@ -18,6 +18,8 @@ class Book(models.Model):
     apocrypha = models.JSONField(null=True, blank=True)
     source_commit = models.CharField(max_length=64, blank=True)
     built_at = models.CharField(max_length=40, blank=True)
+    cover_image = models.CharField(max_length=200, blank=True, default="")
+    errata = models.TextField(blank=True, default="")  # rendered html, optional
 
     def __str__(self):
         return self.title

@@ -92,6 +92,16 @@ def sitemap_xml(request):
     return HttpResponse("\n".join(body), content_type="application/xml")
 
 
+def errata(request):
+    book = _current_book()
+    if not book.errata:
+        raise Http404("no errata")
+    return render(request, "parody_web/errata.html", {
+        "book": book,
+        "meta_description": f"Errata and typos for {book.title}.",
+        "canonical_url": request.build_absolute_uri(request.path)})
+
+
 def robots_txt(request):
     sm = request.build_absolute_uri("/sitemap.xml")
     return HttpResponse(f"User-agent: *\nAllow: /\nSitemap: {sm}\n",

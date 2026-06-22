@@ -32,6 +32,10 @@ class Command(BaseCommand):
             help="path to a JSON map {bibkey: {label, full}} for resolving "
             "bibliography citations and per-section reference lists.",
         )
+        parser.add_argument(
+            "--cover", help="media filename for the cover image (e.g. cover.jpg)")
+        parser.add_argument(
+            "--errata", help="path to a rendered errata HTML fragment to serve at /errata")
 
     def handle(self, *args, **opts):
         path = opts["artifact"]
@@ -67,6 +71,16 @@ class Command(BaseCommand):
             except (OSError, ValueError) as e:
                 raise CommandError(f"could not read references {rp}: {e}")
 
+        self.cover = opts.get("cover") or ""
+        self.errata = ""
+        ep = opts.get("errata")
+        if ep:
+            try:
+                with open(ep, encoding="utf-8") as f:
+                    self.errata = f.read()
+            except OSError as e:
+                raise CommandError(f"could not read errata {ep}: {e}")
+
         # number chapters/sections/figures + resolve cross-references in-place
         number_artifact(data, references=references)
 
@@ -83,6 +97,8 @@ class Command(BaseCommand):
             "apocrypha": data.get("apocrypha"),
             "source_commit": data.get("source_commit") or "",
             "built_at": data.get("built_at") or "",
+            "cover_image": self.cover,
+            "errata": self.errata,
         })
 
         seen_ch, seen_sec = set(), set()

@@ -10,6 +10,8 @@
 </script>
 {% endblock %}
 {% block body %}
+{% load parody_web %}
+{% if book.cover_image %}<img class="cover" src="{% media book.cover_image %}" alt="{{ book.title }} cover">{% endif %}
 <h1>{{ book.title }}</h1>
 {% if book.authors %}<p><em>{{ book.authors|join:", " }}</em></p>{% endif %}
 {% if book.description %}<p>{{ book.description }}</p>{% endif %}
@@ -36,5 +38,6 @@
 {% endfor %}
 
 <p class="note">A partial web edition — selected sections are free to read; the
-rest are previews. Get the full book from the publisher (above).</p>
+rest are previews. Get the full book from the publisher (above).{% if book.errata %}
+· <a href="{% url 'parody_web:errata' %}">Errata</a>{% endif %}</p>
 {% endblock %}
