@@ -27,10 +27,10 @@
 {% endif %}
 
 {% for chapter, sections in chapters %}
-  <h2>{% if chapter.number %}{% if chapter.appendix %}Appendix {% endif %}{{ chapter.number }}. {% endif %}{{ chapter.title }}</h2>
+  <h2>{% if chapter.number %}{% if chapter.appendix %}Appendix {% endif %}{{ chapter.number }}. {% endif %}{{ chapter.title|code_spans }}</h2>
   <ul>
   {% for section in sections %}
-    <li>{% if section.number %}<span class="secnum">{{ section.number }}</span> {% endif %}<a href="{% section_url book chapter.slug section.slug %}">{{ section.title }}</a>
+    <li>{% if section.number %}<span class="secnum">{{ section.number }}</span> {% endif %}<a href="{% section_url book chapter.slug section.slug %}">{{ section.title|code_spans }}</a>
       {% if public and section.preview %}<span class="note">— preview</span>{% endif %}
     </li>
   {% endfor %}

@@ -1,18 +1,18 @@
 {% extends "parody_web/base.html" %}
 {% load parody_web %}
-{% block title %}{{ section.title }} — {{ book.title }}{% endblock %}
+{% block title %}{{ section.title|cut:"`" }} — {{ book.title }}{% endblock %}
 {% block head_extra %}
 <meta name="description" content="{{ meta_description }}">
 <link rel="canonical" href="{{ canonical_url }}">
 <meta property="og:type" content="article">
-<meta property="og:title" content="{{ section.title }} — {{ book.title }}">
+<meta property="og:title" content="{{ section.title|cut:"`" }} — {{ book.title }}">
 <meta property="og:description" content="{{ meta_description }}">
 {% endblock %}
 {% block body %}
 <nav class="crumbs"><a href="{% index_url book %}">{{ book.title }}</a>
-  › {{ chapter.title }}</nav>
+  › {{ chapter.title|code_spans }}</nav>
 
-{% if not title_in_html %}<h1>{{ section.title }}</h1>{% endif %}
+{% if not title_in_html %}<h1>{{ section.title|code_spans }}</h1>{% endif %}
 
 {% if preview %}
   {% if section.html %}<div class="preview">{{ section.html|render_book|truncatewords_html:150 }}</div>{% endif %}
@@ -36,7 +36,7 @@
 {% endif %}
 
 <nav class="pager">
-  {% if prev %}<a href="{% section_url book prev.chapter.slug prev.slug %}">← {{ prev.title }}</a>{% else %}<span></span>{% endif %}
-  {% if next %}<a href="{% section_url book next.chapter.slug next.slug %}">{{ next.title }} →</a>{% else %}<span></span>{% endif %}
+  {% if prev %}<a href="{% section_url book prev.chapter.slug prev.slug %}">← {{ prev.title|code_spans }}</a>{% else %}<span></span>{% endif %}
+  {% if next %}<a href="{% section_url book next.chapter.slug next.slug %}">{{ next.title|code_spans }} →</a>{% else %}<span></span>{% endif %}
 </nav>
 {% endblock %}

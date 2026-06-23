@@ -11,6 +11,7 @@ from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 
 from parody_web.models import Book, Section
+from parody_web.numbering import number_artifact
 from parody_web.templatetags.parody_web import render_book
 
 ARTIFACT = {
@@ -52,6 +53,58 @@ class RenderBookFilterTests(TestCase):
         out = render_book("{% cite 'k' %} <details><summary>s</summary>x</details>")
         self.assertIn('class="citation"', out)
         self.assertIn("<details>", out)
+
+    def test_code_spans_wraps_backticks_and_escapes(self):
+        from parody_web.templatetags.parody_web import code_spans
+        out = code_spans("Function `sos2header()` for <C>")
+        self.assertEqual(out, "Function <code>sos2header()</code> for &lt;C&gt;")
+        # titles with no backticks are just escaped, unchanged otherwise
+        self.assertEqual(code_spans("Plain title"), "Plain title")
+
+
+class CrossRefResolutionTests(TestCase):
+    """number_artifact resolves hashref spans, including the comma-separated
+    multi-target form ([a,b,c]{.hashref}) the print build emits for \\cref{a,b,c}."""
+
+    def _book(self):
+        # two chapters so chapter hashes resolve to "Chapter 1"/"Chapter 2"
+        return {
+            "chapters": [
+                {"title": "One", "slug": "one", "hash": "c1",
+                 "sections": [{"title": "S", "slug": "s1", "hash": "s1",
+                               "anchors": [], "html": ""}]},
+                {"title": "Two", "slug": "two", "hash": "c2",
+                 "sections": [{"title": "T", "slug": "t1", "hash": "t1",
+                               "anchors": [], "html": ""}]},
+            ]
+        }
+
+    def test_single_hashref_resolves(self):
+        data = self._book()
+        data["chapters"][0]["sections"][0]["html"] = (
+            '<p>see <span class="hashref">c2</span></p>')
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<a class="xref" href="/two/t1/">Chapter 2</a>', html)
+
+    def test_comma_multitarget_groups_and_links_each(self):
+        data = self._book()
+        data["chapters"][0]["sections"][0]["html"] = (
+            '<p>see <span class="hashref">c1,c2</span></p>')
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        # shared word factored out + pluralized, each number a link, "and" join
+        self.assertIn('Chapters <a class="xref" href="/one/s1/">1</a> and '
+                      '<a class="xref" href="/two/t1/">2</a>', html)
+
+    def test_partial_multitarget_left_as_is(self):
+        # if any member is unresolved we don't render a half-broken ref
+        data = self._book()
+        data["chapters"][0]["sections"][0]["html"] = (
+            '<p>see <span class="hashref">c1,zz</span></p>')
+        number_artifact(data)
+        self.assertIn('<span class="hashref">c1,zz</span>',
+                      data["chapters"][0]["sections"][0]["html"])
 
 
 @override_settings(BOOK_SLUG="demo-book")

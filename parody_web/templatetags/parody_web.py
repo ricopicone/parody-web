@@ -118,6 +118,25 @@ def auth_button(*args, href="", label="Download", **kwargs):
 _CSRF_RE = re.compile(r"\{%\s*csrf_token\s*%\}")
 
 
+_CODE_SPAN_RE = re.compile(r"`([^`]+)`")
+
+
+@register.filter(is_safe=True)
+def code_spans(text):
+    """Render Markdown backtick code spans in a heading/title as <code>…</code>,
+    HTML-escaping the rest. Section titles like "Function `sos2header()` for …"
+    carry literal backticks from the source; the TOC, breadcrumb and pager would
+    otherwise show them raw."""
+    text = str(text or "")
+    out, last = [], 0
+    for m in _CODE_SPAN_RE.finditer(text):
+        out.append(conditional_escape(text[last:m.start()]))
+        out.append(f"<code>{conditional_escape(m.group(1))}</code>")
+        last = m.end()
+    out.append(conditional_escape(text[last:]))
+    return mark_safe("".join(out))
+
+
 @register.filter(is_safe=True)
 def render_book(html):
     """Render stored Django-flavored html (defaults to '' for empty fields)."""

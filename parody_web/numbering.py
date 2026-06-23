@@ -56,9 +56,65 @@ def _fix_dollar_math(html):
     return _DOLLAR_MATH_RE.sub(conv, html)
 
 
+def _target_url(t):
+    """The href for a resolved target; chapter refs point at their first section."""
+    url = t.get("url")
+    if url is None and t.get("chapter"):
+        secs = t["chapter"].get("sections", [])
+        url = f"/{t['chapter']['slug']}/{secs[0]['slug']}/" if secs else "#"
+    return url or "#"
+
+
+def _lookup_target(tgt, targets):
+    """Resolve one cross-ref key to its target entry, with the sentence-start
+    'Fig:'/'Tbl:' capitalization fallback. Returns None if absent."""
+    t = targets.get(tgt)
+    if not t and tgt[:1].isupper():
+        t = targets.get(tgt[:1].lower() + tgt[1:])
+    return t
+
+
+def _link(label, url):
+    return f'<a class="xref" href="{url}">{label}</a>'
+
+
+def _join_oxford(parts):
+    if len(parts) <= 1:
+        return parts[0] if parts else ""
+    if len(parts) == 2:
+        return f"{parts[0]} and {parts[1]}"
+    return ", ".join(parts[:-1]) + ", and " + parts[-1]
+
+
+def _render_refs(tgt, targets):
+    """Resolve a cross-ref target, which may be a comma-separated list of keys
+    ([4n,us,rq]{.hashref} → "Chapters 2, 3, and 4", each number linked). When the
+    targets share a label word the word is factored out and pluralized; otherwise
+    the full labels are listed. Returns None if any key is unresolved (the caller
+    then leaves the span as-is rather than rendering a half-broken ref)."""
+    resolved = []
+    for k in (k.strip() for k in tgt.split(",")):
+        if not k:
+            continue
+        t = _lookup_target(k, targets)
+        if not t:
+            return None
+        resolved.append((t["label"], _target_url(t)))
+    if not resolved:
+        return None
+    if len(resolved) == 1:
+        return _link(*resolved[0])
+    words = {lbl.rsplit(" ", 1)[0] for lbl, _ in resolved if " " in lbl}
+    if len(words) == 1 and all(" " in lbl for lbl, _ in resolved):
+        word = next(iter(words))
+        nums = [_link(lbl.rsplit(" ", 1)[1], url) for lbl, url in resolved]
+        return f"{word}s {_join_oxford(nums)}"
+    return _join_oxford([_link(lbl, url) for lbl, url in resolved])
+
+
 def _cref_link(key, targets):
-    t = targets.get(key)
-    return f'<a class="xref" href="{t["url"] or "#"}">{t["label"]}</a>' if t else ""
+    out = _render_refs(key, targets)
+    return out if out is not None else ""
 
 
 # formatting-only LaTeX commands (with an optional {arg}/star) — strip, keep text
@@ -233,6 +289,14 @@ def number_artifact(data, references=None):
                         targets[h] = {"label": f"Section {sub}",
                                       "url": f"{url}#{anchor_id}"}
                         heading_numbers.setdefault(sec["slug"], {})[h] = sub
+                elif h:
+                    # subsection inside an unnumbered section (a lab/problems
+                    # section has no C.m number, so its subsections get none
+                    # either). Still register the heading so refs to it land —
+                    # labelled by its title (backticks are markdown, drop them).
+                    title = (a.get("title") or "").replace("`", "")
+                    targets[h] = {"label": title,
+                                  "url": f"{url}#{anchor_id}"}
 
             # non-heading targets (figures, tables, equations, exercises, …),
             # numbered per chapter per type in anchor (document) order. The
@@ -313,17 +377,9 @@ def number_artifact(data, references=None):
                               lambda mo, inj=inject: mo.group(1) + inj, html, count=1)
 
             def resolve(mo):
-                tgt = mo.group(1)
-                t = targets.get(tgt)
-                if not t and tgt[:1].isupper():  # sentence-start "Fig:"/"Tbl:"
-                    t = targets.get(tgt[:1].lower() + tgt[1:])
-                if not t:
-                    return mo.group(0)  # leave unresolved refs (missing targets) as-is
-                url = t["url"]
-                if url is None and t.get("chapter"):  # chapter ref → first section
-                    secs = t["chapter"].get("sections", [])
-                    url = f"/{t['chapter']['slug']}/{secs[0]['slug']}/" if secs else "#"
-                return f'<a class="xref" href="{url or "#"}">{t["label"]}</a>'
+                out = _render_refs(mo.group(1), targets)
+                # leave unresolved refs (missing targets) as-is
+                return out if out is not None else mo.group(0)
             html = _HASHREF_RE.sub(resolve, html)
 
             cited = []  # bib keys cited in this section, in order
