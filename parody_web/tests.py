@@ -129,14 +129,48 @@ class CrossRefResolutionTests(TestCase):
         targets = number_artifact(data)
         self.assertEqual(targets["fig:solo"]["label"], "Figure 1.1")
         self.assertEqual(targets["fig:multi"]["label"], "Figure 1.2")
-        self.assertEqual(targets["fig:pa"]["label"], "Figure 1.2(a)")
-        self.assertEqual(targets["fig:pb"]["label"], "Figure 1.2(b)")
+        self.assertEqual(targets["fig:pa"]["label"], "Figure 1.2a")
+        self.assertEqual(targets["fig:pb"]["label"], "Figure 1.2b")
         html = data["chapters"][0]["sections"][0]["html"]
-        # refs resolve; captions get the shared number + panel letters injected
-        self.assertIn('<a class="xref" href="/c/s/#fig:multi">Figure 1.2</a>', html)
-        self.assertIn('<a class="xref" href="/c/s/#fig:pb">Figure 1.2(b)</a>', html)
+        # refs resolve; captions get the shared number + panel letters injected.
+        # lowercase keys ([fig:…]) render lowercase labels (task #296).
+        self.assertIn('<a class="xref" href="/c/s/#fig:multi">figure 1.2</a>', html)
+        self.assertIn('<a class="xref" href="/c/s/#fig:pb">figure 1.2b</a>', html)
         self.assertIn('<span class="fignum">Figure 1.2:</span>', html)
         self.assertIn('<span class="subfignum">(a)</span> First.', html)
+
+    def test_ref_label_follows_key_case(self):
+        # task #296: lookup is case-insensitive but the label follows the key's
+        # case — [@fig:x] -> "figure 1.1", [@Fig:x] -> "Figure 1.1". The
+        # capitalized citation must resolve at all (it didn't before: the
+        # target is keyed lowercase, so a case-sensitive .get missed it).
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "fig:plot", "type": "figure"}], "html":
+                '<p>lower <span class="citation" data-cites="fig:plot">'
+                '[@fig:plot]</span>, upper <span class="citation" '
+                'data-cites="Fig:plot">[@Fig:plot]</span>, hashref '
+                '<span class="hashref">Fig:plot</span>.</p>'}]}]}
+        targets = number_artifact(data)
+        # the stored label is canonical (capitalized); case is applied per-ref
+        self.assertEqual(targets["fig:plot"]["label"], "Figure 1.1")
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('href="/c/s/#fig:plot">figure 1.1</a>', html)  # [@fig:…]
+        self.assertIn('href="/c/s/#fig:plot">Figure 1.1</a>', html)  # [@Fig:…]
+
+    def test_equation_refs_are_parenthesized(self):
+        # task #296 follow-up: equation cross-refs read "equation (3.2)".
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:euler", "type": "equation"}], "html":
+                '<p>see <span class="citation" data-cites="eq:euler">'
+                '[@eq:euler]</span> and <span class="citation" '
+                'data-cites="Eq:euler">[@Eq:euler]</span>.</p>'}]}]}
+        targets = number_artifact(data)
+        self.assertEqual(targets["eq:euler"]["label"], "Equation (1.1)")
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('href="/c/s/#eq:euler">equation (1.1)</a>', html)
+        self.assertIn('href="/c/s/#eq:euler">Equation (1.1)</a>', html)
 
     def _rights_book(self, preview):
         return {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
