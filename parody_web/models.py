@@ -12,8 +12,9 @@ class Book(models.Model):
     # and are distinguished by edition_id; a single-edition book has
     # edition_id="" and behaves exactly as before. parody build emits one
     # artifact per edition (top-level `edition`/`editions` keys), each imported
-    # into its own row. The default (latest) edition serves at the site root;
-    # the others under /editions/<id>/. See parody's editions-p1-implementation.
+    # into its own row. The default (latest) edition serves at the bare URLs;
+    # the others are selected with a ?ed=<id> query (a section keeps one stable
+    # path across editions). See parody's editions-p1-implementation.
     slug = models.SlugField()
     edition_id = models.CharField(max_length=64, blank=True, default="")
     edition_title = models.CharField(max_length=200, blank=True, default="")
@@ -45,7 +46,7 @@ class Book(models.Model):
     @property
     def is_default_edition(self):
         """Default/latest edition (or a single-edition book) — served at the
-        site root with no /editions/<id>/ prefix."""
+        bare URLs with no ?ed=<id> query."""
         return self.edition_default or not self.edition_id
 
     def __str__(self):

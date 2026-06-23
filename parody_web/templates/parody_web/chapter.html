@@ -1,0 +1,45 @@
+{% extends "parody_web/base.html" %}
+{% load parody_web %}
+{% block title %}{{ chapter.title|cut:"`" }} — {{ book.title }}{% endblock %}
+{% block head_extra %}
+<meta name="description" content="{{ meta_description }}">
+<link rel="canonical" href="{{ canonical_url }}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{{ chapter.title|cut:"`" }} — {{ book.title }}">
+<meta property="og:description" content="{{ meta_description }}">
+{% endblock %}
+{% block body %}
+<nav class="crumbs"><a href="{% index_url book %}">{{ book.title }}</a></nav>
+
+<h1>{% if chapter.number %}{% if chapter.appendix %}Appendix {% endif %}{{ chapter.number }}. {% endif %}{{ chapter.title|code_spans }}</h1>
+
+{% if leadin %}
+  {% if preview %}
+    {% if leadin.html %}<div class="preview">{{ leadin.html|render_book|truncatewords_html:150 }}</div>{% endif %}
+    <div class="signin-gate">
+      {% with ed=book.book_metadata.editions.0 %}
+      <p><strong>This is a preview.</strong> Read the full book in print or ebook —
+        {% if ed.url_publisher %}<a href="{{ ed.url_publisher }}">get it from {{ ed.publisher|default:"the publisher" }}</a>{% else %}available from the publisher{% endif %}{% if ed.isbn %} (ISBN {{ ed.isbn }}){% endif %}.</p>
+      {% endwith %}
+      <p class="note">Instructor with access? <a href="{% url 'login' %}?next={{ next_path|urlencode }}">Instructor login</a>.</p>
+    </div>
+  {% elif leadin.html %}
+    {{ leadin.html|render_book }}
+  {% endif %}
+{% endif %}
+
+{% if contents %}
+<h2>Chapter contents</h2>
+<ul class="toc">
+{% for section in contents %}
+  <li>{% if section.number %}<span class="secnum">{{ section.number }}</span> {% endif %}<a href="{% section_url book chapter.slug section.slug %}">{{ section.title|code_spans }}</a>
+    {% if public and section.preview %}<span class="note">— preview</span>{% endif %}
+  </li>
+{% endfor %}
+</ul>
+{% endif %}
+
+{% if first %}
+<p><a class="continue-button" href="{% section_url book chapter.slug first.slug %}">Start reading: {{ first.title|code_spans }} →</a></p>
+{% endif %}
+{% endblock %}

@@ -88,8 +88,15 @@ class Command(BaseCommand):
         if not self.errata:
             self.errata = data.get("errata") or ""
 
-        # number chapters/sections/figures + resolve cross-references in-place
-        number_artifact(data, references=references)
+        # number chapters/sections/figures + resolve cross-references in-place.
+        # Non-default editions bake ?ed=<id> into their cross-ref links so
+        # in-edition navigation stays on that edition; the default (and any
+        # single-edition book) uses the bare URLs.
+        edition = data.get("edition") or {}
+        edition_id = str(edition.get("id", ""))
+        is_default = bool(edition.get("default", False)) or not edition_id
+        edition_query = "" if is_default else f"?ed={edition_id}"
+        number_artifact(data, references=references, edition_query=edition_query)
 
         with transaction.atomic():
             self._import(slug, data)

@@ -72,31 +72,40 @@ def url(*args, **kwargs):
         return "#"
 
 
+def _ed_query(book):
+    """The ?ed=<id> suffix that addresses `book`'s edition — empty for the
+    default edition (and single-edition books), which live at the bare URLs. So
+    a section keeps one stable path; the query only selects the variant."""
+    if book is None or book.is_default_edition:
+        return ""
+    return f"?ed={book.edition_id}"
+
+
 @register.simple_tag
 def index_url(book):
-    """TOC URL for a book edition — root for the default edition, else the
-    /editions/<id>/ prefix."""
-    if book is None or book.is_default_edition:
-        return reverse("parody_web:index")
-    return reverse("parody_web:edition_index", args=[book.edition_id])
+    """TOC URL for a book edition (bare for default, else ?ed=<id>)."""
+    return reverse("parody_web:index") + _ed_query(book)
+
+
+@register.simple_tag
+def chapter_url(book, chapter_slug):
+    """Chapter landing-page URL, keeping the edition (?ed=) so navigation stays
+    on the same edition."""
+    return reverse("parody_web:chapter", args=[chapter_slug]) + _ed_query(book)
 
 
 @register.simple_tag
 def section_url(book, chapter_slug, section_slug):
-    """Section URL within a book edition, keeping the edition prefix so all
-    in-edition navigation (TOC, breadcrumb, pager) stays on the same edition."""
-    if book is None or book.is_default_edition:
-        return reverse("parody_web:section", args=[chapter_slug, section_slug])
-    return reverse("parody_web:edition_section",
-                   args=[book.edition_id, chapter_slug, section_slug])
+    """Section URL, keeping the edition (?ed=) so all in-edition navigation
+    (TOC, breadcrumb, pager) stays on the same edition."""
+    return (reverse("parody_web:section", args=[chapter_slug, section_slug])
+            + _ed_query(book))
 
 
 @register.simple_tag
 def systems_url(book, version):
     """URL of a system's parts catalog within the current edition."""
-    if book is None or book.is_default_edition:
-        return reverse("parody_web:systems", args=[version])
-    return reverse("parody_web:edition_systems", args=[book.edition_id, version])
+    return reverse("parody_web:systems", args=[version]) + _ed_query(book)
 
 
 @register.simple_tag

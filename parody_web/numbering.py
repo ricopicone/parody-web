@@ -74,6 +74,23 @@ def _lookup_target(tgt, targets):
     return t
 
 
+def _recase_label(label, key):
+    """Make a cross-ref label follow the case of the reference key's first
+    letter (task #296): [@fig:x] -> "figure 1.2", [@Fig:x] -> "Figure 1.2".
+    Only typed keys ("prefix:rest", e.g. fig:/tbl:/eq:/sec:) carry case intent;
+    a bare heading hash like "qb" does not, so its label keeps the default
+    (capitalized) form. Lookup itself stays case-insensitive (see
+    _lookup_target); only the displayed label's first letter is adjusted."""
+    if ":" not in key or not label:
+        return label
+    first = key[:1]
+    if first.isupper():
+        return label[:1].upper() + label[1:]
+    if first.islower():
+        return label[:1].lower() + label[1:]
+    return label
+
+
 def _link(label, url):
     return f'<a class="xref" href="{url}">{label}</a>'
 
@@ -99,7 +116,7 @@ def _render_refs(tgt, targets):
         t = _lookup_target(k, targets)
         if not t:
             return None
-        resolved.append((t["label"], _target_url(t)))
+        resolved.append((_recase_label(t["label"], k), _target_url(t)))
     if not resolved:
         return None
     if len(resolved) == 1:
@@ -270,11 +287,15 @@ def _section_kind(sec):
     return "normal"
 
 
-def number_artifact(data, references=None):
+def number_artifact(data, references=None, edition_query=""):
     """Mutate `data` in place: set chapter['number'] / section['number'] and
     rewrite section['html'] with numbered headings/figures and resolved refs.
     `references` maps a bib key -> {"label","full"}; bibliography citations are
-    linked and a per-section References list is appended. Returns the target map."""
+    linked and a per-section References list is appended. Returns the target map.
+
+    `edition_query` (e.g. "?ed=ed1") is appended to every in-site cross-ref URL
+    so links inside a non-default edition stay on that edition; it is "" for the
+    default (and single-edition) artifact, which lives at the bare URLs."""
     references = references or {}
     targets = {}          # hash/id -> {"label":..., "url":...}
     heading_numbers = {}  # per-section: hash -> number string (for html rewrite)
@@ -289,13 +310,16 @@ def number_artifact(data, references=None):
         cnum = _chapter_label(ch, idx_state)
         ch["number"] = cnum
         if ch.get("hash"):
-            targets[ch["hash"]] = {"label": f"Chapter {cnum}", "url": None,
+            secs = ch.get("sections", [])
+            ch_url = (f"/{ch['slug']}/{secs[0]['slug']}/{edition_query}"
+                      if secs else None)
+            targets[ch["hash"]] = {"label": f"Chapter {cnum}", "url": ch_url,
                                    "chapter": ch}
         sec_m = 0
         type_counters = {}  # per-chapter counters for figure/table/equation/…
         for sec in ch.get("sections", []):
             kind = _section_kind(sec)
-            url = f"/{ch['slug']}/{sec['slug']}/"
+            url = f"/{ch['slug']}/{sec['slug']}/{edition_query}"
             if kind == "normal":
                 sec_m += 1
                 secnum = f"{cnum}.{sec_m}"
@@ -368,7 +392,10 @@ def number_artifact(data, references=None):
                     continue  # a subfigure panel; numbered with its parent below
                 type_counters[t] = type_counters.get(t, 0) + 1
                 num = f"{cnum}.{type_counters[t]}"
-                entry = {"label": f"{_TYPE_LABELS[t]} {num}",
+                # equations are referenced with the number in parentheses,
+                # matching cleveref's print convention: "equation (3.2)".
+                num_disp = f"({num})" if t == "equation" else num
+                entry = {"label": f"{_TYPE_LABELS[t]} {num_disp}",
                          "url": f"{url}#{a.get('id', '')}"}
                 if a.get("id"):
                     targets[a["id"]] = entry
@@ -380,7 +407,9 @@ def number_artifact(data, references=None):
                     lettered = []
                     for i, sid in enumerate(sf_children[a["id"]]):
                         letter = chr(97 + i)
-                        targets[sid] = {"label": f"Figure {num}({letter})",
+                        # cross-refs read "Figure 3.1b" (letter appended); the
+                        # panel's own sub-caption leads with "(b)" (see pass 2).
+                        targets[sid] = {"label": f"Figure {num}{letter}",
                                         "url": f"{url}#{sid}"}
                         lettered.append((sid, letter))
                     subfig_caps.setdefault(sec["slug"], {})[a["id"]] = (num, lettered)
@@ -450,9 +479,12 @@ def number_artifact(data, references=None):
                     r'\1<span class="fignum">Figure ' + num + ':</span> ',
                     html, count=1, flags=re.S)
                 for sid, letter in lettered:
+                    # bound to the panel's OWN figcaption (stop at its </figure>)
+                    # so a label-suppressed (tabular) panel with no figcaption
+                    # doesn't pull the letter into a later panel's caption.
                     html = re.sub(
                         r'(<figure id="' + re.escape(sid) + r'" '
-                        r'class="subfigure">.*?<figcaption>)',
+                        r'class="subfigure">(?:(?!</figure>).)*?<figcaption>)',
                         r'\1<span class="subfignum">(' + letter + ')</span> ',
                         html, count=1, flags=re.S)
 
@@ -475,10 +507,11 @@ def number_artifact(data, references=None):
                 keys = mo.group(1).split()
                 parts = []
                 for k in keys:
-                    t = targets.get(k)
-                    if t:  # cross-reference written as [@fig:x]/[@tbl:x]
+                    t = _lookup_target(k, targets)
+                    if t:  # cross-reference written as [@fig:x]/[@Fig:x]/[@tbl:x]
+                        label = _recase_label(t["label"], k)
                         parts.append(
-                            f'<a class="xref" href="{t["url"] or "#"}">{t["label"]}</a>')
+                            f'<a class="xref" href="{t["url"] or "#"}">{label}</a>')
                     elif k in references:  # real bibliography citation
                         if k not in cited:
                             cited.append(k)
