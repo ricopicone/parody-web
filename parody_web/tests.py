@@ -138,6 +138,29 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<span class="fignum">Figure 1.2:</span>', html)
         self.assertIn('<span class="subfignum">(a)</span> First.', html)
 
+    def _rights_book(self, preview):
+        return {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "preview": preview, "anchors": [
+                {"id": "fig:ni", "type": "figure"}], "html":
+                '<figure id="fig:ni" class="figure" data-permission="permission">'
+                "<img src='/media/ni.svg'>"
+                '<figcaption class="figure-caption">NI figure.</figcaption></figure>'}]}]}
+
+    def test_rights_figure_placeholdered_on_public_page(self):
+        data = self._rights_book(preview=None)  # public-facing section
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertNotIn("<img", html)               # image withheld
+        self.assertIn("rights-placeholder", html)
+        self.assertIn('<span class="fignum">Figure 1.1:</span>', html)  # still numbered
+
+    def test_rights_figure_shown_on_preview_page(self):
+        data = self._rights_book(preview=True)       # gated section → show normally
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn("<img", html)
+        self.assertNotIn("rights-placeholder", html)
+
 
 @override_settings(BOOK_SLUG="demo-book")
 class BookHostGatingTests(TestCase):

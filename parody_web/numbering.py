@@ -228,6 +228,37 @@ def _subfig_structure(html):
     return children
 
 
+_RIGHTS_FIG_RE = re.compile(r'<figure\b[^>]*\bdata-permission="permission"')
+_RIGHTS_IMG_RE = re.compile(r'<img\b[^>]*\bdata-permission="permission"[^>]*>')
+_FIG_DELIM_RE = re.compile(r'<figure\b|</figure>')
+_IMG_RE = re.compile(r'<img\b[^>]*>')
+_RIGHTS_PLACEHOLDER = ('<div class="rights-placeholder">Figure available in the '
+                       'print and ebook editions.</div>')
+
+
+def _gate_rights_figures(html):
+    """Replace the image(s) of permission=permission figures with a print-only
+    placeholder (keeping caption + number). Two carriers: subfigure floats tag the
+    outer <figure data-permission> (replace every panel img, via a balanced scan);
+    single figures tag the <img data-permission> itself."""
+    out, pos = [], 0
+    for m in _RIGHTS_FIG_RE.finditer(html):
+        if m.start() < pos:
+            continue  # already handled (nested inside a prior rights figure)
+        depth, end = 0, len(html)
+        for d in _FIG_DELIM_RE.finditer(html, m.start()):
+            depth += 1 if d.group(0) == "<figure" else -1
+            if depth == 0:
+                end = d.end()
+                break
+        out.append(html[pos:m.start()])
+        out.append(_IMG_RE.sub(_RIGHTS_PLACEHOLDER, html[m.start():end]))
+        pos = end
+    html = "".join(out) + html[pos:]
+    # single figures: the <img> itself carries the flag
+    return _RIGHTS_IMG_RE.sub(_RIGHTS_PLACEHOLDER, html)
+
+
 def _section_kind(sec):
     html = sec.get("html") or ""
     if (sec.get("title") or "").strip().lower() == "problems":
@@ -463,6 +494,12 @@ def number_artifact(data, references=None):
                                 for k in cited)
                 html += ('<section class="references"><h2>References</h2>'
                          f'<ol>{items}</ol></section>')
+
+            # Rights-restricted figures (permission=permission, licensed art) are
+            # shown on gated/preview pages but NOT on public ones — there the
+            # image is swapped for a print-only placeholder (caption/number stay).
+            if not sec.get("preview"):
+                html = _gate_rights_figures(html)
 
             sec["html"] = html
     return targets
