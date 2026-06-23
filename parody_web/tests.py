@@ -223,6 +223,22 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn("<img", html)
         self.assertNotIn("rights-placeholder", html)
 
+    def test_captionless_figure_promoted_to_numbered_figure(self):
+        # a caption-less standalone figure renders as a bare <img id="fig:x">
+        # (no <figure>); it should be promoted to a numbered <figure>.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s",
+                "anchors": [{"id": "fig:x", "type": "figure"}],
+                "html": '<div class="center"><p>'
+                        '<img src="/m/x.svg" id="fig:x" class="figure-img"></p></div>'
+                        '<p>see <span class="hashref">fig:x</span></p>'}]}]}
+        targets = number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertEqual(targets["fig:x"]["label"], "Figure 1.1")
+        self.assertIn('<figure id="fig:x" class="figure">', html)
+        self.assertIn('<span class="fignum">Figure 1.1:</span>', html)
+        self.assertIn('<a class="xref" href="/c/s/#fig:x">figure 1.1</a>', html)
+
 
 @override_settings(BOOK_SLUG="demo-book")
 class BookHostGatingTests(TestCase):

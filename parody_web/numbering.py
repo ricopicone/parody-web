@@ -470,6 +470,20 @@ def number_artifact(data, references=None, edition_query=""):
                     return block
                 html = _FIG_RE.sub(num_fig, html)
 
+                # a caption-less standalone figure renders as a bare <img id="fig:x">
+                # (no <figure>/<figcaption> for num_fig to hit) — promote it to a
+                # numbered <figure> so the ref lands and the number shows.
+                for fid, (word, num) in fc.items():
+                    if f'id="{fid}"' in html and f'<figure id="{fid}"' not in html:
+                        def promote(mo, fid=fid, word=word, num=num):
+                            img = re.sub(r'\s*\bid="[^"]*"', '', mo.group(0))
+                            return (f'<figure id="{fid}" class="figure">{img}'
+                                    f'<figcaption class="figure-caption">'
+                                    f'<span class="fignum">{word} {num}:</span>'
+                                    f'</figcaption></figure>')
+                        html = re.sub(r'<img\b[^>]*\bid="' + re.escape(fid)
+                                      + r'"[^>]*>', promote, html, count=1)
+
             # subfigure floats: inject the shared "Figure C.n:" into the main
             # caption and "(a)" … into each panel (done here, not via _FIG_RE,
             # because the nested <figure>s confuse its non-greedy match).
