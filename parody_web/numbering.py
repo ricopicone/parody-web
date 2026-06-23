@@ -287,11 +287,15 @@ def _section_kind(sec):
     return "normal"
 
 
-def number_artifact(data, references=None):
+def number_artifact(data, references=None, edition_query=""):
     """Mutate `data` in place: set chapter['number'] / section['number'] and
     rewrite section['html'] with numbered headings/figures and resolved refs.
     `references` maps a bib key -> {"label","full"}; bibliography citations are
-    linked and a per-section References list is appended. Returns the target map."""
+    linked and a per-section References list is appended. Returns the target map.
+
+    `edition_query` (e.g. "?ed=ed1") is appended to every in-site cross-ref URL
+    so links inside a non-default edition stay on that edition; it is "" for the
+    default (and single-edition) artifact, which lives at the bare URLs."""
     references = references or {}
     targets = {}          # hash/id -> {"label":..., "url":...}
     heading_numbers = {}  # per-section: hash -> number string (for html rewrite)
@@ -306,13 +310,16 @@ def number_artifact(data, references=None):
         cnum = _chapter_label(ch, idx_state)
         ch["number"] = cnum
         if ch.get("hash"):
-            targets[ch["hash"]] = {"label": f"Chapter {cnum}", "url": None,
+            secs = ch.get("sections", [])
+            ch_url = (f"/{ch['slug']}/{secs[0]['slug']}/{edition_query}"
+                      if secs else None)
+            targets[ch["hash"]] = {"label": f"Chapter {cnum}", "url": ch_url,
                                    "chapter": ch}
         sec_m = 0
         type_counters = {}  # per-chapter counters for figure/table/equation/…
         for sec in ch.get("sections", []):
             kind = _section_kind(sec)
-            url = f"/{ch['slug']}/{sec['slug']}/"
+            url = f"/{ch['slug']}/{sec['slug']}/{edition_query}"
             if kind == "normal":
                 sec_m += 1
                 secnum = f"{cnum}.{sec_m}"

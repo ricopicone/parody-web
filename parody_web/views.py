@@ -10,10 +10,11 @@ import re
 
 from django.conf import settings
 from django.http import Http404, HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils.html import strip_tags
 
-from .models import Book, Section
+from .models import Book, Chapter, Section
 
 # Django-template tags embedded in stored html ({% media %}, {{ x }}); strip
 # them from meta-description snippets so raw tags never leak into <meta>.
@@ -48,18 +49,18 @@ def _is_owner(request):
     return bool(request and request.user.is_authenticated)
 
 
-def _resolve_book(request, edition_id=None):
-    """Select the edition to serve and the visible edition roster.
+def _resolve_book(request):
+    """Select the edition to serve (from ?ed=<id>) and the visible roster.
 
     Draft editions are owner-only: hidden from the public switcher, skipped for
-    the public default, and their pages 404 for anonymous visitors. With no
-    edition_id, serve the default edition (flagged, else the latest by order)
-    among the visible ones."""
+    the public default, and 404 for anonymous visitors. With no ?ed=, serve the
+    default edition (flagged, else the latest by order) among the visible ones."""
     everything = _editions(_book_slug())
     if not everything:
         raise Http404("no book imported")
     owner = _is_owner(request)
     visible = everything if owner else [b for b in everything if not b.draft]
+    edition_id = request.GET.get("ed") if request else None
     if edition_id:
         book = next((b for b in everything if b.edition_id == edition_id), None)
         if book is None or (book.draft and not owner):
@@ -69,6 +70,14 @@ def _resolve_book(request, edition_id=None):
         raise Http404("no published edition")
     book = next((b for b in visible if b.edition_default), None) or visible[-1]
     return book, visible
+
+
+def _ed_query(book):
+    """The ?ed=<id> suffix needed to address `book`'s edition — empty for the
+    default edition (and single-edition books), which live at the bare URLs."""
+    if book is None or book.is_default_edition:
+        return ""
+    return f"?ed={book.edition_id}"
 
 
 def _current_book(request=None):
@@ -85,8 +94,40 @@ def _all_sections_ordered(book):
         .order_by("chapter__order", "order"))
 
 
-def index(request, edition_id=None):
-    book, editions = _resolve_book(request, edition_id)
+def _resolve_code(request, code):
+    """Map a printed short code (a chapter/section/figure/exercise hash, or a
+    float id like ``fig:bode``) to a canonical in-site URL.
+
+    The code QR-printed in the book never changes, but editions reorganize
+    content, so we resolve to the LATEST visible edition that still contains the
+    code (falling back to older editions if a newer one dropped it). Matching is
+    case-insensitive. Returns the URL (with ?ed= and #anchor as needed) or None."""
+    code = (code or "").strip().lstrip("#").lower()
+    if not code:
+        return None
+    owner = _is_owner(request)
+    editions = [b for b in _editions(_book_slug()) if owner or not b.draft]
+    # newest edition first ("latest that still has it")
+    for book in sorted(editions, key=lambda b: b.edition_order, reverse=True):
+        ed_q = _ed_query(book)
+        for ch in book.chapters.all():
+            if ch.hash and ch.hash.lower() == code:
+                return reverse("parody_web:chapter", args=[ch.slug]) + ed_q
+        for sec in book.sections.select_related("chapter"):
+            base = reverse("parody_web:section",
+                           args=[sec.chapter.slug, sec.slug])
+            if sec.hash and sec.hash.lower() == code:
+                return base + ed_q
+            for a in (sec.anchors or []):
+                if code in ((a.get("hash") or "").lower(),
+                            (a.get("id") or "").lower()):
+                    anchor = a.get("id") or ""
+                    return base + ed_q + (f"#{anchor}" if anchor else "")
+    return None
+
+
+def index(request):
+    book, editions = _resolve_book(request)
     public = not request.user.is_authenticated
     chapters = []
     for ch in book.chapters.all():
@@ -100,8 +141,43 @@ def index(request, edition_id=None):
         "canonical_url": request.build_absolute_uri(request.path)})
 
 
-def section_detail(request, chapter_slug, section_slug, edition_id=None):
-    book, editions = _resolve_book(request, edition_id)
+def chapter_detail(request, chapter_slug):
+    """A chapter's landing page: the chapter lead-in prose (if any), the list of
+    the chapter's sections (as on the index), and a continue button into the
+    first section. The lead-in is no longer a separate TOC line — it lives here."""
+    book, editions = _resolve_book(request)
+    chapter = Chapter.objects.filter(book=book, slug=chapter_slug).first()
+    if chapter is None:
+        # A printed short code with a trailing slash (e.g. /q9/) lands here too;
+        # try resolving it before giving up.
+        target = _resolve_code(request, chapter_slug)
+        if target:
+            return redirect(target)
+        raise Http404(f"no chapter {chapter_slug!r}")
+    public = not request.user.is_authenticated
+
+    sections = list(chapter.sections.all())
+    # The lead-in section (slug "lead-in") is intro prose shown above the
+    # contents, not listed among them; everything else is a content section.
+    leadin = next((s for s in sections if s.slug == "lead-in"), None)
+    contents = [s for s in sections if s.slug != "lead-in"]
+    # "Continue" enters at the first content section.
+    first = contents[0] if contents else None
+    # A preview lead-in teases the public exactly like a preview section.
+    preview = bool(leadin and leadin.preview and public)
+    return render(request, "parody_web/chapter.html", {
+        "book": book, "editions": editions,
+        "chapter": chapter, "leadin": leadin, "contents": contents,
+        "first": first, "public": public, "preview": preview,
+        "next_path": request.get_full_path(),
+        "meta_description": _excerpt(leadin.html if leadin else "")
+        or f"{chapter.title} — {book.title}.",
+        "canonical_url": request.build_absolute_uri(request.path),
+    })
+
+
+def section_detail(request, chapter_slug, section_slug):
+    book, editions = _resolve_book(request)
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
     # Sections flagged `preview` (in-print but not fully online) show a preview
@@ -126,11 +202,11 @@ def section_detail(request, chapter_slug, section_slug, edition_id=None):
     })
 
 
-def systems(request, version, edition_id=None):
+def systems(request, version):
     """The specific-parts catalog for one system (ts or ds version) of the
     current edition — every component with its specs and device choices +
     suppliers, from the artifact's structured `parts`."""
-    book, editions = _resolve_book(request, edition_id)
+    book, editions = _resolve_book(request)
     system = next((s for s in (book.parts or []) if s.get("version") == version),
                   None)
     if system is None:
@@ -143,23 +219,45 @@ def systems(request, version, edition_id=None):
         "canonical_url": request.build_absolute_uri(request.path)})
 
 
+def code_redirect(request, code):
+    """A short code printed in the book (/q9) → 302 to its canonical page. Falls
+    back to the chapter landing page if the token is actually a chapter slug
+    typed without a trailing slash, so /chapter behaves like /chapter/."""
+    target = _resolve_code(request, code)
+    if target:
+        return redirect(target)
+    book, _ = _resolve_book(request)
+    if Chapter.objects.filter(book=book, slug=code).exists():
+        return redirect(reverse("parody_web:chapter", args=[code]) + _ed_query(book))
+    raise Http404(f"no code {code!r}")
+
+
+def go_code(request):
+    """The index 'go to a code' box submits here (?code=…); resolve and redirect,
+    or bounce back to the index if it doesn't match anything."""
+    target = _resolve_code(request, request.GET.get("code", ""))
+    return redirect(target or reverse("parody_web:index"))
+
+
 def sitemap_xml(request):
-    """Plain XML sitemap (index + every section, across all editions); no
-    contrib.sitemaps/sites dep. The default edition sits at the root; other
-    editions under /editions/<id>/."""
+    """Plain XML sitemap (index + every chapter/section/system, across all
+    editions); no contrib.sitemaps/sites dep. The default edition sits at the
+    bare URLs; other editions carry a ?ed=<id> query."""
     # public sitemap: skip draft (unreleased) editions
     editions = [b for b in _editions(_book_slug()) if not b.draft]
     urls = [request.build_absolute_uri("/")]
     for book in editions:
-        prefix = "" if book.is_default_edition else f"editions/{book.edition_id}/"
-        if prefix:
-            urls.append(request.build_absolute_uri(f"/{prefix}"))
+        q = _ed_query(book)
+        if q:
+            urls.append(request.build_absolute_uri(f"/{q}"))
+        for ch in book.chapters.all():
+            urls.append(request.build_absolute_uri(f"/{ch.slug}/{q}"))
         for s in _all_sections_ordered(book):
             urls.append(request.build_absolute_uri(
-                f"/{prefix}{s.chapter.slug}/{s.slug}/"))
+                f"/{s.chapter.slug}/{s.slug}/{q}"))
         for sys_ in (book.parts or []):
             urls.append(request.build_absolute_uri(
-                f"/{prefix}systems/{sys_.get('version')}/"))
+                f"/systems/{sys_.get('version')}/{q}"))
     body = ['<?xml version="1.0" encoding="UTF-8"?>',
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     body += [f"<url><loc>{u}</loc></url>" for u in urls]

@@ -26,20 +26,30 @@
   {% endwith %}
 {% endif %}
 
+<form class="codebox" action="{% url 'parody_web:go' %}" method="get" role="search">
+  <label for="code">Go to a code:</label>
+  <input id="code" name="code" placeholder="e.g. q9" autocomplete="off"
+         autocapitalize="off" spellcheck="false">
+  <button type="submit">Go</button>
+  <span class="note">the short codes printed in the book (next to its QR symbols)</span>
+</form>
+
 {% for chapter, sections in chapters %}
-  <h2>{% if chapter.number %}{% if chapter.appendix %}Appendix {% endif %}{{ chapter.number }}. {% endif %}{{ chapter.title|code_spans }}</h2>
-  <ul>
+  <h2><a href="{% chapter_url book chapter.slug %}">{% if chapter.number %}{% if chapter.appendix %}Appendix {% endif %}{{ chapter.number }}. {% endif %}{{ chapter.title|code_spans }}</a></h2>
+  <ul class="toc">
   {% for section in sections %}
+    {% if section.slug != "lead-in" %}
     <li>{% if section.number %}<span class="secnum">{{ section.number }}</span> {% endif %}<a href="{% section_url book chapter.slug section.slug %}">{{ section.title|code_spans }}</a>
       {% if public and section.preview %}<span class="note">— preview</span>{% endif %}
     </li>
+    {% endif %}
   {% endfor %}
   </ul>
 {% endfor %}
 
 {% if systems_list %}
 <h2>Hardware systems</h2>
-<ul>
+<ul class="toc">
 {% for s in systems_list %}
   <li><a href="{% systems_url book s.version %}">{{ s.title }}</a> — parts &amp; suppliers</li>
 {% endfor %}

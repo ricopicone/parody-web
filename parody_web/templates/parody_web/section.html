@@ -10,7 +10,7 @@
 {% endblock %}
 {% block body %}
 <nav class="crumbs"><a href="{% index_url book %}">{{ book.title }}</a>
-  › {{ chapter.title|code_spans }}</nav>
+  › <a href="{% chapter_url book chapter.slug %}">{{ chapter.title|code_spans }}</a></nav>
 
 {% if not title_in_html %}<h1>{{ section.title|code_spans }}</h1>{% endif %}
 

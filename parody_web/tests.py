@@ -23,6 +23,9 @@ ARTIFACT = {
     "chapters": [{
         "title": "Hardware", "slug": "hardware", "hash": "h1",
         "sections": [
+            {"title": "Hardware", "slug": "lead-in", "hash": "li",
+             "online_only": True,
+             "html": "<p>This chapter introduces the LEADINPROSE.</p>"},
             {"title": "Specific T1 (public)", "slug": "specific-t1", "hash": "ef",
              "online_only": True,
              "html": '<p>The myRIO via {% media \'notebooks/x.jpg\' %}.</p>'
@@ -96,6 +99,16 @@ class CrossRefResolutionTests(TestCase):
         # shared word factored out + pluralized, each number a link, "and" join
         self.assertIn('Chapters <a class="xref" href="/one/s1/">1</a> and '
                       '<a class="xref" href="/two/t1/">2</a>', html)
+
+    def test_edition_query_baked_into_xref_urls(self):
+        # a non-default edition bakes ?ed=<id> into its cross-ref links so
+        # in-edition navigation stays on that edition.
+        data = self._book()
+        data["chapters"][0]["sections"][0]["html"] = (
+            '<p>see <span class="hashref">c2</span></p>')
+        number_artifact(data, edition_query="?ed=ed1")
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('href="/two/t1/?ed=ed1"', html)
 
     def test_partial_multitarget_left_as_is(self):
         # if any member is unresolved we don't render a half-broken ref
@@ -253,6 +266,27 @@ class BookHostGatingTests(TestCase):
         _import()
         self.assertEqual(Section.objects.count(), before)
 
+    def test_index_links_chapter_and_omits_leadin_line(self):
+        # The chapter heading links to its landing page, and the lead-in is no
+        # longer a TOC line under the chapter.
+        r = self.anon.get("/")
+        self.assertContains(r, 'href="/hardware/"')
+        self.assertNotContains(r, 'href="/hardware/lead-in/"')
+
+    def test_chapter_page_shows_leadin_contents_and_continue(self):
+        r = self.anon.get("/hardware/")
+        self.assertEqual(r.status_code, 200)
+        html = r.content.decode()
+        self.assertIn("LEADINPROSE", html)               # lead-in prose shown
+        self.assertIn("Specific T1 (public)", html)      # contents listed
+        self.assertNotIn("{%", html)                     # tags resolved
+        # continue button into the first content section
+        self.assertIn('class="continue-button"', html)
+        self.assertIn('href="/hardware/specific-t1/"', html)
+
+    def test_chapter_page_404_for_unknown_slug(self):
+        self.assertEqual(self.anon.get("/no-such-chapter/").status_code, 404)
+
 
 def _edition_artifact(edition_id, title, default, *, body, extra_section=False):
     sections = [{"title": "Overview", "slug": "overview", "hash": "o" + edition_id,
@@ -304,35 +338,76 @@ class EditionTests(TestCase):
         self.assertContains(r, "ed2 body")
         self.assertNotContains(r, "ed1 body")
 
-    def test_non_default_edition_under_prefix(self):
-        r = self.client.get("/editions/ed1/")
+    def test_non_default_edition_via_query(self):
+        r = self.client.get("/?ed=ed1")
         self.assertEqual(r.status_code, 200)
-        rs = self.client.get("/editions/ed1/ch/overview/")
+        rs = self.client.get("/ch/overview/?ed=ed1")
         self.assertContains(rs, "ed1 body")
 
     def test_edition_only_section_absent_from_other_edition(self):
         self.assertEqual(self.client.get("/ch/whatsnew/").status_code, 200)
         self.assertEqual(
-            self.client.get("/editions/ed1/ch/whatsnew/").status_code, 404)
+            self.client.get("/ch/whatsnew/?ed=ed1").status_code, 404)
 
     def test_unknown_edition_404(self):
-        self.assertEqual(self.client.get("/editions/nope/").status_code, 404)
+        self.assertEqual(self.client.get("/?ed=nope").status_code, 404)
 
     def test_switcher_links_to_other_edition(self):
         r = self.client.get("/")
         self.assertContains(r, "edition-switcher")
-        self.assertContains(r, '/editions/ed1/')
+        self.assertContains(r, '?ed=ed1')
 
-    def test_prefixed_pages_keep_edition_in_links(self):
-        # breadcrumb + TOC links from an ed1 page stay under /editions/ed1/
-        r = self.client.get("/editions/ed1/ch/overview/")
-        self.assertContains(r, 'href="/editions/ed1/"')  # breadcrumb to ed1 TOC
+    def test_query_pages_keep_edition_in_links(self):
+        # breadcrumb + TOC links from an ed1 page stay on ?ed=ed1
+        r = self.client.get("/ch/overview/?ed=ed1")
+        self.assertContains(r, 'href="/?ed=ed1"')  # breadcrumb to ed1 TOC
 
     def test_sitemap_includes_all_editions(self):
         r = self.client.get("/sitemap.xml")
         body = r.content.decode()
         self.assertIn("/ch/overview/", body)            # default at root
-        self.assertIn("/editions/ed1/ch/overview/", body)
+        self.assertIn("/ch/overview/?ed=ed1", body)
+
+    # ---- printed short codes (/q9-style QR targets) ----------------------
+    def test_code_resolves_to_latest_edition_that_has_it(self):
+        # ed2 is the default (latest); its overview hash → bare URL
+        r = self.client.get("/oed2")
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r["Location"], "/ch/overview/")
+
+    def test_code_only_in_older_edition_keeps_ed_query(self):
+        # oed1 exists only in ed1 (non-default) → resolves with ?ed=ed1
+        r = self.client.get("/oed1")
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r["Location"], "/ch/overview/?ed=ed1")
+
+    def test_code_lookup_is_case_insensitive(self):
+        self.assertEqual(
+            self.client.get("/OED1")["Location"], "/ch/overview/?ed=ed1")
+
+    def test_chapter_hash_code_resolves_to_chapter_page(self):
+        # chapter hash c1 is in both editions → latest (ed2, default)
+        self.assertEqual(self.client.get("/c1")["Location"], "/ch/")
+
+    def test_code_with_trailing_slash_also_resolves(self):
+        self.assertEqual(self.client.get("/oed1/")["Location"],
+                         "/ch/overview/?ed=ed1")
+
+    def test_unknown_code_404(self):
+        self.assertEqual(self.client.get("/zzzz").status_code, 404)
+
+    def test_bare_chapter_without_slash_redirects_to_chapter_page(self):
+        # /ch (no code match, but a real chapter slug) behaves like /ch/
+        r = self.client.get("/ch")
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r["Location"], "/ch/")
+
+    def test_go_box_redirects_to_resolved_code(self):
+        r = self.client.get("/go/?code=oed1")
+        self.assertEqual(r["Location"], "/ch/overview/?ed=ed1")
+
+    def test_go_box_bounces_to_index_on_miss(self):
+        self.assertEqual(self.client.get("/go/?code=nope")["Location"], "/")
 
     def test_single_edition_book_unprefixed(self):
         # a book with no edition metadata keeps the bare root URLs
@@ -342,6 +417,38 @@ class EditionTests(TestCase):
             book = Book.objects.get(slug="demo-book")
             self.assertTrue(book.is_default_edition)
             self.assertEqual(book.edition_id, "")
+
+
+@override_settings(BOOK_SLUG="abook")
+class CodeAnchorTests(TestCase):
+    """A code can be a sub-section / figure / exercise anchor inside a section;
+    it resolves to the section URL plus a #fragment to scroll to."""
+
+    def setUp(self):
+        art = {
+            "schema_version": 2, "slug": "abook", "title": "A Book",
+            "chapters": [{"title": "Ch", "slug": "ch", "hash": "c1", "sections": [
+                {"title": "S", "slug": "sec", "hash": "se",
+                 "anchors": [{"id": "fig:bode", "type": "figure", "hash": "fb"}],
+                 "html": '<figure id="fig:bode" class="figure"><img>'
+                         '<figcaption class="figure-caption">Bode.</figcaption>'
+                         '</figure>'}]}],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "a.json")
+            p.write_text(json.dumps(art))
+            call_command("import_artifact", str(p), "--slug", "abook")
+        self.client = Client()
+
+    def test_anchor_hash_resolves_to_fragment(self):
+        self.assertEqual(self.client.get("/fb")["Location"], "/ch/sec/#fig:bode")
+
+    def test_anchor_id_resolves_to_fragment(self):
+        self.assertEqual(
+            self.client.get("/fig:bode")["Location"], "/ch/sec/#fig:bode")
+
+    def test_section_hash_resolves_without_fragment(self):
+        self.assertEqual(self.client.get("/se")["Location"], "/ch/sec/")
 
 
 PARTS_ARTIFACT = {
@@ -451,31 +558,31 @@ class DraftEditionTests(TestCase):
         self.assertContains(self.anon.get("/ch/overview/"), "ed1 body")
         self.assertNotContains(self.anon.get("/"), "(in development)")
         # draft pages 404 for the public
-        self.assertEqual(self.anon.get("/editions/ed2/").status_code, 404)
+        self.assertEqual(self.anon.get("/?ed=ed2").status_code, 404)
         self.assertEqual(
-            self.anon.get("/editions/ed2/ch/overview/").status_code, 404)
+            self.anon.get("/ch/overview/?ed=ed2").status_code, 404)
 
     def test_owner_can_see_draft(self):
-        r = self.signed_in.get("/editions/ed2/")
+        r = self.signed_in.get("/?ed=ed2")
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "in development")    # banner
         self.assertContains(r, "(in development)")  # switcher flag
         # and the draft edition's actual content
         self.assertContains(
-            self.signed_in.get("/editions/ed2/ch/overview/"), "ed2 body")
+            self.signed_in.get("/ch/overview/?ed=ed2"), "ed2 body")
 
     def test_sitemap_excludes_draft(self):
         body = self.anon.get("/sitemap.xml").content.decode()
         self.assertIn("/ch/overview/", body)         # ed1 (default, root)
-        self.assertNotIn("/editions/ed2/", body)
+        self.assertNotIn("ed=ed2", body)
 
     def test_publish_edition_command_makes_it_public(self):
         call_command("publish_edition", "ed2", "--slug", "dbook")
         self.assertFalse(Book.objects.get(slug="dbook", edition_id="ed2").draft)
-        self.assertEqual(self.anon.get("/editions/ed2/").status_code, 200)
+        self.assertEqual(self.anon.get("/?ed=ed2").status_code, 200)
 
     def test_unpublish_edition_command_hides_it(self):
         call_command("publish_edition", "ed2", "--slug", "dbook")
         call_command("unpublish_edition", "ed2", "--slug", "dbook")
         self.assertTrue(Book.objects.get(slug="dbook", edition_id="ed2").draft)
-        self.assertEqual(self.anon.get("/editions/ed2/").status_code, 404)
+        self.assertEqual(self.anon.get("/?ed=ed2").status_code, 404)

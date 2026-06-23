@@ -18,6 +18,21 @@ img { max-width: 100%; }
 .signin-gate { background: #f6f6f4; border: 1px solid #ddd; border-radius: 6px;
     padding: .8rem 1rem; font-family: system-ui, sans-serif; font-size: .95rem; }
 .secnum { color: #555; font-variant-numeric: tabular-nums; }
+/* table-of-contents lists (index + chapter pages): no bullets */
+ul.toc { list-style: none; padding-left: 0; }
+ul.toc li { margin: .25rem 0; }
+a.continue-button { display: inline-block; font-family: system-ui, sans-serif;
+    font-size: .95rem; background: #7a6ff0; color: #fff; border-radius: 4px;
+    padding: .4rem .9rem; text-decoration: none; margin-top: 1rem; }
+/* "go to a code" box on the index — resolves a printed short code to its page */
+form.codebox { font-family: system-ui, sans-serif; font-size: .9rem;
+    background: #f6f6f4; border: 1px solid #ddd; border-radius: 6px;
+    padding: .6rem .8rem; margin: 1.5rem 0; }
+form.codebox input { font: inherit; padding: .2rem .4rem; width: 7rem;
+    border: 1px solid #c8c8c8; border-radius: 4px; }
+form.codebox button { font: inherit; padding: .2rem .7rem; cursor: pointer;
+    border: 1px solid #7a6ff0; border-radius: 4px; background: #fff; color: #5a4fd0; }
+form.codebox .note { display: block; margin-top: .3rem; }
 .fignum { font-weight: bold; }
 /* subfigure floats: one figure, lettered panels laid out in a grid */
 figure.subfigures { display: grid; gap: .6rem 1rem;
