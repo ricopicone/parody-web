@@ -106,6 +106,38 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<span class="hashref">c1,zz</span>',
                       data["chapters"][0]["sections"][0]["html"])
 
+    def test_subfigure_float_shares_number_with_lettered_panels(self):
+        # ::: {.subfigures #fig:multi} → one "Figure 1.2", panels (a)/(b);
+        # a plain figure before it takes 1.1 (panels aren't counted as figures).
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "fig:solo", "type": "figure"},
+                {"id": "fig:multi", "type": "figure"},
+                {"id": "fig:pa", "type": "figure"},
+                {"id": "fig:pb", "type": "figure"},
+            ], "html":
+                '<figure id="fig:solo" class="figure"><img>'
+                '<figcaption class="figure-caption">Solo.</figcaption></figure>'
+                '<p>see <span class="hashref">fig:multi</span> and '
+                '<span class="hashref">fig:pb</span></p>'
+                '<figure id="fig:multi" class="figure subfigures" data-rows="1">'
+                '<figure id="fig:pa" class="subfigure"><img>'
+                '<figcaption>First.</figcaption></figure>'
+                '<figure id="fig:pb" class="subfigure"><img>'
+                '<figcaption>Second.</figcaption></figure>'
+                '<figcaption class="subfigures-caption">Both.</figcaption></figure>'}]}]}
+        targets = number_artifact(data)
+        self.assertEqual(targets["fig:solo"]["label"], "Figure 1.1")
+        self.assertEqual(targets["fig:multi"]["label"], "Figure 1.2")
+        self.assertEqual(targets["fig:pa"]["label"], "Figure 1.2(a)")
+        self.assertEqual(targets["fig:pb"]["label"], "Figure 1.2(b)")
+        html = data["chapters"][0]["sections"][0]["html"]
+        # refs resolve; captions get the shared number + panel letters injected
+        self.assertIn('<a class="xref" href="/c/s/#fig:multi">Figure 1.2</a>', html)
+        self.assertIn('<a class="xref" href="/c/s/#fig:pb">Figure 1.2(b)</a>', html)
+        self.assertIn('<span class="fignum">Figure 1.2:</span>', html)
+        self.assertIn('<span class="subfignum">(a)</span> First.', html)
+
 
 @override_settings(BOOK_SLUG="demo-book")
 class BookHostGatingTests(TestCase):

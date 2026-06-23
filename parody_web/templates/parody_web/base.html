@@ -19,6 +19,15 @@ img { max-width: 100%; }
     padding: .8rem 1rem; font-family: system-ui, sans-serif; font-size: .95rem; }
 .secnum { color: #555; font-variant-numeric: tabular-nums; }
 .fignum { font-weight: bold; }
+/* subfigure floats: one figure, lettered panels laid out in a grid */
+figure.subfigures { display: grid; gap: .6rem 1rem;
+    grid-template-columns: repeat(var(--sf-cols, 2), 1fr); margin: 1.5rem 0; }
+figure.subfigures > figure.subfigure { margin: 0; text-align: center;
+    display: flex; flex-direction: column; }
+figure.subfigure > img { margin: 0 auto; }
+figure.subfigure > figcaption { font-size: .9rem; color: #555; margin-top: .3rem; }
+figure.subfigures > figcaption.subfigures-caption { grid-column: 1 / -1; margin-top: .2rem; }
+.subfignum { font-weight: bold; }
 .listing-caption { font-size: .9rem; color: #555; margin: .3rem 0; }
 img.ebtn { height: 1.1em; vertical-align: -0.2em; }
 img.cover { float: right; max-width: 38%; margin: 0 0 1rem 1.5rem;

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "parody-web"
-version = "0.4.1"
+version = "0.5.0"
 description = "Django app that serves a parody build artifact as a public book site, with section-level auth gating (public = online-only subset; owner = full book)."
 readme = "README.md"
 requires-python = ">=3.10"
