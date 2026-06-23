@@ -23,7 +23,9 @@ _HEADING_RE = re.compile(r'(<(h[1-6])\b[^>]*\bdata-h="(?P<hash>[^"]+)"[^>]*>)')
 _FIG_RE = re.compile(r'<figure\b[^>]*\bid="(?P<id>[^"]+)"[^>]*>(?P<rest>.*?)</figure>',
                      re.S)
 _FIGCAP_RE = re.compile(r'(<figcaption[^>]*>)', re.S)
-_HASHREF_RE = re.compile(r'<span class="hashref">([^<]*)</span>')
+# .hashref keeps the reference lower-case ("section 3.2"); .Hashref capitalizes
+# it ("Section 3.2") for sentence starts — mirrors print.lua's hashrefer.
+_HASHREF_RE = re.compile(r'<span class="([Hh]ashref)">([^<]*)</span>')
 # pandoc rendered some cross-refs (written [@fig:x]) as citations because
 # pandoc-crossref didn't run; resolve those against the same target map.
 _CITE_RE = re.compile(
@@ -74,21 +76,15 @@ def _lookup_target(tgt, targets):
     return t
 
 
-def _recase_label(label, key):
-    """Make a cross-ref label follow the case of the reference key's first
-    letter (task #296): [@fig:x] -> "figure 1.2", [@Fig:x] -> "Figure 1.2".
-    Only typed keys ("prefix:rest", e.g. fig:/tbl:/eq:/sec:) carry case intent;
-    a bare heading hash like "qb" does not, so its label keeps the default
-    (capitalized) form. Lookup itself stays case-insensitive (see
-    _lookup_target); only the displayed label's first letter is adjusted."""
-    if ":" not in key or not label:
+def _recase_label(label, cap):
+    """Set a cross-ref label's leading-letter case (task #296). Every reference
+    kind follows the case requested at the *reference site* — figures, tables,
+    equations, sections, chapters, examples, theorems alike. cap=True ->
+    "Figure 1.2", cap=False -> "figure 1.2". Lookup stays case-insensitive (see
+    _lookup_target); only the displayed first letter changes."""
+    if not label:
         return label
-    first = key[:1]
-    if first.isupper():
-        return label[:1].upper() + label[1:]
-    if first.islower():
-        return label[:1].lower() + label[1:]
-    return label
+    return (label[:1].upper() if cap else label[:1].lower()) + label[1:]
 
 
 def _link(label, url):
@@ -103,12 +99,16 @@ def _join_oxford(parts):
     return ", ".join(parts[:-1]) + ", and " + parts[-1]
 
 
-def _render_refs(tgt, targets):
+def _render_refs(tgt, targets, cap_class=False):
     """Resolve a cross-ref target, which may be a comma-separated list of keys
-    ([4n,us,rq]{.hashref} → "Chapters 2, 3, and 4", each number linked). When the
+    ([4n,us,rq]{.hashref} → "chapters 2, 3, and 4", each number linked). When the
     targets share a label word the word is factored out and pluralized; otherwise
     the full labels are listed. Returns None if any key is unresolved (the caller
-    then leaves the span as-is rather than rendering a half-broken ref)."""
+    then leaves the span as-is rather than rendering a half-broken ref).
+
+    Case follows the reference site (task #296): cap_class is set when the span
+    asked to capitalize (a .Hashref / \\Cref), and an upper-case key letter
+    (Fig:, S4) also capitalizes — otherwise the label is lower-cased."""
     resolved = []
     for k in (k.strip() for k in tgt.split(",")):
         if not k:
@@ -116,7 +116,8 @@ def _render_refs(tgt, targets):
         t = _lookup_target(k, targets)
         if not t:
             return None
-        resolved.append((_recase_label(t["label"], k), _target_url(t)))
+        cap = cap_class or k[:1].isupper()
+        resolved.append((_recase_label(t["label"], cap), _target_url(t)))
     if not resolved:
         return None
     if len(resolved) == 1:
@@ -129,8 +130,8 @@ def _render_refs(tgt, targets):
     return _join_oxford([_link(lbl, url) for lbl, url in resolved])
 
 
-def _cref_link(key, targets):
-    out = _render_refs(key, targets)
+def _cref_link(key, targets, cap=False):
+    out = _render_refs(key, targets, cap_class=cap)
     return out if out is not None else ""
 
 
@@ -152,8 +153,8 @@ def _clean_rawtex(html, targets):
         c = re.sub(r"\\fbox\{(.*?)\}", r"\1", c)
         c = re.sub(r"\\mc\{[^}]*\}\{[^}]*\}\{(.*?)\}", r"\1", c)  # multicolumn
         c = re.sub(r"\\(?:textbf|textit|texttt|emph|textsf)\{(.*?)\}", r"\1", c)
-        c = re.sub(r"\\[cC]ref\{([^}]*)\}",
-                   lambda m: _cref_link(m.group(1), targets), c)
+        c = re.sub(r"\\([cC])ref\{([^}]*)\}",
+                   lambda m: _cref_link(m.group(2), targets, cap=m.group(1) == "C"), c)
         c = _FMT_CMD_RE.sub("", c)
         return c.strip()
     return _RAWTEX_RE.sub(sub, html)
@@ -496,7 +497,8 @@ def number_artifact(data, references=None, edition_query=""):
                               lambda mo, inj=inject: mo.group(1) + inj, html, count=1)
 
             def resolve(mo):
-                out = _render_refs(mo.group(1), targets)
+                cap = mo.group(1) == "Hashref"  # .Hashref capitalizes
+                out = _render_refs(mo.group(2), targets, cap_class=cap)
                 # leave unresolved refs (missing targets) as-is
                 return out if out is not None else mo.group(0)
             html = _HASHREF_RE.sub(resolve, html)
@@ -508,8 +510,8 @@ def number_artifact(data, references=None, edition_query=""):
                 parts = []
                 for k in keys:
                     t = _lookup_target(k, targets)
-                    if t:  # cross-reference written as [@fig:x]/[@Fig:x]/[@tbl:x]
-                        label = _recase_label(t["label"], k)
+                    if t:  # cross-reference written as [@fig:x]/[@Fig:x]/[@s4]
+                        label = _recase_label(t["label"], k[:1].isupper())
                         parts.append(
                             f'<a class="xref" href="{t["url"] or "#"}">{label}</a>')
                     elif k in references:  # real bibliography citation

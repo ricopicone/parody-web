@@ -88,7 +88,21 @@ class CrossRefResolutionTests(TestCase):
             '<p>see <span class="hashref">c2</span></p>')
         number_artifact(data)
         html = data["chapters"][0]["sections"][0]["html"]
-        self.assertIn('<a class="xref" href="/two/t1/">Chapter 2</a>', html)
+        # .hashref keeps the label lower-case (task #296); hash-keyed refs
+        # (chapters, sections) follow the same rule as typed [@fig:x] refs.
+        self.assertIn('<a class="xref" href="/two/t1/">chapter 2</a>', html)
+
+    def test_hashref_case_follows_class_and_key(self):
+        # .Hashref capitalizes for a sentence start; an upper-case key letter
+        # ([C2], not the bare hash c2) capitalizes too.
+        for ref, expect in (('<span class="Hashref">c2</span>', "Chapter 2"),
+                            ('<span class="hashref">C2</span>', "Chapter 2"),
+                            ('<span class="hashref">c2</span>', "chapter 2")):
+            data = self._book()
+            data["chapters"][0]["sections"][0]["html"] = f"<p>{ref}</p>"
+            number_artifact(data)
+            self.assertIn(f'>{expect}</a>',
+                          data["chapters"][0]["sections"][0]["html"])
 
     def test_comma_multitarget_groups_and_links_each(self):
         data = self._book()
@@ -96,8 +110,9 @@ class CrossRefResolutionTests(TestCase):
             '<p>see <span class="hashref">c1,c2</span></p>')
         number_artifact(data)
         html = data["chapters"][0]["sections"][0]["html"]
-        # shared word factored out + pluralized, each number a link, "and" join
-        self.assertIn('Chapters <a class="xref" href="/one/s1/">1</a> and '
+        # shared word factored out + pluralized, each number a link, "and" join;
+        # .hashref keeps it lower-case ("chapters", not "Chapters").
+        self.assertIn('chapters <a class="xref" href="/one/s1/">1</a> and '
                       '<a class="xref" href="/two/t1/">2</a>', html)
 
     def test_edition_query_baked_into_xref_urls(self):
