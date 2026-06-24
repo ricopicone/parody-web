@@ -156,10 +156,16 @@ code span.al, code span.er { color: #ff0000; font-weight: bold; }
 pre.sourceCode a { text-decoration: none; color: inherit; }
 </style>
 <script>
-/* Custom RTC-book math macros (from common/styles-tex/*mathmacros.sty) so the
-   book's \bnot, \band, \mat, … render on the web. Set before MathJax loads. */
+/* Common math packages used by the LaTeX source (bm/boldsymbol, mathtools,
+   cancel, color, upgreek) + the custom RTC-book macros, so the book's math
+   renders on the web. Set before MathJax loads. */
 window.MathJax = {
-  tex: { macros: {
+  loader: { load: ['[tex]/boldsymbol', '[tex]/mathtools', '[tex]/cancel',
+                   '[tex]/color', '[tex]/upgreek'] },
+  tex: {
+    packages: { '[+]': ['boldsymbol', 'mathtools', 'cancel', 'color', 'upgreek'] },
+    macros: {
+    bm: ['{\\boldsymbol{#1}}', 1],
     mat: ['{\\boldsymbol{#1}}', 1],
     vec: ['{\\boldsymbol{#1}}', 1],
     bnot: ['{\\overline{#1}}', 1],
