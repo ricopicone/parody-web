@@ -344,7 +344,10 @@ def number_artifact(data, references=None, edition_query=""):
             elif kind == "lab":
                 lab_n += 1
                 secnum = None
-                sec["number"] = f"Lab Exercise {lab_n}"
+                # sentence case ("Lab exercise N") so a cross-ref recases only the
+                # first letter — "Lab exercise 6" / "lab exercise 6", never the
+                # mid-phrase "lab Exercise 6". (_recase_label toggles label[:1].)
+                sec["number"] = f"Lab exercise {lab_n}"
             elif kind == "problems":
                 secnum = None
                 sec["number"] = ""

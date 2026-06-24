@@ -89,6 +89,14 @@ table.notes-table.vsep2 > thead > tr > :nth-child(2),
 table.notes-table.vsep2 > tbody > tr > :nth-child(2) { border-right: 1px solid #999; }
 /* non-content tables (e.g. .specs) keep a light grid */
 table:not(.notes-table) th, table:not(.notes-table) td { border: 1px solid #ccc; }
+/* subject index page */
+.book-index { columns: 17rem; column-gap: 2.5rem; margin-top: 1rem; }
+.index-letter { font-size: 1.15rem; margin: .7rem 0 .2rem; padding-bottom: .1rem;
+    border-bottom: 1px solid #ddd; break-inside: avoid; break-after: avoid-column; }
+.index-entry { font-size: .9rem; margin: .1rem 0; text-indent: -1rem; padding-left: 1rem;
+    break-inside: avoid; }
+.index-entry.index-level-1 { padding-left: 2.2rem; }
+.index-entry.index-level-2 { padding-left: 3.4rem; }
 details { margin: .4rem 0; } summary { cursor: pointer; }
 .version-list-item { margin: .15rem 0 .15rem 1rem; font-size: .95rem; }
 section.online-resources { border-top: 1px solid #ddd; margin-top: 2.5rem; }

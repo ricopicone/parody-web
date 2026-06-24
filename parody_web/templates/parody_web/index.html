@@ -57,6 +57,7 @@
 {% endif %}
 
 <p class="note">A partial web edition — selected sections are free to read; the
-rest are previews. Get the full book from the publisher (above).{% if book.errata %}
+rest are previews. Get the full book from the publisher (above).
+· <a href="{% url 'parody_web:book_index' %}{{ ed_query }}">Index</a>{% if book.errata %}
 · <a href="{% url 'parody_web:errata' %}">Errata</a>{% endif %}</p>
 {% endblock %}

@@ -7,6 +7,7 @@ permitted subset publicly.
 """
 
 import re
+from html import unescape as _unescape
 
 from django.conf import settings
 from django.http import Http404, HttpResponse
@@ -136,8 +137,58 @@ def index(request):
             chapters.append((ch, sections))
     return render(request, "parody_web/index.html", {
         "book": book, "editions": editions, "chapters": chapters,
+        "ed_query": _ed_query(book),
         "public": public, "systems_list": book.parts or [],
         "meta_description": book.description or f"{book.title} — companion site.",
+        "canonical_url": request.build_absolute_uri(request.path)})
+
+
+_INDEX_SPAN_RE = re.compile(r'<span class="[^"]*\bindex\b[^"]*"[^>]*>(.*?)</span>', re.S)
+
+
+def book_index(request):
+    """Alphabetical subject index built from the .index spans across every
+    section (an "Entry!Subentry" hierarchy; deduped per section). Links point at
+    the section that mentions the term — public, like the table of contents."""
+    book, editions = _resolve_book(request)
+    edq = _ed_query(book)
+    root = {}  # name -> {"locs": {url: (sort, label)}, "subs": {…}}
+    for s in _all_sections_ordered(book):
+        num = (s.number or "").strip()
+        label = num if re.match(r"^[A-Za-z]?\d", num) else \
+            (s.chapter.number or s.chapter.title or "").strip()
+        sort = (s.chapter.order, s.order)
+        url = reverse("parody_web:section", args=[s.chapter.slug, s.slug]) + edq
+        for m in _INDEX_SPAN_RE.finditer(s.html or ""):
+            text = _unescape(re.sub(r"\s+", " ", strip_tags(m.group(1)))).strip()
+            parts = [p.strip() for p in text.split("!") if p.strip()]
+            node = root
+            for i, p in enumerate(parts):
+                node = node.setdefault(p, {"locs": {}, "subs": {}})
+                if i == len(parts) - 1:  # one link per section (deduped by url)
+                    node["locs"][url] = (sort, label)
+                node = node["subs"]
+
+    entries = []
+
+    def walk(nodes, level):
+        for name in sorted(nodes, key=lambda x: (x.lower(), x)):
+            n = nodes[name]
+            locs = [{"label": lbl, "url": u}
+                    for u, (k, lbl) in sorted(n["locs"].items(), key=lambda kv: kv[1][0])]
+            letter = name[0].upper() if name[:1].isalpha() else "#"
+            entries.append({"level": level, "name": name, "locs": locs, "letter": letter})
+            walk(n["subs"], level + 1)
+
+    walk(root, 0)
+    prev = None
+    for e in entries:
+        if e["level"] == 0 and e["letter"] != prev:
+            e["new_letter"] = e["letter"]
+            prev = e["letter"]
+    return render(request, "parody_web/book_index.html", {
+        "book": book, "editions": editions, "entries": entries, "ed_query": edq,
+        "meta_description": f"Subject index for {book.title}.",
         "canonical_url": request.build_absolute_uri(request.path)})
 
 

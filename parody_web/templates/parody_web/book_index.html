@@ -1,0 +1,19 @@
+{% extends "parody_web/base.html" %}
+{% block title %}Index — {{ book.title }}{% endblock %}
+{% block head_extra %}
+<meta name="description" content="{{ meta_description }}">
+<link rel="canonical" href="{{ canonical_url }}">
+{% endblock %}
+{% block body %}
+<nav class="crumbs"><a href="{% url 'parody_web:index' %}{{ ed_query }}">{{ book.title }}</a> › Index</nav>
+<h1>Index</h1>
+{% if entries %}
+<div class="book-index">
+{% for e in entries %}{% if e.new_letter %}<h2 class="index-letter">{{ e.new_letter }}</h2>
+{% endif %}<p class="index-entry index-level-{{ e.level }}"><span class="index-term">{{ e.name }}</span>{% for l in e.locs %}{% if forloop.first %} {% else %}, {% endif %}<a class="xref" href="{{ l.url }}">{{ l.label }}</a>{% endfor %}</p>
+{% endfor %}
+</div>
+{% else %}
+<p>No index entries.</p>
+{% endif %}
+{% endblock %}

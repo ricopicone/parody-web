@@ -672,3 +672,34 @@ class DraftEditionTests(TestCase):
         call_command("unpublish_edition", "ed2", "--slug", "dbook")
         self.assertTrue(Book.objects.get(slug="dbook", edition_id="ed2").draft)
         self.assertEqual(self.anon.get("/?ed=ed2").status_code, 404)
+
+
+class BookIndexTests(TestCase):
+    def setUp(self):
+        art = {
+            "schema_version": 2, "slug": "ixbook", "title": "Ix Book",
+            "book": {"name": "Ix", "editions": [{"id": "0"}]},
+            "chapters": [{"title": "Ch", "slug": "ch", "hash": "h1", "sections": [
+                {"title": "One", "slug": "one", "hash": "a1", "online_only": True,
+                 "html": '<p>a<span class="index">Memory</span>'
+                         '<span class="index">Memory!addresses</span></p>'},
+                {"title": "Two", "slug": "two", "hash": "a2", "online_only": True,
+                 "html": '<p><span class="index">Bus</span>'
+                         '<span class="index start">Memory</span></p>'},
+            ]}],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "a.json"); p.write_text(json.dumps(art))
+            call_command("import_artifact", str(p), "--slug", "ixbook")
+        self.client = Client()
+
+    def test_index_lists_entries_and_dedupes_locations(self):
+        r = self.client.get("/index/")
+        self.assertEqual(r.status_code, 200)
+        for term in ("Memory", "addresses", "Bus"):
+            self.assertContains(r, term)
+        # Memory is in both sections -> two location links (one per section)
+        import re
+        block = re.search(r"index-term\">Memory<.*?</p>", r.content.decode(), re.S)
+        self.assertIsNotNone(block)
+        self.assertEqual(block.group(0).count('class="xref"'), 2)
