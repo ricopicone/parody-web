@@ -65,7 +65,7 @@ table { border-collapse: collapse; margin: 1rem auto; } th, td { padding: .3rem 
    for alignment/illustration) and .plain get no rules; .ruled forces book rules. */
 table.notes-table th, table.notes-table td { border: 0; }
 table.notes-table:is(:has(caption), .ruled):not(.plain) > thead > tr:first-child > th { border-top: 1.5px solid #222; }
-table.notes-table:is(:has(caption), .ruled):not(.plain) > thead > tr:last-child > th { border-bottom: 1px solid #999; }
+table.notes-table:is(:has(caption), .ruled):not(.plain):not(.grouped-header) > thead > tr:last-child > th { border-bottom: 1px solid #999; }
 table.notes-table:is(:has(caption), .ruled):not(.plain) > tbody > tr:last-child > td { border-bottom: 1.5px solid #222; }
 table.notes-table:is(:has(caption), .ruled):not(.plain):not(:has(thead)) > tbody > tr:first-child > td { border-top: 1.5px solid #222; }
 /* segmented header rule (LaTeX \cmidrule): full-HTML tables can mark groups of
@@ -77,6 +77,13 @@ table.notes-table th.cmid::after { content: ""; position: absolute; left: 0; rig
     bottom: 0; border-bottom: 1px solid #999; }
 table.notes-table th.cmid.cmid-l::after { left: 7px; }
 table.notes-table th.cmid.cmid-r::after { right: 7px; }
+/* tables rendered as an image (<figure id="tbl:..">): caption ABOVE the image
+   (table convention), unlike real figures. Subtables manage their own order. */
+figure[id^="tbl:"]:not(.subtables) { display: flex; flex-direction: column; }
+figure[id^="tbl:"]:not(.subtables) > figcaption { order: -1; margin: 0 0 .4rem; }
+/* a thin rule between row-groups (e.g. operator-precedence levels), drawn under
+   the grouped cells so the spanning (rowspan) columns read as continuous */
+table.notes-table td.grp { border-top: 1px solid #bbb; }
 /* non-content tables (e.g. .specs) keep a light grid */
 table:not(.notes-table) th, table:not(.notes-table) td { border: 1px solid #ccc; }
 details { margin: .4rem 0; } summary { cursor: pointer; }
