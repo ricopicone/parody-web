@@ -186,6 +186,25 @@ def _style_menus(html):
     return _MENU_RE.sub(sub, html)
 
 
+_INDEX_OPEN_RE = re.compile(r'<span ([^>]*\bclass="[^"]*\bindex\b[^"]*"[^>]*)>')
+
+
+def _anchor_index_spans(html, prefix):
+    """Give every .index span a stable id (+ aria-hidden, since the clipped term
+    text is now in flow as a scroll target) so the subject index can deep-link to
+    where each term actually appears, not just to the section. Idempotent."""
+    n = [0]
+
+    def sub(m):
+        attrs = m.group(1)
+        if "id=" in attrs:
+            return m.group(0)
+        n[0] += 1
+        return f'<span id="{prefix}-{n[0]}" aria-hidden="true" {attrs}>'
+
+    return _INDEX_OPEN_RE.sub(sub, html)
+
+
 _TABLE_RE = re.compile(r"<table\b.*?</table>", re.S)
 
 
@@ -611,5 +630,6 @@ def number_artifact(data, references=None, edition_query=""):
             if not sec.get("preview"):
                 html = _gate_rights_figures(html)
 
+            html = _anchor_index_spans(html, "ix-" + (sec.get("hash") or sec.get("slug") or ""))
             sec["html"] = html
     return targets

@@ -703,3 +703,9 @@ class BookIndexTests(TestCase):
         block = re.search(r"index-term\">Memory<.*?</p>", r.content.decode(), re.S)
         self.assertIsNotNone(block)
         self.assertEqual(block.group(0).count('class="xref"'), 2)
+        # deep-links to the in-section anchor, not just the section
+        self.assertIn("#ix-", block.group(0))
+
+    def test_section_html_carries_index_anchors(self):
+        r = self.client.get("/ch/one/")
+        self.assertIn('id="ix-', r.content.decode())

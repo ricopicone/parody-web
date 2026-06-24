@@ -143,7 +143,8 @@ def index(request):
         "canonical_url": request.build_absolute_uri(request.path)})
 
 
-_INDEX_SPAN_RE = re.compile(r'<span class="[^"]*\bindex\b[^"]*"[^>]*>(.*?)</span>', re.S)
+_INDEX_SPAN_RE = re.compile(
+    r'<span ([^>]*\bclass="[^"]*\bindex\b[^"]*"[^>]*)>(.*?)</span>', re.S)
 
 
 def book_index(request):
@@ -152,21 +153,24 @@ def book_index(request):
     the section that mentions the term — public, like the table of contents."""
     book, editions = _resolve_book(request)
     edq = _ed_query(book)
-    root = {}  # name -> {"locs": {url: (sort, label)}, "subs": {…}}
+    root = {}  # name -> {"locs": {section_key: (label, href)}, "subs": {…}}
     for s in _all_sections_ordered(book):
         num = (s.number or "").strip()
         label = num if re.match(r"^[A-Za-z]?\d", num) else \
             (s.chapter.number or s.chapter.title or "").strip()
-        sort = (s.chapter.order, s.order)
-        url = reverse("parody_web:section", args=[s.chapter.slug, s.slug]) + edq
+        section_key = (s.chapter.order, s.order)
+        section_url = reverse("parody_web:section", args=[s.chapter.slug, s.slug]) + edq
         for m in _INDEX_SPAN_RE.finditer(s.html or ""):
-            text = _unescape(re.sub(r"\s+", " ", strip_tags(m.group(1)))).strip()
+            attrs, inner = m.group(1), m.group(2)
+            text = _unescape(re.sub(r"\s+", " ", strip_tags(inner))).strip()
             parts = [p.strip() for p in text.split("!") if p.strip()]
+            idm = re.search(r'\bid="([^"]+)"', attrs)
+            href = section_url + ("#" + idm.group(1) if idm else "")
             node = root
             for i, p in enumerate(parts):
                 node = node.setdefault(p, {"locs": {}, "subs": {}})
-                if i == len(parts) - 1:  # one link per section (deduped by url)
-                    node["locs"][url] = (sort, label)
+                if i == len(parts) - 1:  # first occurrence per section wins
+                    node["locs"].setdefault(section_key, (label, href))
                 node = node["subs"]
 
     entries = []
@@ -175,7 +179,7 @@ def book_index(request):
         for name in sorted(nodes, key=lambda x: (x.lower(), x)):
             n = nodes[name]
             locs = [{"label": lbl, "url": u}
-                    for u, (k, lbl) in sorted(n["locs"].items(), key=lambda kv: kv[1][0])]
+                    for k, (lbl, u) in sorted(n["locs"].items())]
             letter = name[0].upper() if name[:1].isalpha() else "#"
             entries.append({"level": level, "name": name, "locs": locs, "letter": letter})
             walk(n["subs"], level + 1)
