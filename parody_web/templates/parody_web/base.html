@@ -155,6 +155,37 @@ code span.pp { color: #bc7a00; }
 code span.al, code span.er { color: #ff0000; font-weight: bold; }
 pre.sourceCode a { text-decoration: none; color: inherit; }
 </style>
+<script>
+/* Custom RTC-book math macros (from common/styles-tex/*mathmacros.sty) so the
+   book's \bnot, \band, \mat, … render on the web. Set before MathJax loads. */
+window.MathJax = {
+  tex: { macros: {
+    mat: ['{\\boldsymbol{#1}}', 1],
+    vec: ['{\\boldsymbol{#1}}', 1],
+    bnot: ['{\\overline{#1}}', 1],
+    bigcdot: '{\\cdot}',
+    band: ['{#1\\cdot #2}', 2],
+    bor: ['{#1+#2}', 2],
+    bnand: ['{#1\\mathbin{\\mathrm{nand}}#2}', 2],
+    bnor: ['{#1\\mathbin{\\mathrm{nor}}#2}', 2],
+    bxor: ['{#1\\mathbin{\\mathrm{xor}}#2}', 2],
+    bxnor: ['{#1\\mathbin{\\mathrm{xnor}}#2}', 2],
+    sgn: '{\\operatorname{sgn}}',
+    atantwo: '{\\operatorname{atan}_2}',
+    arctantwo: '{\\operatorname{arctan}_2}',
+    arctanh: '{\\operatorname{arctanh}}',
+    adj: '{\\operatorname{adj}}',
+    Div: '{\\operatorname{div}}',
+    curl: '{\\operatorname{curl}}',
+    grad: '{\\operatorname{grad}}',
+    diff: '{d}',
+    Diff: ['{d^{#1}}', 1],
+    argmax: '{\\operatorname*{argmax}}',
+    argmin: '{\\operatorname*{argmin}}',
+    parallelsum: '{\\mathbin{\\|}}'
+  } }
+};
+</script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 {% block head_extra %}{% endblock %}
 </head>
