@@ -59,13 +59,15 @@ img.cover { float: right; max-width: 38%; margin: 0 0 1rem 1.5rem;
     border: 1px solid #ddd; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
 pre { background: #f6f6f4; padding: .8rem 1rem; overflow-x: auto; font-size: .85rem; }
 table { border-collapse: collapse; margin: 1rem auto; } th, td { padding: .3rem .7rem; }
-/* book / booktabs default: heavy top & bottom rules, light rule under the header,
-   no vertical or interior rules */
+/* book / booktabs: heavy top & bottom rules, light rule under the header, no
+   vertical or interior rules. Applied to *formal* tables — those with a caption
+   (i.e. born from a \begin{table} float). Plain layout tabulars (no caption, used
+   for alignment/illustration) and .plain get no rules; .ruled forces book rules. */
 table.notes-table th, table.notes-table td { border: 0; }
-table.notes-table > thead > tr:first-child > th { border-top: 1.5px solid #222; }
-table.notes-table > thead > tr:last-child > th { border-bottom: 1px solid #999; }
-table.notes-table > tbody > tr:last-child > td { border-bottom: 1.5px solid #222; }
-table.notes-table:not(:has(thead)) > tbody > tr:first-child > td { border-top: 1.5px solid #222; }
+table.notes-table:is(:has(caption), .ruled):not(.plain) > thead > tr:first-child > th { border-top: 1.5px solid #222; }
+table.notes-table:is(:has(caption), .ruled):not(.plain) > thead > tr:last-child > th { border-bottom: 1px solid #999; }
+table.notes-table:is(:has(caption), .ruled):not(.plain) > tbody > tr:last-child > td { border-bottom: 1.5px solid #222; }
+table.notes-table:is(:has(caption), .ruled):not(.plain):not(:has(thead)) > tbody > tr:first-child > td { border-top: 1.5px solid #222; }
 /* segmented header rule (LaTeX \cmidrule): full-HTML tables can mark groups of
    header cells with .cmid; .cmid-l / .cmid-r trim the ends so groups separate.
    .grouped-header drops the default full-width rule in favour of the segments. */
