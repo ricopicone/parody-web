@@ -5,12 +5,23 @@ copyright-restricted book: the full text never enters this database. Upsert by
 slug so re-imports are idempotent and stable.
 """
 import json
+import re
+from html import unescape
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils.html import strip_tags
 
 from parody_web.models import Book, Chapter, Section
 from parody_web.numbering import number_artifact
+
+
+def _plain_text(html):
+    """A readable plain-text rendering of section html for 'search inside':
+    drop the .index marker spans (their clipped term text isn't prose), strip
+    tags, unescape entities, collapse whitespace."""
+    html = re.sub(r'<span [^>]*\bclass="[^"]*\bindex\b[^"]*"[^>]*>.*?</span>', " ", html)
+    return re.sub(r"\s+", " ", unescape(strip_tags(html))).strip()
 
 
 class Command(BaseCommand):
@@ -150,6 +161,7 @@ class Command(BaseCommand):
                         "order": si + 1,
                         "hash": sec.get("hash", ""),
                         "html": sec.get("html", ""),
+                        "plain": _plain_text(sec.get("html", "")),
                         "online_resources": sec.get("online_resources", ""),
                         "online_only": bool(sec.get("online_only", False)),
                         "preview": bool(sec.get("preview"))

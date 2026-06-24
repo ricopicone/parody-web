@@ -13,7 +13,8 @@ from django.conf import settings
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.html import strip_tags
+from django.utils.html import escape, strip_tags
+from django.utils.safestring import mark_safe
 
 from .models import Book, Chapter, Section
 
@@ -193,6 +194,65 @@ def book_index(request):
     return render(request, "parody_web/book_index.html", {
         "book": book, "editions": editions, "entries": entries, "ed_query": edq,
         "meta_description": f"Subject index for {book.title}.",
+        "canonical_url": request.build_absolute_uri(request.path)})
+
+
+def _highlight(seg, q):
+    """Escape `seg` for HTML and wrap each (case-insensitive) occurrence of `q`
+    in <mark>. Returns safe HTML."""
+    low, ql, out, pos = seg.lower(), q.lower(), [], 0
+    while True:
+        i = low.find(ql, pos)
+        if i < 0:
+            out.append(escape(seg[pos:]))
+            break
+        out.append(escape(seg[pos:i]))
+        out.append("<mark>" + escape(seg[i:i + len(q)]) + "</mark>")
+        pos = i + len(q)
+    return "".join(out)
+
+
+def _snippets(plain, q, radius=90, maxn=2):
+    """Up to `maxn` highlighted context windows (±`radius` chars) around `q`."""
+    low, ql, out, start = plain.lower(), q.lower(), [], 0
+    for _ in range(maxn):
+        i = low.find(ql, start)
+        if i < 0:
+            break
+        a, b = max(0, i - radius), min(len(plain), i + len(q) + radius)
+        pre = "… " if a > 0 else ""
+        suf = " …" if b < len(plain) else ""
+        out.append(mark_safe(pre + _highlight(plain[a:b], q) + suf))
+        start = b
+    return out
+
+
+def search(request):
+    """"Search inside": full-text match over sections, returning highlighted
+    snippets only (never the full gated text) plus a buy CTA for anon visitors —
+    discoverability without exposing copyrighted prose."""
+    book, editions = _resolve_book(request)
+    edq = _ed_query(book)
+    q = (request.GET.get("q") or "").strip()
+    results = []
+    if len(q) >= 2:
+        qs = (Section.objects.filter(book=book, plain__icontains=q)
+              .select_related("chapter").order_by("chapter__order", "order"))
+        for s in qs:
+            snips = _snippets(s.plain, q)
+            if not snips:
+                continue
+            results.append({
+                "title": s.title, "number": s.number, "chapter": s.chapter.title,
+                "url": reverse("parody_web:section", args=[s.chapter.slug, s.slug]) + edq,
+                "snippets": snips, "count": s.plain.lower().count(q.lower()),
+                "gated": s.preview,
+            })
+        results.sort(key=lambda r: -r["count"])
+    return render(request, "parody_web/search.html", {
+        "book": book, "editions": editions, "q": q, "results": results,
+        "ed_query": edq, "public": not request.user.is_authenticated,
+        "meta_description": f"Search inside {book.title}.",
         "canonical_url": request.build_absolute_uri(request.path)})
 
 

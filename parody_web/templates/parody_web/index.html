@@ -26,6 +26,11 @@
   {% endwith %}
 {% endif %}
 
+<form class="search-form" action="{% url 'parody_web:search' %}" method="get" role="search">
+  <input type="search" name="q" placeholder="Search inside the book…" aria-label="Search inside the book">
+  <button type="submit">Search</button>
+</form>
+
 <form class="codebox" action="{% url 'parody_web:go' %}" method="get" role="search">
   <label for="code">Go to a code:</label>
   <input id="code" name="code" placeholder="e.g. q9" autocomplete="off"

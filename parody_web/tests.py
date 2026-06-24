@@ -709,3 +709,40 @@ class BookIndexTests(TestCase):
     def test_section_html_carries_index_anchors(self):
         r = self.client.get("/ch/one/")
         self.assertIn('id="ix-', r.content.decode())
+
+
+class SearchInsideTests(TestCase):
+    def setUp(self):
+        art = {
+            "schema_version": 2, "slug": "sbook", "title": "S Book",
+            "book": {"name": "S", "editions": [{"id": "0"}]},
+            "chapters": [{"title": "Ch", "slug": "ch", "hash": "h1", "sections": [
+                {"title": "Widgets", "slug": "widgets", "hash": "a1", "online_only": True,
+                 "html": "<p>The flux capacitor enables time travel via flux.</p>"},
+                {"title": "Gated", "slug": "gated", "hash": "a2", "preview": True,
+                 "html": "<p>Secret flux details are copyrighted.</p>"},
+            ]}],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "a.json"); p.write_text(json.dumps(art))
+            call_command("import_artifact", str(p), "--slug", "sbook")
+        self.client = Client()
+
+    def test_search_returns_highlighted_snippets_for_all_sections(self):
+        r = self.client.get("/search/?q=flux")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "<mark>flux</mark>")
+        self.assertContains(r, "Widgets")
+        self.assertContains(r, "Gated")          # gated section is discoverable
+        self.assertContains(r, "get the complete text")  # anon buy CTA
+
+    def test_plain_field_strips_tags(self):
+        from parody_web.models import Section
+        s = Section.objects.get(slug="widgets")
+        self.assertNotIn("<p>", s.plain)
+        self.assertIn("flux capacitor", s.plain)
+
+    def test_empty_query_shows_no_results_block(self):
+        r = self.client.get("/search/")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotContains(r, '<ol class="search-results">')

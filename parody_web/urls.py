@@ -21,6 +21,8 @@ urlpatterns = [
     path("systems/<str:version>/", views.systems, name="systems"),
     # /index/ — the subject index built from the .index spans (reserved segment).
     path("index/", views.book_index, name="book_index"),
+    # /search/ — "search inside" (snippet results + buy CTA).
+    path("search/", views.search, name="search"),
     path("<slug:chapter_slug>/<slug:section_slug>/", views.section_detail,
          name="section"),
     # Chapter landing page (lead-in + contents). A code with a trailing slash

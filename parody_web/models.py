@@ -80,6 +80,8 @@ class Section(models.Model):
     order = models.PositiveIntegerField(default=0)
     hash = models.CharField(max_length=100, blank=True, default="")
     html = models.TextField(blank=True)
+    # plain-text rendering of `html`, for the "search inside" feature (icontains)
+    plain = models.TextField(blank=True, default="")
     online_resources = models.TextField(blank=True)
     online_only = models.BooleanField(default=False)
     # preview = public sees only a truncated excerpt + sign-in (old "versionless":

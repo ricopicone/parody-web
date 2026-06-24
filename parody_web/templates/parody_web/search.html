@@ -1,0 +1,31 @@
+{% extends "parody_web/base.html" %}
+{% block title %}{% if q %}“{{ q }}” — {% endif %}Search — {{ book.title }}{% endblock %}
+{% block head_extra %}
+<meta name="description" content="{{ meta_description }}">
+<link rel="canonical" href="{{ canonical_url }}">
+{% if q %}<meta name="robots" content="noindex">{% endif %}
+{% endblock %}
+{% block body %}
+<nav class="crumbs"><a href="{% url 'parody_web:index' %}{{ ed_query }}">{{ book.title }}</a> › Search</nav>
+<h1>Search inside</h1>
+<form class="search-form" method="get" action="{% url 'parody_web:search' %}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search the book…" aria-label="Search the book" autofocus>
+  <button type="submit">Search</button>
+</form>
+{% if q %}
+  {% if results %}
+    <p class="search-count">{{ results|length }} section{{ results|length|pluralize }} mentioning “{{ q }}”.</p>
+    {% if public %}<p class="note search-cta">These are snippets from the full book — <a href="{% url 'parody_web:index' %}{{ ed_query }}">get the complete text</a> to read every match in context.</p>{% endif %}
+    <ol class="search-results">
+    {% for r in results %}
+      <li>
+        <a class="search-hit" href="{{ r.url }}">{% if r.number %}<span class="num">{{ r.number }}</span> {% endif %}{{ r.title }}{% if r.gated %} <span class="lock" title="In the full book">🔒</span>{% endif %}</a>
+        {% for sn in r.snippets %}<p class="snippet">{{ sn }}</p>{% endfor %}
+      </li>
+    {% endfor %}
+    </ol>
+  {% else %}
+    <p>No matches for “{{ q }}”. Try a different word or phrase.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}
