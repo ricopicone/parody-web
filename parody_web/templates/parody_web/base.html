@@ -84,6 +84,9 @@ figure[id^="tbl:"]:not(.subtables) > figcaption { order: -1; margin: 0 0 .4rem; 
 /* a thin rule between row-groups (e.g. operator-precedence levels), drawn under
    the grouped cells so the spanning (rowspan) columns read as continuous */
 table.notes-table td.grp { border-top: 1px solid #bbb; }
+/* .vsep2: a vertical rule after the 2nd column (e.g. truth-table inputs|outputs) */
+table.notes-table.vsep2 > thead > tr > :nth-child(2),
+table.notes-table.vsep2 > tbody > tr > :nth-child(2) { border-right: 1px solid #999; }
 /* non-content tables (e.g. .specs) keep a light grid */
 table:not(.notes-table) th, table:not(.notes-table) td { border: 1px solid #ccc; }
 details { margin: .4rem 0; } summary { cursor: pointer; }
