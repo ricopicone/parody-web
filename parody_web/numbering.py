@@ -515,11 +515,17 @@ def number_artifact(data, references=None, edition_query=""):
 
             # tables: "Table C.n:" prefix into the <caption> of <table id="tbl:…">
             for tid, num in table_caps.get(sec["slug"], {}).items():
-                html = re.sub(
+                label = '<span class="fignum">Table ' + num + ':</span> '
+                new = re.sub(
                     r'(<table\b[^>]*\bid="' + re.escape(tid)
-                    + r'"[^>]*>\s*<caption[^>]*>)',
-                    r'\1<span class="fignum">Table ' + num + ':</span> ',
-                    html, count=1)
+                    + r'"[^>]*>\s*<caption[^>]*>)', r'\1' + label, html, count=1)
+                if new == html:
+                    # a table rendered as an image (<figure id="tbl:…"> … <figcaption>)
+                    new = re.sub(
+                        r'(<figure\b[^>]*\bid="' + re.escape(tid)
+                        + r'"[^>]*>.*?<figcaption[^>]*>)', r'\1' + label,
+                        html, count=1, flags=re.S)
+                html = new
 
             # sub-table floats: shared "Table C.n:" in the main caption, "(a)" …
             # in each panel <table>'s own <caption>.

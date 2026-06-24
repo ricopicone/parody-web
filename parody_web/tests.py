@@ -251,6 +251,19 @@ class CrossRefResolutionTests(TestCase):
         self.assertEqual(targets["tbl:x"]["label"], "Table 1.1")
         self.assertIn('<caption><span class="fignum">Table 1.1:</span> Demo.', html)
 
+    def test_table_rendered_as_image_gets_numbered_caption(self):
+        # a tbl:-id table that is actually an image renders as <figure>; the
+        # "Table C.n:" prefix should land in its <figcaption>.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s",
+                "anchors": [{"id": "tbl:img", "type": "table"}],
+                "html": '<figure id="tbl:img"><img src="/m/x.svg">'
+                        '<figcaption>A picture table.</figcaption></figure>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<figcaption><span class="fignum">Table 1.1:</span> '
+                      'A picture table.', html)
+
     def test_subtable_float_shares_number_with_lettered_panels(self):
         # ::: {.subtables #tbl:m} → one "Table 1.1", panels (a)/(b) in each
         # sub-table's own <caption>; panels not counted as separate tables.
