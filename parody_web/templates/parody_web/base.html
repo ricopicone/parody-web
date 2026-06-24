@@ -43,6 +43,13 @@ figure.subfigure > img { margin: 0 auto; }
 figure.subfigure > figcaption { font-size: .9rem; color: #555; margin-top: .3rem; }
 figure.subfigures > figcaption.subfigures-caption { grid-column: 1 / -1; margin-top: .2rem; }
 .subfignum { font-weight: bold; }
+/* sub-tables: side-by-side data tables sharing one "Table C.n" number */
+figure.subtables { display: grid; gap: .6rem 1.5rem; justify-items: center;
+    grid-template-columns: repeat(var(--st-cols, 2), auto); margin: 1.5rem 0; }
+figure.subtables > div.subtable { margin: 0; }
+figure.subtables > div.subtable table caption { caption-side: top; font-size: .9rem;
+    color: #555; text-align: center; }
+figure.subtables > figcaption.subtables-caption { grid-column: 1 / -1; margin-top: .2rem; }
 .rights-placeholder { background: #f6f6f4; border: 1px dashed #ccc; border-radius: 6px;
     padding: 1.2rem; text-align: center; color: #777; font-family: system-ui, sans-serif;
     font-size: .9rem; font-style: italic; }

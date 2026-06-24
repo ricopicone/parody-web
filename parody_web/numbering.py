@@ -246,6 +246,20 @@ def _subfig_structure(html):
     return children
 
 
+_SUBTABLES_RE = re.compile(
+    r'<figure\b[^>]*\bid="([^"]+)"[^>]*\bclass="subtables"[^>]*>(.*?)</figure>', re.S)
+_TABLE_ID_RE = re.compile(r'<table\b[^>]*\bid="([^"]+)"')
+
+
+def _subtable_structure(html):
+    """Map each subtables-float main id -> its ordered panel <table> ids, by
+    scanning the rendered html (<figure class="subtables" id=main> wrapping
+    <div class="subtable"><table id=panel>…). The float holds no nested <figure>,
+    so a non-greedy match to the next </figure> is safe."""
+    return {m.group(1): _TABLE_ID_RE.findall(m.group(2))
+            for m in _SUBTABLES_RE.finditer(html)}
+
+
 _RIGHTS_FIG_RE = re.compile(r'<figure\b[^>]*\bdata-permission="permission"')
 _RIGHTS_IMG_RE = re.compile(r'<img\b[^>]*\bdata-permission="permission"[^>]*>')
 _FIG_DELIM_RE = re.compile(r'<figure\b|</figure>')
@@ -301,7 +315,9 @@ def number_artifact(data, references=None, edition_query=""):
     targets = {}          # hash/id -> {"label":..., "url":...}
     heading_numbers = {}  # per-section: hash -> number string (for html rewrite)
     float_caps = {}       # per-section: float-id -> (label_word, number)
+    table_caps = {}       # per-section: tbl-id -> number (caption prefix)
     subfig_caps = {}      # per-section: main-id -> (number, [(sub-id, letter), …])
+    subtable_caps = {}    # per-section: main-tbl-id -> (number, [(sub-id, letter), …])
     listing_caps = {}     # per-section: lst-id -> (number, caption)
     idx_state = {"arabic": 0, "appendix": 0}
     lab_n = 0
@@ -381,6 +397,8 @@ def number_artifact(data, references=None, edition_query=""):
             # number with a letter — (a), (b), … — so don't count them as figures.
             sf_children = _subfig_structure(sec.get("html") or "")
             sf_subids = {sid for kids in sf_children.values() for sid in kids}
+            st_children = _subtable_structure(sec.get("html") or "")
+            st_subids = {sid for kids in st_children.values() for sid in kids}
 
             # non-heading targets (figures, tables, equations, exercises, …),
             # numbered per chapter per type in anchor (document) order. The
@@ -389,8 +407,8 @@ def number_artifact(data, references=None, edition_query=""):
                 t = a.get("type")
                 if t == "heading" or t not in _TYPE_LABELS:
                     continue
-                if a.get("id") in sf_subids:
-                    continue  # a subfigure panel; numbered with its parent below
+                if a.get("id") in sf_subids or a.get("id") in st_subids:
+                    continue  # a sub-panel; numbered with its parent below
                 type_counters[t] = type_counters.get(t, 0) + 1
                 num = f"{cnum}.{type_counters[t]}"
                 # equations are referenced with the number in parentheses,
@@ -416,6 +434,17 @@ def number_artifact(data, references=None, edition_query=""):
                     subfig_caps.setdefault(sec["slug"], {})[a["id"]] = (num, lettered)
                 elif t == "figure" and a.get("id"):
                     float_caps.setdefault(sec["slug"], {})[a["id"]] = ("Figure", num)
+                elif t == "table" and a.get("id") in st_children:
+                    # main of a sub-table float: letter its panels (Table C.n(a))
+                    lettered = []
+                    for i, sid in enumerate(st_children[a["id"]]):
+                        letter = chr(97 + i)
+                        targets[sid] = {"label": f"Table {num}{letter}",
+                                        "url": f"{url}#{sid}"}
+                        lettered.append((sid, letter))
+                    subtable_caps.setdefault(sec["slug"], {})[a["id"]] = (num, lettered)
+                elif t == "table" and a.get("id"):
+                    table_caps.setdefault(sec["slug"], {})[a["id"]] = num
 
             # algorithms render as <figure id="al:.."|"alg:.."> (pseudocode SVGs)
             # and listings as <div id="lst:.." class="listing" data-caption="..">;
@@ -483,6 +512,29 @@ def number_artifact(data, references=None, edition_query=""):
                                     f'</figcaption></figure>')
                         html = re.sub(r'<img\b[^>]*\bid="' + re.escape(fid)
                                       + r'"[^>]*>', promote, html, count=1)
+
+            # tables: "Table C.n:" prefix into the <caption> of <table id="tbl:…">
+            for tid, num in table_caps.get(sec["slug"], {}).items():
+                html = re.sub(
+                    r'(<table\b[^>]*\bid="' + re.escape(tid)
+                    + r'"[^>]*>\s*<caption[^>]*>)',
+                    r'\1<span class="fignum">Table ' + num + ':</span> ',
+                    html, count=1)
+
+            # sub-table floats: shared "Table C.n:" in the main caption, "(a)" …
+            # in each panel <table>'s own <caption>.
+            for mid, (num, lettered) in subtable_caps.get(sec["slug"], {}).items():
+                html = re.sub(
+                    r'(<figure id="' + re.escape(mid) + r'" class="subtables"'
+                    r'[^>]*>.*?<figcaption class="subtables-caption">)',
+                    r'\1<span class="fignum">Table ' + num + ':</span> ',
+                    html, count=1, flags=re.S)
+                for sid, letter in lettered:
+                    html = re.sub(
+                        r'(<table\b[^>]*\bid="' + re.escape(sid)
+                        + r'"[^>]*>\s*<caption[^>]*>)',
+                        r'\1<span class="subfignum">(' + letter + ')</span> ',
+                        html, count=1)
 
             # subfigure floats: inject the shared "Figure C.n:" into the main
             # caption and "(a)" … into each panel (done here, not via _FIG_RE,

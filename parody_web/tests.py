@@ -239,6 +239,48 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<span class="fignum">Figure 1.1:</span>', html)
         self.assertIn('<a class="xref" href="/c/s/#fig:x">figure 1.1</a>', html)
 
+    def test_table_gets_numbered_caption(self):
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s",
+                "anchors": [{"id": "tbl:x", "type": "table"}],
+                "html": '<table id="tbl:x" class="notes-table"><caption>Demo.</caption>'
+                        '<tbody><tr><td>1</td></tr></tbody></table>'
+                        '<p>see <span class="hashref">tbl:x</span></p>'}]}]}
+        targets = number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertEqual(targets["tbl:x"]["label"], "Table 1.1")
+        self.assertIn('<caption><span class="fignum">Table 1.1:</span> Demo.', html)
+
+    def test_subtable_float_shares_number_with_lettered_panels(self):
+        # ::: {.subtables #tbl:m} → one "Table 1.1", panels (a)/(b) in each
+        # sub-table's own <caption>; panels not counted as separate tables.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s",
+                "anchors": [{"id": "tbl:m", "type": "table"},
+                            {"id": "tbl:a", "type": "table"},
+                            {"id": "tbl:b", "type": "table"},
+                            {"id": "tbl:after", "type": "table"}],
+                "html":
+                    '<figure id="tbl:m" class="subtables" style="--st-cols:2">'
+                    '<div class="subtable"><table id="tbl:a"><caption>BE.</caption>'
+                    '<tbody><tr><td>1</td></tr></tbody></table></div>'
+                    '<div class="subtable"><table id="tbl:b"><caption>LE.</caption>'
+                    '<tbody><tr><td>2</td></tr></tbody></table></div>'
+                    '<figcaption class="subtables-caption">Both.</figcaption></figure>'
+                    '<table id="tbl:after" class="notes-table"><caption>Next.</caption>'
+                    '<tbody><tr><td>3</td></tr></tbody></table>'
+                    '<p>see <span class="hashref">tbl:b</span></p>'}]}]}
+        targets = number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertEqual(targets["tbl:m"]["label"], "Table 1.1")
+        self.assertEqual(targets["tbl:a"]["label"], "Table 1.1a")
+        self.assertEqual(targets["tbl:b"]["label"], "Table 1.1b")
+        # the table after the float is 1.2 — panels didn't inflate the count
+        self.assertEqual(targets["tbl:after"]["label"], "Table 1.2")
+        self.assertIn('<span class="fignum">Table 1.1:</span> Both.', html)
+        self.assertIn('<caption><span class="subfignum">(a)</span> BE.', html)
+        self.assertIn('<a class="xref" href="/c/s/#tbl:b">table 1.1b</a>', html)
+
 
 @override_settings(BOOK_SLUG="demo-book")
 class BookHostGatingTests(TestCase):
