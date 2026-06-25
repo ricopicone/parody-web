@@ -1,4 +1,5 @@
 {% extends "parody_web/base.html" %}
+{% load parody_web %}
 {% block title %}{% if q %}“{{ q }}” — {% endif %}Search — {{ book.title }}{% endblock %}
 {% block head_extra %}
 <meta name="description" content="{{ meta_description }}">
@@ -19,7 +20,7 @@
     <ol class="search-results">
     {% for r in results %}
       <li>
-        <a class="search-hit" href="{{ r.url }}">{% if r.number %}<span class="num">{{ r.number }}</span> {% endif %}{{ r.title }}{% if r.gated %} <span class="lock" title="In the full book">🔒</span>{% endif %}</a>
+        <a class="search-hit" href="{{ r.url }}">{% if r.number %}<span class="num">{{ r.number }}</span> {% endif %}{{ r.title|code_spans }}{% if r.gated %} <span class="lock" title="In the full book">🔒</span>{% endif %}</a>
         {% for sn in r.snippets %}<p class="snippet">{{ sn }}</p>{% endfor %}
       </li>
     {% endfor %}

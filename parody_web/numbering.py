@@ -166,6 +166,7 @@ _ECLIPSE_ICONS = {
     "estepover": ("stepover", "Step Over"), "estepinto": ("stepinto", "Step Into"),
     "estepreturn": ("stepreturn", "Step Return"), "eresume": ("resume", "Resume"),
     "eterminate": ("terminate", "Terminate"),
+    "enrc": ("new_con", "New Run Configuration"),
 }
 
 
