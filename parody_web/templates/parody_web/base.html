@@ -79,10 +79,14 @@ table.notes-table th.cmid::after { content: ""; position: absolute; left: 0; rig
     bottom: 0; border-bottom: 1px solid #999; }
 table.notes-table th.cmid.cmid-l::after { left: 7px; }
 table.notes-table th.cmid.cmid-r::after { right: 7px; }
-/* tables rendered as an image (<figure id="tbl:..">): caption ABOVE the image
-   (table convention), unlike real figures. Subtables manage their own order. */
-figure[id^="tbl:"]:not(.subtables) { display: flex; flex-direction: column; }
-figure[id^="tbl:"]:not(.subtables) > figcaption { order: -1; margin: 0 0 .4rem; }
+/* tables and algorithms rendered as an image (<figure id="tbl:.."/"al:.."/"alg:..">):
+   caption ABOVE the image (table/algorithm convention), unlike real figures.
+   Subtables manage their own order. */
+figure[id^="tbl:"]:not(.subtables),
+figure[id^="al:"], figure[id^="alg:"] { display: flex; flex-direction: column; }
+figure[id^="tbl:"]:not(.subtables) > figcaption,
+figure[id^="al:"] > figcaption,
+figure[id^="alg:"] > figcaption { order: -1; margin: 0 0 .4rem; }
 /* a thin rule between row-groups (e.g. operator-precedence levels), drawn under
    the grouped cells so the spanning (rowspan) columns read as continuous */
 table.notes-table td.grp { border-top: 1px solid #bbb; }
