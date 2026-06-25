@@ -73,6 +73,24 @@ def _lookup_target(tgt, targets):
     t = targets.get(tgt)
     if not t and tgt[:1].isupper():
         t = targets.get(tgt[:1].lower() + tgt[1:])
+    if not t:
+        # environment refs carry a type prefix the target id may lack:
+        # definitions/theorems/comments are anchored on their bare id
+        # (::: {#magnitude-criterion .definition}) but referenced as
+        # [def:magnitude-criterion]{.hashref}. Strip the prefix and retry.
+        m = re.match(r'(?:def|thm|cmt):(.+)$', tgt, re.I)
+        if m:
+            t = targets.get(m.group(1))
+    if not t and "ex" in tgt.split(":"):
+        # xsim namespaces labels declared inside an exercise/solution; 'ex' shows
+        # up as a segment whether the label leads with a type
+        # (fig:ex:fsm1:sol:fig:state-transition-diagram) or not
+        # (ex:fsm1:tab:state-transition). The rendered float keeps only the leaf
+        # id; a LaTeX 'tab:' leaf is pandoc-crossref's 'tbl:'.
+        segs = tgt.split(":")
+        if len(segs) >= 2:
+            leaf_type = "tbl" if segs[-2] == "tab" else segs[-2]
+            t = targets.get(f"{leaf_type}:{segs[-1]}")
     return t
 
 
@@ -117,7 +135,11 @@ def _render_refs(tgt, targets, cap_class=False):
         if not t:
             return None
         cap = cap_class or k[:1].isupper()
-        resolved.append((_recase_label(t["label"], cap), _target_url(t)))
+        # titled targets (infoboxes labelled by their proper-noun title) keep
+        # their case verbatim — don't lower-case "Control System Design Problem"
+        # the way a numbered "Figure 3.1" first letter is recased (task #296).
+        label = t["label"] if t.get("titled") else _recase_label(t["label"], cap)
+        resolved.append((label, _target_url(t)))
     if not resolved:
         return None
     if len(resolved) == 1:
@@ -428,6 +450,17 @@ def number_artifact(data, references=None, edition_query=""):
             # registry keys on both id (fig:…/tbl:…) and 2-char hash (exercises).
             for a in sec.get("anchors", []):
                 t = a.get("type")
+                if t == "infobox":
+                    # infoboxes aren't numbered; they're referenced by their
+                    # title ("Control System Design Problem"). The title is kept
+                    # verbatim on cross-refs (titled=True; see _render_refs).
+                    entry = {"label": a.get("title") or "",
+                             "url": f"{url}#{a.get('id', '')}", "titled": True}
+                    if a.get("id"):
+                        targets[a["id"]] = entry
+                    if a.get("hash"):
+                        targets[a["hash"]] = entry
+                    continue
                 if t == "heading" or t not in _TYPE_LABELS:
                     continue
                 if a.get("id") in sf_subids or a.get("id") in st_subids:

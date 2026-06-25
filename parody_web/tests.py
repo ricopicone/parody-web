@@ -294,6 +294,72 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<caption><span class="subfignum">(a)</span> BE.', html)
         self.assertIn('<a class="xref" href="/c/s/#tbl:b">table 1.1b</a>', html)
 
+    def test_equation_numbered_and_ref_resolves(self):
+        # \label{eq:..} display equations are anchored build-side; numbering
+        # numbers them per chapter and parenthesizes the ref ("equation (1.2)").
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:one", "type": "equation"},
+                {"id": "eq:two", "type": "equation"},
+            ], "html":
+                '<span class="math display">\\[x\\]</span><span id="eq:one"></span>'
+                '<span class="math display">\\[y\\]</span><span id="eq:two"></span>'
+                '<p>see <span class="hashref">eq:two</span></p>'}]}]}
+        targets = number_artifact(data)
+        self.assertEqual(targets["eq:two"]["label"], "Equation (1.2)")
+        self.assertIn('<a class="xref" href="/c/s/#eq:two">equation (1.2)</a>',
+                      data["chapters"][0]["sections"][0]["html"])
+
+    def test_definition_resolves_via_def_prefix(self):
+        # definitions are anchored on their bare id (::: {#magnitude .definition})
+        # but referenced [def:magnitude]{.hashref}; the prefix is stripped on lookup.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "magnitude", "type": "definition"},
+            ], "html":
+                '<div id="magnitude" class="definition">D.</div>'
+                '<p>see <span class="hashref">def:magnitude</span></p>'}]}]}
+        number_artifact(data)
+        self.assertIn('<a class="xref" href="/c/s/#magnitude">definition 1.1</a>',
+                      data["chapters"][0]["sections"][0]["html"])
+
+    def test_infobox_resolves_by_title_keeping_case(self):
+        # infoboxes are labelled by their proper-noun title, which a .hashref
+        # ref must NOT lower-case the way it recases a numbered "Figure 1.1".
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "box:design", "type": "infobox",
+                 "title": "Control System Design Problem"},
+            ], "html":
+                '<div id="box:design" class="infobox">B.</div>'
+                '<p>see <span class="hashref">box:design</span></p>'}]}]}
+        targets = number_artifact(data)
+        self.assertEqual(targets["box:design"]["label"],
+                         "Control System Design Problem")
+        self.assertIn('<a class="xref" href="/c/s/#box:design">'
+                      'Control System Design Problem</a>',
+                      data["chapters"][0]["sections"][0]["html"])
+
+    def test_xsim_namespaced_ref_resolves_to_leaf(self):
+        # xsim namespaces a label declared inside an exercise/solution; the float
+        # keeps only the leaf id. 'ex' appears as a segment whether the label
+        # leads with a type (fig:ex:..:fig:leaf) or not (ex:..:tab:leaf), and a
+        # LaTeX 'tab:' leaf maps to pandoc-crossref's 'tbl:'.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "fig:leaf", "type": "figure"},
+                {"id": "tbl:leaf", "type": "table"},
+            ], "html":
+                '<figure id="fig:leaf" class="figure"><img>'
+                '<figcaption class="figure-caption">F.</figcaption></figure>'
+                '<table id="tbl:leaf"><caption>T.</caption></table>'
+                '<p>see <span class="hashref">fig:ex:fsm1:sol:fig:leaf</span> '
+                'and <span class="hashref">ex:fsm1:tab:leaf</span></p>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<a class="xref" href="/c/s/#fig:leaf">figure 1.1</a>', html)
+        self.assertIn('<a class="xref" href="/c/s/#tbl:leaf">table 1.1</a>', html)
+
 
 @override_settings(BOOK_SLUG="demo-book")
 class BookHostGatingTests(TestCase):
