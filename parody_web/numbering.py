@@ -511,7 +511,12 @@ def number_artifact(data, references=None, edition_query=""):
     listing_caps = {}     # per-section: lst-id -> (number, caption)
     eq_caps = {}          # per-section: eq-id -> number (shown right of the math)
     subeq_caps = {}       # per-section: subequations parent-id -> group number N
-    idx_state = {"arabic": 0, "appendix": 0}
+    # chapter_start: the number the first (non-appendix) chapter takes. The
+    # artifact omits it at the default of 1; RTC sets 0 ("Chapter 0").
+    # _chapter_label pre-increments "arabic", so seed it one below the start.
+    # Section/figure/equation numbers all read cnum, so they inherit it (0.1,
+    # Figure 0.4, …). Appendix chapters (lettered) are unaffected.
+    idx_state = {"arabic": int(data.get("chapter_start", 1)) - 1, "appendix": 0}
     lab_n = 0
 
     # ---- pass 1: assign numbers, build the target map ----

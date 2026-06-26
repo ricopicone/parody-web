@@ -244,6 +244,39 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<span class="fignum">Figure 1.2:</span>', html)
         self.assertIn('<span class="subfignum">(a)</span> First.', html)
 
+    def test_chapter_start_zero_offsets_numbering(self):
+        # chapter_start: 0 (RTC) → first chapter is "0"; its section, figure and
+        # the chapter cross-ref all inherit it (0.1, Figure 0.1, "Chapter 0").
+        # The next chapter is "1"; appendix chapters stay lettered (A).
+        data = {"chapter_start": 0, "chapters": [
+            {"title": "Zero", "slug": "zero", "hash": "z1", "sections": [
+                {"title": "Intro", "slug": "intro", "hash": "i1", "anchors": [
+                    {"id": "intro", "type": "heading", "level": 1, "hash": "i1"},
+                    {"id": "fig:a", "type": "figure"}],
+                 "html": '<figure id="fig:a" class="figure"><img>'
+                         '<figcaption class="figure-caption">A.</figcaption></figure>'}]},
+            {"title": "One", "slug": "one", "hash": "o1", "sections": [
+                {"title": "More", "slug": "more", "anchors": [], "html": ""}]},
+            {"title": "App", "slug": "app", "hash": "a1", "appendix": True,
+             "sections": [{"title": "X", "slug": "x", "anchors": [], "html": ""}]},
+        ]}
+        targets = number_artifact(data)
+        self.assertEqual(data["chapters"][0]["number"], "0")
+        self.assertEqual(data["chapters"][1]["number"], "1")
+        self.assertEqual(data["chapters"][2]["number"], "A")  # appendix unaffected
+        self.assertEqual(targets["z1"]["label"], "Chapter 0")
+        self.assertEqual(data["chapters"][0]["sections"][0]["number"], "0.1")
+        self.assertEqual(targets["i1"]["label"], "Section 0.1")
+        self.assertEqual(targets["fig:a"]["label"], "Figure 0.1")
+
+    def test_chapter_start_defaults_to_one(self):
+        # No chapter_start in the artifact → first chapter numbers from 1.
+        data = {"chapters": [
+            {"title": "One", "slug": "one", "hash": "c1",
+             "sections": [{"title": "S", "slug": "s", "anchors": [], "html": ""}]}]}
+        number_artifact(data)
+        self.assertEqual(data["chapters"][0]["number"], "1")
+
     def test_ref_label_follows_key_case(self):
         # task #296: lookup is case-insensitive but the label follows the key's
         # case — [@fig:x] -> "figure 1.1", [@Fig:x] -> "Figure 1.1". The
