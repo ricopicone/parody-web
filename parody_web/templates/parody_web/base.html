@@ -36,12 +36,8 @@ form.codebox button { font: inherit; padding: .2rem .7rem; cursor: pointer;
     border: 1px solid #7a6ff0; border-radius: 4px; background: #fff; color: #5a4fd0; }
 form.codebox .note { display: block; margin-top: .3rem; }
 .fignum { font-weight: bold; }
-/* numbered display equations: "(C.n)" floated to the right, vertically centred
-   against the MathJax block — the printed book's equation-number convention */
-.numbered-eq { position: relative; display: block; }
-.numbered-eq > .eqnum { position: absolute; right: 0; top: 50%;
-    transform: translateY(-50%); color: #555; font-variant-numeric: tabular-nums;
-    scroll-margin-top: 5rem; }
+/* equation numbers are rendered by MathJax as \tag{C.n} (injected by numbering),
+   so they need no CSS — they right-align and vertically-centre like the print book. */
 /* subfigure floats: one figure, lettered panels laid out in a grid */
 figure.subfigures { display: grid; gap: .6rem 1rem;
     grid-template-columns: repeat(var(--sf-cols, 2), 1fr); margin: 1.5rem 0; }
@@ -198,6 +194,10 @@ window.MathJax = {
   tex: {
     packages: { '[+]': ['boldsymbol', 'mathtools', 'cancel', 'color', 'upgreek'] },
     macros: {
+    /* numbering injects \tag{C.n} for equation numbers; \label is mapped to a
+       no-op so any raw \label left in a multi-label aligned block (kept by the
+       build so each row can be \tag-ged) never breaks typesetting. */
+    label: ['', 1],
     bm: ['{\\boldsymbol{#1}}', 1],
     mat: ['{\\boldsymbol{#1}}', 1],
     vec: ['{\\boldsymbol{#1}}', 1],

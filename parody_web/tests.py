@@ -309,21 +309,16 @@ class CrossRefResolutionTests(TestCase):
         self.assertEqual(targets["eq:two"]["label"], "Equation (1.2)")
         html = data["chapters"][0]["sections"][0]["html"]
         self.assertIn('<a class="xref" href="/c/s/#eq:two">equation (1.2)</a>', html)
-        # the number is also shown to the right of each equation itself: the
-        # math/anchor pair is wrapped and the anchor carries "(C.n)".
-        self.assertIn('<span class="numbered-eq"><span class="math display">'
-                      '\\[x\\]</span><span id="eq:one" class="eqnum">(1.1)</span>'
-                      '</span>', html)
-        self.assertIn('<span class="numbered-eq"><span class="math display">'
-                      '\\[y\\]</span><span id="eq:two" class="eqnum">(1.2)</span>'
-                      '</span>', html)
-        # each equation wraps exactly once (no spill across the two math blocks)
-        self.assertEqual(html.count('<span class="numbered-eq">'), 2)
-        self.assertNotIn('<span class="numbered-eq"><span class="numbered-eq">', html)
+        # the number is also shown on the equation itself, as a MathJax \tag
+        # injected before the closing \] (MathJax renders it "(C.n)" right-aligned).
+        self.assertIn('<span class="math display">\\[x\\tag{1.1}\\]</span>'
+                      '<span id="eq:one"></span>', html)
+        self.assertIn('<span class="math display">\\[y\\tag{1.2}\\]</span>'
+                      '<span id="eq:two"></span>', html)
 
-    def test_equation_number_shown_with_whitespace_before_anchor(self):
+    def test_equation_tag_injected_with_whitespace_before_anchor(self):
         # real pandoc output leaves a space between the math span and the
-        # {#eq:..}-derived anchor; the number must still attach to the equation.
+        # {#eq:..}-derived anchor; the \tag must still attach to the equation.
         data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
             "sections": [{"title": "S", "slug": "s", "anchors": [
                 {"id": "eq:law", "type": "equation"},
@@ -332,8 +327,67 @@ class CrossRefResolutionTests(TestCase):
                 '<span id="eq:law"></span></p>'}]}]}
         number_artifact(data)
         html = data["chapters"][0]["sections"][0]["html"]
-        self.assertIn('<span class="numbered-eq">', html)
-        self.assertIn('<span id="eq:law" class="eqnum">(1.1)</span>', html)
+        self.assertIn('\\[ F = ma \\tag{1.1}\\]</span>', html)
+        self.assertIn('<span id="eq:law"></span>', html)  # scroll target kept
+
+    def test_multilabel_align_tags_each_row(self):
+        # a multi-line align keeps a raw \label per numbered row (build-side);
+        # numbering swaps each \label for its own \tag so every row is numbered,
+        # and the trailing anchors stay as scroll/cross-ref targets.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:kp", "type": "equation"},
+                {"id": "eq:ki", "type": "equation"},
+            ], "html":
+                '<span class="math display">\\[\\begin{align}\n'
+                'K_P &= a \\label{eq:kp}\\\\\n'
+                'K_I &= b \\label{eq:ki}\n'
+                '\\end{align}\\]</span>'
+                '<span id="eq:kp"></span><span id="eq:ki"></span>'
+                '<p>see <span class="hashref">eq:ki</span></p>'}]}]}
+        targets = number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertEqual(targets["eq:ki"]["label"], "Equation (1.2)")
+        self.assertIn('K_P &= a \\tag{1.1}', html)
+        self.assertIn('K_I &= b \\tag{1.2}', html)
+        self.assertNotIn('\\label{', html)               # all labels consumed
+        self.assertIn('<span id="eq:kp"></span>', html)  # scroll targets kept
+        self.assertIn('<span id="eq:ki"></span>', html)
+        self.assertIn('<a class="xref" href="/c/s/#eq:ki">equation (1.2)</a>', html)
+
+    def test_subequations_lettered_and_counts_once(self):
+        # a subequations <div> consumes ONE equation number (the parent); each row
+        # is lettered "N a", "N b", … (even rows with no \label); a plain equation
+        # after the group continues at the NEXT number, not skipping the letters.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:grp", "type": "equation"},
+                {"id": "eq:row2", "type": "equation"},
+                {"id": "eq:after", "type": "equation"},
+            ], "html":
+                '<div id="eq:grp" class="subequations">'
+                '<p><span class="math display">\\[\\begin{align}\n'
+                'E &= R - Y \\\\\n'
+                '&= R - GE. \\label{eq:row2}\n'
+                '\\end{align}\\]</span><span id="eq:row2"></span></p></div>'
+                '<p><span class="math display">\\[ z = w \\]</span> '
+                '<span id="eq:after"></span></p>'
+                '<p>see <span class="hashref">eq:grp</span>, '
+                '<span class="hashref">eq:row2</span>, '
+                '<span class="hashref">eq:after</span></p>'}]}]}
+        targets = number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        # group parent = (1.1); rows lettered a, b; after = (1.2) (group took one)
+        self.assertEqual(targets["eq:grp"]["label"], "Equation (1.1)")
+        self.assertEqual(targets["eq:row2"]["label"], "Equation (1.1b)")
+        self.assertEqual(targets["eq:after"]["label"], "Equation (1.2)")
+        self.assertIn('E &= R - Y \\tag{1.1a}', html)
+        self.assertIn('&= R - GE. \\tag{1.1b}', html)
+        self.assertIn('\\[ z = w \\tag{1.2}\\]', html)   # plain eq still tagged
+        self.assertNotIn('\\label{', html)               # label became a \tag
+        self.assertIn('<span id="eq:row2"></span>', html)  # scroll target kept
+        self.assertIn('<a class="xref" href="/c/s/#eq:grp">equation (1.1)</a>', html)
+        self.assertIn('<a class="xref" href="/c/s/#eq:row2">equation (1.1b)</a>', html)
 
     def test_definition_resolves_via_def_prefix(self):
         # definitions are anchored on their bare id (::: {#magnitude .definition})

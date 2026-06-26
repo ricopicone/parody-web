@@ -302,6 +302,74 @@ def _subtable_structure(html):
             for m in _SUBTABLES_RE.finditer(html)}
 
 
+_SUBEQ_RE = re.compile(
+    r'<div\b[^>]*\bclass="subequations"[^>]*>.*?</div>', re.S)
+_SUBEQ_ID_RE = re.compile(r'<div\b[^>]*\bid="(eq:[^"]+)"[^>]*\bclass="subequations"'
+                          r'|<div\b[^>]*\bclass="subequations"[^>]*\bid="(eq:[^"]+)"')
+_SUBEQ_MATH_RE = re.compile(r'<span class="math display">(.*?)</span>', re.S)
+_SUBEQ_ENV_RE = re.compile(
+    r'\\begin\{(align\*?|aligned|gather\*?|flalign\*?)\}(.*?)\\end\{\1\}', re.S)
+_SUBEQ_SKIP_RE = re.compile(r'\\nonumber|\\notag')
+_SUBEQ_LABEL_RE = re.compile(r'\\label\{(eq:[^}]+)\}')
+
+
+def _subeq_align(block):
+    r"""Parse the aligned math inside a subequations <div>. Returns
+    (parts, numbered) where parts = re.split(r'(\\)', inner) of the alignment
+    environment's body, and numbered is [(part_index, letter, label_id|None), …]
+    — one entry per NUMBERED row (skipping \nonumber/\notag and blank rows), in
+    order, lettered a, b, c…. Returns (None, []) if there is no aligned math."""
+    mm = _SUBEQ_MATH_RE.search(block)
+    if not mm:
+        return None, []
+    env = _SUBEQ_ENV_RE.search(mm.group(1))
+    if not env:
+        return None, []
+    parts = re.split(r'(\\\\)', env.group(2))
+    numbered, i = [], 0
+    for k in range(0, len(parts), 2):
+        row = parts[k]
+        if not row.strip() or _SUBEQ_SKIP_RE.search(row):
+            continue
+        lab = _SUBEQ_LABEL_RE.search(row)
+        numbered.append((k, chr(97 + i), lab.group(1) if lab else None))
+        i += 1
+    return parts, numbered
+
+
+def _subeq_structure(html):
+    """Map each <div class="subequations" id="eq:P"> to its labelled rows as
+    [(sub_id, letter), …] (only rows that carry a \\label are cross-referenceable;
+    unlabelled rows are still lettered and \\tag-ged, just never pointed at)."""
+    out = {}
+    for m in _SUBEQ_RE.finditer(html):
+        block = m.group(0)
+        idm = _SUBEQ_ID_RE.search(block)
+        if not idm:
+            continue
+        pid = idm.group(1) or idm.group(2)
+        _, numbered = _subeq_align(block)
+        out[pid] = [(lab, letter) for _k, letter, lab in numbered if lab]
+    return out
+
+
+def _number_subeq_div(block, num):
+    r"""Inject \tag{N a}, \tag{N b}, … into each numbered row of a subequations
+    block's aligned math (dropping the now-redundant \label), so MathJax prints
+    one lettered number per row exactly like the print book's subequations."""
+    parts, numbered = _subeq_align(block)
+    if not numbered:
+        return block
+    mm = _SUBEQ_MATH_RE.search(block)
+    inner_old = _SUBEQ_ENV_RE.search(mm.group(1)).group(2)
+    for k, letter, _lab in numbered:
+        row = _SUBEQ_LABEL_RE.sub("", parts[k])
+        trail = row[len(row.rstrip()):]
+        parts[k] = row.rstrip() + r" \tag{" + num + letter + "}" + trail
+    new_math = mm.group(0).replace(inner_old, "".join(parts), 1)
+    return block[:mm.start()] + new_math + block[mm.end():]
+
+
 _RIGHTS_FIG_RE = re.compile(r'<figure\b[^>]*\bdata-permission="permission"')
 _RIGHTS_IMG_RE = re.compile(r'<img\b[^>]*\bdata-permission="permission"[^>]*>')
 _FIG_DELIM_RE = re.compile(r'<figure\b|</figure>')
@@ -362,6 +430,7 @@ def number_artifact(data, references=None, edition_query=""):
     subtable_caps = {}    # per-section: main-tbl-id -> (number, [(sub-id, letter), …])
     listing_caps = {}     # per-section: lst-id -> (number, caption)
     eq_caps = {}          # per-section: eq-id -> number (shown right of the math)
+    subeq_caps = {}       # per-section: subequations parent-id -> group number N
     idx_state = {"arabic": 0, "appendix": 0}
     lab_n = 0
 
@@ -446,6 +515,13 @@ def number_artifact(data, references=None, edition_query=""):
             st_children = _subtable_structure(sec.get("html") or "")
             st_subids = {sid for kids in st_children.values() for sid in kids}
 
+            # subequations groups: one parent number, lettered rows (3.5a, 3.5b).
+            # The parent counts as one equation (in document order); the labelled
+            # rows share its number with a letter, so don't count them separately.
+            subeq_children = _subeq_structure(sec.get("html") or "")
+            subeq_subids = {sid for subs in subeq_children.values()
+                            for sid, _ in subs}
+
             # non-heading targets (figures, tables, equations, exercises, …),
             # numbered per chapter per type in anchor (document) order. The
             # registry keys on both id (fig:…/tbl:…) and 2-char hash (exercises).
@@ -464,8 +540,9 @@ def number_artifact(data, references=None, edition_query=""):
                     continue
                 if t == "heading" or t not in _TYPE_LABELS:
                     continue
-                if a.get("id") in sf_subids or a.get("id") in st_subids:
-                    continue  # a sub-panel; numbered with its parent below
+                if (a.get("id") in sf_subids or a.get("id") in st_subids
+                        or a.get("id") in subeq_subids):
+                    continue  # a sub-panel / subequation row; numbered below
                 type_counters[t] = type_counters.get(t, 0) + 1
                 num = f"{cnum}.{type_counters[t]}"
                 # equations are referenced with the number in parentheses,
@@ -477,9 +554,17 @@ def number_artifact(data, references=None, edition_query=""):
                     targets[a["id"]] = entry
                 if a.get("hash"):
                     targets[a["hash"]] = entry
-                if t == "equation" and a.get("id"):
-                    # record the number so pass 2 can show "(C.n)" to the right of
-                    # the display equation itself (mirroring the printed book).
+                if t == "equation" and a.get("id") in subeq_children:
+                    # a subequations group: the parent keeps the bare number "(N)";
+                    # each labelled row is "(N a)" and is rendered (and \tag-ged) in
+                    # pass 2. Record N for the pass-2 row tagging.
+                    subeq_caps.setdefault(sec["slug"], {})[a["id"]] = num
+                    for sub_id, letter in subeq_children[a["id"]]:
+                        targets[sub_id] = {
+                            "label": f"Equation ({num}{letter})",
+                            "url": f"{url}#{sub_id}"}
+                elif t == "equation" and a.get("id"):
+                    # plain numbered equation: pass 2 shows the number as a \tag.
                     eq_caps.setdefault(sec["slug"], {})[a["id"]] = num
                 if t == "figure" and a.get("id") in sf_children:
                     # main of a subfigure float: letter its panels and record the
@@ -629,20 +714,59 @@ def number_artifact(data, references=None, edition_query=""):
                 html = re.sub(r'(<div\b[^>]*\bid="' + re.escape(lid) + r'"[^>]*>)',
                               lambda mo, inj=inject: mo.group(1) + inj, html, count=1)
 
-            # numbered display equations: a build-side anchor span trails the math
-            # (<span class="math display">…</span> <span id="eq:…"></span>). Wrap the
-            # pair so CSS can float "(C.n)" to the right of the equation, and fold the
-            # number into the anchor (still the deep-link/scroll target).
-            for eid, num in eq_caps.get(sec["slug"], {}).items():
-                # the math span's body (raw TeX) never contains "</span>", so a
-                # tempered match keeps the capture from spilling across a later
-                # equation into this one's anchor (which would double-wrap).
+            # subequations groups: \tag every row "N a", "N b", … then stash the
+            # whole <div> behind a placeholder so the single/multi-label tagger
+            # below can't touch its math (its rows are already numbered).
+            subeq_stash = []
+            sq_nums = subeq_caps.get(sec["slug"], {})
+            if sq_nums:
+                def _stash_subeq(mo):
+                    block = mo.group(0)
+                    idm = _SUBEQ_ID_RE.search(block)
+                    pid = (idm.group(1) or idm.group(2)) if idm else None
+                    if pid in sq_nums:
+                        block = _number_subeq_div(block, sq_nums[pid])
+                    subeq_stash.append(block)
+                    return f"\x00SUBEQ{len(subeq_stash) - 1}\x00"
+                html = _SUBEQ_RE.sub(_stash_subeq, html)
+
+            # numbered display equations: show the number as a MathJax \tag, which
+            # right-aligns it (vertically centred, and one PER row in an aligned
+            # block) exactly like the printed book. Two carriers reach us from the
+            # build (see artifact.py):
+            #   • single equation — <span class="math display">\[ … \]</span> then a
+            #     trailing <span id="eq:ID"></span>: drop one \tag before the \].
+            #   • multi-label aligned block — the raw \label{eq:ID}s are kept inside
+            #     the math (one per numbered row, plus a trailing anchor each): swap
+            #     each \label for the matching \tag so every row gets its number.
+            # Trailing anchors stay put as scroll / cross-ref targets. \label is a
+            # no-op macro in the MathJax config, so an unmatched one never chokes.
+            eq_nums = eq_caps.get(sec["slug"], {})
+            if eq_nums:
+                def _tag_math(mo):
+                    body, anchors = mo.group(1), mo.group(2)
+                    if r"\label{eq:" in body:
+                        body = re.sub(
+                            r'\\label\{(eq:[^}]+)\}',
+                            lambda m: (r"\tag{" + eq_nums[m.group(1)] + "}"
+                                       if m.group(1) in eq_nums else ""),
+                            body)
+                    else:
+                        ids = re.findall(r'<span id="(eq:[^"]+)"></span>', anchors)
+                        if len(ids) == 1 and ids[0] in eq_nums:
+                            close = body.rfind(r"\]")
+                            if close != -1:
+                                body = (body[:close] + r"\tag{" + eq_nums[ids[0]]
+                                        + "}" + body[close:])
+                    return '<span class="math display">' + body + "</span>" + anchors
                 html = re.sub(
-                    r'(<span class="math display">(?:(?!</span>).)*</span>)\s*'
-                    r'<span id="' + re.escape(eid) + r'"></span>',
-                    r'<span class="numbered-eq">\1'
-                    r'<span id="' + eid + r'" class="eqnum">(' + num + r')</span>'
-                    r'</span>', html, count=1, flags=re.S)
+                    r'<span class="math display">((?:(?!</span>).)*)</span>'
+                    r'((?:\s*<span id="eq:[^"]+"></span>)*)',
+                    _tag_math, html, flags=re.S)
+
+            if subeq_stash:  # restore the numbered subequations <div>s
+                html = re.sub(r'\x00SUBEQ(\d+)\x00',
+                              lambda m: subeq_stash[int(m.group(1))], html)
 
             def resolve(mo):
                 cap = mo.group(1) == "Hashref"  # .Hashref capitalizes
