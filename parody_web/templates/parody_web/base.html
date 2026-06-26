@@ -148,6 +148,34 @@ p.suppliers { font-family: system-ui, sans-serif; font-size: .9rem; }
 .draft-banner { font-family: system-ui, sans-serif; font-size: .85rem;
     background: #fff7e6; border: 1px solid #f0c060; border-radius: 6px;
     padding: .5rem .8rem; margin: .3rem 0 1rem; }
+/* example environments (::: {.example}): a subtle corner-bracket box mirroring
+   the print book's boxed examples. The frame is four L-shaped corners drawn as
+   gradients, so the top/bottom "borders" appear only at the corners; a faint
+   dashed rule separates the solution (.example-solution) from the problem
+   statement. Colours derive from the site accent (#7a6ff0/#5a4fd0) — the
+   de-facto theme base until a real theme is built out. --exc = corner arm
+   length, --ext = line thickness. */
+.example { --exc: 16px; --ext: 1.5px; --excol: #c3bef2;
+    margin: 1.6rem 0; padding: 1rem 1.3rem;
+    background-image:
+      linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol)),
+      linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol)),
+      linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol)),
+      linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol));
+    background-repeat: no-repeat;
+    background-size:
+      var(--exc) var(--ext), var(--ext) var(--exc),
+      var(--exc) var(--ext), var(--ext) var(--exc),
+      var(--exc) var(--ext), var(--ext) var(--exc),
+      var(--exc) var(--ext), var(--ext) var(--exc);
+    background-position:
+      left top, left top, right top, right top,
+      left bottom, left bottom, right bottom, right bottom; }
+.example-label { font-family: system-ui, sans-serif; font-size: .78rem;
+    font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    color: #5a4fd0; margin-bottom: .5rem; }
+.example > .example-solution { margin-top: .9rem; padding-top: .9rem;
+    border-top: 1px dashed #d9d5f5; }
 a.xref { text-decoration: none; color: #5a4fd0; white-space: nowrap; }
 a.xref:hover { text-decoration: underline; }
 a.cite { text-decoration: none; color: #5a4fd0; }

@@ -511,6 +511,7 @@ def number_artifact(data, references=None, edition_query=""):
     listing_caps = {}     # per-section: lst-id -> (number, caption)
     eq_caps = {}          # per-section: eq-id -> number (shown right of the math)
     subeq_caps = {}       # per-section: subequations parent-id -> group number N
+    example_caps = {}     # per-section: example div-id -> number N.n (label inject)
     # chapter_start: the number the first (non-appendix) chapter takes. The
     # artifact omits it at the default of 1; RTC sets 0 ("Chapter 0").
     # _chapter_label pre-increments "arabic", so seed it one below the start.
@@ -639,6 +640,11 @@ def number_artifact(data, references=None, edition_query=""):
                     targets[a["id"]] = entry
                 if a.get("hash"):
                     targets[a["hash"]] = entry
+                if t == "example" and a.get("id"):
+                    # record the number so pass 2 can inject an "Example N.n"
+                    # label into the boxed environment (the web mirrors the
+                    # print book's boxed-example title).
+                    example_caps.setdefault(sec["slug"], {})[a["id"]] = num
                 if t == "equation" and a.get("id") in subeq_children:
                     # a subequations group: the parent keeps the bare number "(N)";
                     # each labelled row is "(N a)" and is rendered (and \tag-ged) in
@@ -798,6 +804,18 @@ def number_artifact(data, references=None, edition_query=""):
                           f'Listing {lnum}:</span> {cap_html}</div>')
                 html = re.sub(r'(<div\b[^>]*\bid="' + re.escape(lid) + r'"[^>]*>)',
                               lambda mo, inj=inject: mo.group(1) + inj, html, count=1)
+
+            # example environments: inject an "Example N.n" label at the top of
+            # the boxed div (::: {.example …}). The box itself is CSS (corner
+            # brackets + a faint divider before .example-solution); here we add
+            # only the visible number, mirroring the print book's box title. The
+            # class-token lookahead matches `example` but not `example-solution`.
+            for eid, enum in example_caps.get(sec["slug"], {}).items():
+                label = f'<div class="example-label">Example {enum}</div>'
+                html = re.sub(
+                    r'(<div\b(?=[^>]*\bclass="(?:[^"]*\s)?example(?:\s[^"]*)?")'
+                    r'[^>]*\bid="' + re.escape(eid) + r'"[^>]*>)',
+                    lambda mo, lab=label: mo.group(1) + lab, html, count=1)
 
             # subequations groups: \tag every row "N a", "N b", … then stash the
             # whole <div> behind a placeholder so the single/multi-label tagger

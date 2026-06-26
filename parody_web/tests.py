@@ -244,6 +244,34 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<span class="fignum">Figure 1.2:</span>', html)
         self.assertIn('<span class="subfignum">(a)</span> First.', html)
 
+    def test_example_gets_numbered_label_injected(self):
+        # ::: {.example} → numbered per chapter; pass 2 injects an "Example N.n"
+        # label at the top of the box (CSS draws the corner-bracket frame). The
+        # label lands on the outer .example div only, never .example-solution.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "exa-a", "type": "example", "hash": "e9"},
+                {"id": "exa-b", "type": "example", "hash": "y4"},
+            ], "html":
+                '<div id="exa-a" class="example" data-h="e9"><div>'
+                '<p>Problem one.</p></div>'
+                '<div class="example-solution"><p>Solution one.</p></div></div>'
+                '<p>see <span class="hashref">exa-b</span></p>'
+                '<div id="exa-b" data-env-type="example" class="example" '
+                'data-h="y4"><p>Problem two.</p></div>'}]}]}
+        targets = number_artifact(data)
+        self.assertEqual(targets["exa-a"]["label"], "Example 1.1")
+        self.assertEqual(targets["exa-b"]["label"], "Example 1.2")
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<div id="exa-a" class="example" data-h="e9">'
+                      '<div class="example-label">Example 1.1</div>', html)
+        # works regardless of attribute order (id before/after class)
+        self.assertIn('<div class="example-label">Example 1.2</div>'
+                      '<p>Problem two.</p>', html)
+        # the label is injected once per example, not into .example-solution
+        self.assertEqual(html.count('class="example-label"'), 2)
+        self.assertIn('<a class="xref" href="/c/s/#exa-b">example 1.2</a>', html)
+
     def test_chapter_start_zero_offsets_numbering(self):
         # chapter_start: 0 (RTC) → first chapter is "0"; its section, figure and
         # the chapter cross-ref all inherit it (0.1, Figure 0.1, "Chapter 0").
