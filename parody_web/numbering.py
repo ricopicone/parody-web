@@ -392,6 +392,32 @@ _SUBEQ_ENV_RE = re.compile(
 _SUBEQ_SKIP_RE = re.compile(r'\\nonumber|\\notag')
 _SUBEQ_LABEL_RE = re.compile(r'\\label\{(eq:[^}]+)\}')
 
+# MathJax forbids \tag inside the INNER alignment environments (aligned,
+# gathered) — it raises "\tag not allowed in aligned environment". pandoc emits
+# whatever environment the source markdown used, and the rtc source uses the
+# inner \begin{aligned}; so a \tag dropped into a numbered row (or one the author
+# wrote, e.g. \tag{KVL}) chokes MathJax. A standalone \[\begin{aligned}…\end{…}\]
+# is equivalent to the top-level \begin{align}…\end{align}, which DOES permit
+# \tag and — with MathJax tags:'none' — still numbers only the \tag-ged rows. So
+# whenever such a block carries a \tag, promote the inner environment to its
+# outer twin (and drop the now-redundant \[ \] display delimiters).
+_PROMOTE_ENV = {"aligned": "align", "gathered": "gather"}
+_TAGGED_ALIGNED_RE = re.compile(
+    r'\\\[\s*\\begin\{(aligned|gathered)\}(.*?)\\end\{\1\}\s*\\\]', re.S)
+
+
+def _promote_tagged_aligned(body):
+    r"""Promote a standalone \[\begin{aligned}…\end{aligned}\] (or {gathered})
+    that contains a \tag to the tag-permitting top-level \begin{align}…\end{align}
+    (or {gather}). Blocks without a \tag, and aligned envs nested inside other
+    math (e.g. a \left\{…\right. cases group), are left untouched."""
+    def repl(mo):
+        if r"\tag" not in mo.group(2):
+            return mo.group(0)
+        env = _PROMOTE_ENV[mo.group(1)]
+        return r"\begin{" + env + "}" + mo.group(2) + r"\end{" + env + "}"
+    return _TAGGED_ALIGNED_RE.sub(repl, body)
+
 
 def _subeq_align(block):
     r"""Parse the aligned math inside a subequations <div>. Returns
@@ -870,6 +896,16 @@ def number_artifact(data, references=None, edition_query=""):
             if subeq_stash:  # restore the numbered subequations <div>s
                 html = re.sub(r'\x00SUBEQ(\d+)\x00',
                               lambda m: subeq_stash[int(m.group(1))], html)
+
+            # every \tag we injected (and any the author wrote, e.g. \tag{KVL})
+            # must sit in a tag-permitting environment: promote inner
+            # aligned/gathered blocks. Runs for every section — author tags need
+            # this even where no equation is numbered — and only rewrites math
+            # spans whose block actually carries a \tag.
+            html = re.sub(
+                r'(<span class="math display">)((?:(?!</span>).)*)(</span>)',
+                lambda m: m.group(1) + _promote_tagged_aligned(m.group(2))
+                + m.group(3), html, flags=re.S)
 
             def resolve(mo):
                 cap = mo.group(1) == "Hashref"  # .Hashref capitalizes

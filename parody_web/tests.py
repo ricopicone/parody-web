@@ -527,6 +527,59 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<a class="xref" href="/c/s/#eq:grp">equation (1.1)</a>', html)
         self.assertIn('<a class="xref" href="/c/s/#eq:row2">equation (1.1b)</a>', html)
 
+    def test_aligned_block_promoted_to_align_when_tagged(self):
+        # REAL pandoc emits the INNER \begin{aligned} (the rtc source uses it),
+        # where MathJax forbids \tag ("\tag not allowed in aligned environment").
+        # Once numbering drops per-row \tags, the block must be promoted to the
+        # tag-permitting top-level \begin{align} (and the \[ \] delimiters dropped).
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:a", "type": "equation"},
+                {"id": "eq:b", "type": "equation"},
+            ], "html":
+                '<span class="math display">\\[\\begin{aligned}\n'
+                'K_P &= a \\label{eq:a}\\\\\n'
+                'K_I &= b \\label{eq:b}\n'
+                '\\end{aligned}\\]</span>'
+                '<span id="eq:a"></span><span id="eq:b"></span>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('\\begin{align}', html)            # promoted to outer env
+        self.assertNotIn('aligned', html)                # inner env fully gone
+        self.assertNotIn('\\[', html)                    # display delimiters dropped
+        self.assertIn('K_P &= a \\tag{1.1}', html)
+        self.assertIn('K_I &= b \\tag{1.2}', html)
+
+    def test_author_tag_in_aligned_promoted_even_without_numbering(self):
+        # an author-written \tag{KVL} sits in \begin{aligned} too; it must be
+        # promoted even when the block carries no \label and no equation number,
+        # so the manual tag does not choke MathJax.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [],
+            "html":
+                '<span class="math display">\\[\\begin{aligned}\n'
+                'a &= b \\tag{KVL}\\\\\n'
+                '&= c\n'
+                '\\end{aligned}\\]</span>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('\\begin{align}', html)
+        self.assertNotIn('aligned', html)
+        self.assertIn('a &= b \\tag{KVL}', html)
+
+    def test_untagged_aligned_block_left_untouched(self):
+        # a plain (unnumbered, untagged) aligned block must NOT be promoted —
+        # only blocks that actually carry a \tag are rewritten.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [],
+            "html":
+                '<span class="math display">\\[\\begin{aligned}\n'
+                'a &= b\\\\ &= c\n\\end{aligned}\\]</span>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('\\begin{aligned}', html)          # untouched
+        self.assertNotIn('\\begin{align}', html)
+
     def test_definition_resolves_via_def_prefix(self):
         # definitions are anchored on their bare id (::: {#magnitude .definition})
         # but referenced [def:magnitude]{.hashref}; the prefix is stripped on lookup.
