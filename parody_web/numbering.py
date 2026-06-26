@@ -117,6 +117,73 @@ def _join_oxford(parts):
     return ", ".join(parts[:-1]) + ", and " + parts[-1]
 
 
+def _alpha_num(s):
+    """A, B, … Z, AA, … -> 1, 2, … (appendix chapter letters), base-26."""
+    n = 0
+    for ch in s:
+        n = n * 26 + (ord(ch) - 64)
+    return n
+
+
+_NUM_COMP_RE = re.compile(r"(\d+)([a-z]*)")
+
+
+def _num_components(s):
+    """Parse a reference number ("(9.7)", "3.2.1", "B.4", "8.10a") into a list of
+    comparable components, or None if it isn't a clean dotted number. Each
+    component is (kind, int, letter): kind 0 = numeric ("7"→(0,7,""), "10a"→
+    (0,10,"a")), kind 1 = an appendix letter ("B"→(1,2,"")). The tuples sort in
+    reading order and let _consecutive test adjacency."""
+    comps = []
+    for p in s.strip("() ").split("."):
+        m = _NUM_COMP_RE.fullmatch(p)
+        if m:
+            comps.append((0, int(m.group(1)), m.group(2)))
+        elif p.isalpha() and p.isupper():
+            comps.append((1, _alpha_num(p), ""))
+        else:
+            return None
+    return comps or None
+
+
+def _consecutive(a, b):
+    """True if number b immediately follows a (same prefix; last component +1, or
+    the same number with the next letter — 8.10a→8.10b)."""
+    if not a or not b or len(a) != len(b) or a[:-1] != b[:-1]:
+        return False
+    (ka, na, la), (kb, nb, lb) = a[-1], b[-1]
+    if ka != kb:
+        return False
+    if la == lb:
+        return nb == na + 1
+    return na == nb and len(la) == len(lb) == 1 and ord(lb) == ord(la) + 1
+
+
+def _compress_refs(items):
+    """Render a list of (number_string, url) cross-refs the way cleveref's
+    sort&compress does: sort by number, then collapse each run of 3+ consecutive
+    into "first to last" (runs of 1–2 are listed); join with an Oxford "and".
+    e.g. (9.7),(9.8),(9.9) -> "(9.7) to (9.9)"; (2.4),(2.5) -> "(2.4) and (2.5)".
+    If any number doesn't parse cleanly the list is left in document order and
+    only listed (no sort/compress)."""
+    keyed = [(_num_components(n), n, u) for n, u in items]
+    if all(k is not None for k, _, _ in keyed):
+        keyed.sort(key=lambda x: x[0])
+    elements, i = [], 0
+    while i < len(keyed):
+        j = i
+        while (j + 1 < len(keyed) and keyed[j][0] is not None
+               and _consecutive(keyed[j][0], keyed[j + 1][0])):
+            j += 1
+        if j - i >= 2:  # a run of 3+ -> a "first to last" range
+            elements.append(_link(keyed[i][1], keyed[i][2]) + " to "
+                            + _link(keyed[j][1], keyed[j][2]))
+        else:
+            elements += [_link(n, u) for _k, n, u in keyed[i:j + 1]]
+        i = j + 1
+    return _join_oxford(elements)
+
+
 def _render_refs(tgt, targets, cap_class=False):
     """Resolve a cross-ref target, which may be a comma-separated list of keys
     ([4n,us,rq]{.hashref} → "chapters 2, 3, and 4", each number linked). When the
@@ -127,29 +194,42 @@ def _render_refs(tgt, targets, cap_class=False):
     Case follows the reference site (task #296): cap_class is set when the span
     asked to capitalize (a .Hashref / \\Cref), and an upper-case key letter
     (Fig:, S4) also capitalizes — otherwise the label is lower-cased."""
+    keys = [k.strip() for k in tgt.split(",") if k.strip()]
+    if not keys:
+        return None
     resolved = []
-    for k in (k.strip() for k in tgt.split(",")):
-        if not k:
-            continue
+    for k in keys:
         t = _lookup_target(k, targets)
         if not t:
             return None
-        cap = cap_class or k[:1].isupper()
+        resolved.append((t, k))
+
+    def _one(t, k):
         # titled targets (infoboxes labelled by their proper-noun title) keep
         # their case verbatim — don't lower-case "Control System Design Problem"
         # the way a numbered "Figure 3.1" first letter is recased (task #296).
-        label = t["label"] if t.get("titled") else _recase_label(t["label"], cap)
-        resolved.append((label, _target_url(t)))
-    if not resolved:
-        return None
+        if t.get("titled"):
+            return t["label"]
+        return _recase_label(t["label"], cap_class or k[:1].isupper())
+
     if len(resolved) == 1:
-        return _link(*resolved[0])
-    words = {lbl.rsplit(" ", 1)[0] for lbl, _ in resolved if " " in lbl}
-    if len(words) == 1 and all(" " in lbl for lbl, _ in resolved):
-        word = next(iter(words))
-        nums = [_link(lbl.rsplit(" ", 1)[1], url) for lbl, url in resolved]
-        return f"{word}s {_join_oxford(nums)}"
-    return _join_oxford([_link(lbl, url) for lbl, url in resolved])
+        t, k = resolved[0]
+        return _link(_one(t, k), _target_url(t))
+
+    # multiple refs that share a label word (all equations, all sections, …):
+    # factor the word out, pluralize it, and sort&compress the numbers like the
+    # print build's cleveref — "equations (9.7) to (9.9)", "sections 2.1 and 2.2".
+    raws = [t["label"] for t, _ in resolved]
+    words = {r.rsplit(" ", 1)[0] for r in raws if " " in r}
+    if (not any(t.get("titled") for t, _ in resolved)
+            and len(words) == 1 and all(" " in r for r in raws)):
+        # the whole group takes one case (the reference site's), like \cref
+        cap = cap_class or keys[0][:1].isupper()
+        word = _recase_label(next(iter(words)), cap)
+        items = [(t["label"].rsplit(" ", 1)[1], _target_url(t)) for t, _ in resolved]
+        return f"{word}s {_compress_refs(items)}"
+    # mixed kinds (or titled): list the full labels, each cased by its own key
+    return _join_oxford([_link(_one(t, k), _target_url(t)) for t, k in resolved])
 
 
 def _cref_link(key, targets, cap=False):
@@ -779,6 +859,13 @@ def number_artifact(data, references=None, edition_query=""):
 
             def resolve_cite(mo):
                 keys = mo.group(1).split()
+                # a citation made entirely of cross-ref keys ([@eq:a;@eq:b;@eq:c])
+                # renders grouped + sort&compressed, exactly like \cref{a,b,c}
+                # ("equations (9.7) to (9.9)") rather than a repeated-word list.
+                if keys and all(_lookup_target(k, targets) for k in keys):
+                    grouped = _render_refs(",".join(keys), targets)
+                    if grouped is not None:
+                        return grouped
                 parts = []
                 for k in keys:
                     t = _lookup_target(k, targets)

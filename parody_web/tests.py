@@ -3,6 +3,7 @@
 The host imports the FULL artifact; the public sees only online-only sections,
 the private parts are gated behind login (only the owner has an account)."""
 import json
+import re
 import tempfile
 from pathlib import Path
 
@@ -131,6 +132,65 @@ class CrossRefResolutionTests(TestCase):
         # .hashref keeps it lower-case ("chapters", not "Chapters").
         self.assertIn('chapters <a class="xref" href="/one/s1/">1</a> and '
                       '<a class="xref" href="/two/t1/">2</a>', html)
+
+    def _eq_section(self, n):
+        # a section carrying n numbered equations eq:e1…eq:en (1.1 … 1.n)
+        anchors = [{"id": f"eq:e{i}", "type": "equation"} for i in range(1, n + 1)]
+        return {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": anchors,
+                          "html": ""}]}]}
+
+    def _refs(self, n, keys, cite=True):
+        data = self._eq_section(n)
+        if cite:
+            cites = " ".join(keys)
+            at = ";".join("@" + k for k in keys)
+            span = f'<span class="citation" data-cites="{cites}">[{at}]</span>'
+        else:
+            span = f'<span class="hashref">{",".join(keys)}</span>'
+        data["chapters"][0]["sections"][0]["html"] = f"<p>see {span}</p>"
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        return re.sub(r'<a[^>]*>(.*?)</a>', r'\1', html)  # drop links for clarity
+
+    def test_two_consecutive_refs_join_with_and(self):
+        self.assertIn("equations (1.4) and (1.5)",
+                      self._refs(5, ["eq:e4", "eq:e5"]))
+
+    def test_three_consecutive_refs_compress_to_range(self):
+        self.assertIn("equations (1.7) to (1.9)",
+                      self._refs(9, ["eq:e7", "eq:e8", "eq:e9"]))
+
+    def test_non_consecutive_refs_listed_with_oxford_and(self):
+        self.assertIn("equations (1.1), (1.3), and (1.5)",
+                      self._refs(5, ["eq:e1", "eq:e3", "eq:e5"]))
+
+    def test_run_and_gap_mix_range_with_list(self):
+        self.assertIn("equations (1.1) and (1.6) to (1.8)",
+                      self._refs(8, ["eq:e1", "eq:e6", "eq:e7", "eq:e8"]))
+
+    def test_out_of_order_refs_are_sorted_then_compressed(self):
+        # cleveref sort&compress: order in the source doesn't matter
+        self.assertIn("equations (1.1) to (1.7)",
+                      self._refs(7, ["eq:e3", "eq:e1", "eq:e2", "eq:e7",
+                                     "eq:e5", "eq:e4", "eq:e6"]))
+
+    def test_hashref_comma_form_also_compresses(self):
+        # the \cref{a,b,c} (comma) carrier gets the same treatment as [@a;@b;@c]
+        self.assertIn("equations (1.4) to (1.6)",
+                      self._refs(6, ["eq:e4", "eq:e5", "eq:e6"], cite=False))
+
+    def test_links_preserved_on_range_endpoints(self):
+        # the endpoints of a range are still real links (middle is implied)
+        data = self._eq_section(9)
+        data["chapters"][0]["sections"][0]["html"] = (
+            '<p>see <span class="citation" data-cites="eq:e7 eq:e8 eq:e9">'
+            '[@eq:e7;@eq:e8;@eq:e9]</span></p>')
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<a class="xref" href="/c/s/#eq:e7">(1.7)</a> to '
+                      '<a class="xref" href="/c/s/#eq:e9">(1.9)</a>', html)
+        self.assertNotIn("#eq:e8", html)  # interior reference is not shown
 
     def test_edition_query_baked_into_xref_urls(self):
         # a non-default edition bakes ?ed=<id> into its cross-ref links so
