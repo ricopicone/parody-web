@@ -126,6 +126,20 @@ def auth_button(*args, href="", label="Download", **kwargs):
 
 _CSRF_RE = re.compile(r"\{%\s*csrf_token\s*%\}")
 
+# Pandoc emits math as <span class="math inline|display">…</span>. LaTeX braces
+# inside (e.g. \sqrt{\frac{{K_M}^2+BR}{JL}} -> "{{…}}") would otherwise be parsed
+# as Django {{ var }} / {% tag %} syntax and raise TemplateSyntaxError, taking
+# down the whole page's tag expansion (including {% media %} images). Shield each
+# math span's contents in {% verbatim %} before rendering.
+_MATH_SPAN_RE = re.compile(r'(<span class="math(?:\s[^"]*)?">)(.*?)(</span>)', re.DOTALL)
+
+
+def _shield_math(html):
+    return _MATH_SPAN_RE.sub(
+        lambda m: m.group(1) + "{% verbatim %}" + m.group(2) + "{% endverbatim %}" + m.group(3),
+        html,
+    )
+
 
 _CODE_SPAN_RE = re.compile(r"`([^`]+)`")
 
@@ -151,7 +165,7 @@ def render_book(html):
     """Render stored Django-flavored html (defaults to '' for empty fields)."""
     if not html:
         return ""
-    source = "{% load parody_web %}" + _CSRF_RE.sub("", html)
+    source = "{% load parody_web %}" + _shield_math(_CSRF_RE.sub("", html))
     try:
         return mark_safe(Template(source).render(Context({})))
     except TemplateSyntaxError as exc:

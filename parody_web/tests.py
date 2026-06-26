@@ -57,6 +57,23 @@ class RenderBookFilterTests(TestCase):
         self.assertIn('class="citation"', out)
         self.assertIn("<details>", out)
 
+    def test_math_braces_do_not_break_page_render(self):
+        # LaTeX like \sqrt{\frac{{K_M}^2+BR}{JL}} contains "{{…}}" which Django
+        # would parse as a variable tag; without shielding it raises
+        # TemplateSyntaxError and every {% media %} on the page stays literal.
+        body = (
+            "<img src=\"{% media 'a.svg' %}\">"
+            '<span class="math display">\\[ \\sqrt{\\frac{{K_M}^2 + B R}{J L}} \\]</span>'
+            "<img src=\"{% media 'b.svg' %}\">"
+        )
+        out = render_book(body)
+        self.assertIn("/media/a.svg", out)
+        self.assertIn("/media/b.svg", out)
+        self.assertNotIn("{%", out)
+        self.assertNotIn("book-host: unresolved", out)
+        # math text is preserved verbatim for client-side MathJax
+        self.assertIn("\\sqrt{\\frac{{K_M}^2 + B R}{J L}}", out)
+
     def test_code_spans_wraps_backticks_and_escapes(self):
         from parody_web.templatetags.parody_web import code_spans
         out = code_spans("Function `sos2header()` for <C>")
