@@ -361,6 +361,7 @@ def number_artifact(data, references=None, edition_query=""):
     subfig_caps = {}      # per-section: main-id -> (number, [(sub-id, letter), …])
     subtable_caps = {}    # per-section: main-tbl-id -> (number, [(sub-id, letter), …])
     listing_caps = {}     # per-section: lst-id -> (number, caption)
+    eq_caps = {}          # per-section: eq-id -> number (shown right of the math)
     idx_state = {"arabic": 0, "appendix": 0}
     lab_n = 0
 
@@ -476,6 +477,10 @@ def number_artifact(data, references=None, edition_query=""):
                     targets[a["id"]] = entry
                 if a.get("hash"):
                     targets[a["hash"]] = entry
+                if t == "equation" and a.get("id"):
+                    # record the number so pass 2 can show "(C.n)" to the right of
+                    # the display equation itself (mirroring the printed book).
+                    eq_caps.setdefault(sec["slug"], {})[a["id"]] = num
                 if t == "figure" and a.get("id") in sf_children:
                     # main of a subfigure float: letter its panels and record the
                     # caption injections for pass 2 (nested <figure>s break _FIG_RE)
@@ -623,6 +628,21 @@ def number_artifact(data, references=None, edition_query=""):
                           f'Listing {lnum}:</span> {cap_html}</div>')
                 html = re.sub(r'(<div\b[^>]*\bid="' + re.escape(lid) + r'"[^>]*>)',
                               lambda mo, inj=inject: mo.group(1) + inj, html, count=1)
+
+            # numbered display equations: a build-side anchor span trails the math
+            # (<span class="math display">…</span> <span id="eq:…"></span>). Wrap the
+            # pair so CSS can float "(C.n)" to the right of the equation, and fold the
+            # number into the anchor (still the deep-link/scroll target).
+            for eid, num in eq_caps.get(sec["slug"], {}).items():
+                # the math span's body (raw TeX) never contains "</span>", so a
+                # tempered match keeps the capture from spilling across a later
+                # equation into this one's anchor (which would double-wrap).
+                html = re.sub(
+                    r'(<span class="math display">(?:(?!</span>).)*</span>)\s*'
+                    r'<span id="' + re.escape(eid) + r'"></span>',
+                    r'<span class="numbered-eq">\1'
+                    r'<span id="' + eid + r'" class="eqnum">(' + num + r')</span>'
+                    r'</span>', html, count=1, flags=re.S)
 
             def resolve(mo):
                 cap = mo.group(1) == "Hashref"  # .Hashref capitalizes

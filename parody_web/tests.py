@@ -307,8 +307,33 @@ class CrossRefResolutionTests(TestCase):
                 '<p>see <span class="hashref">eq:two</span></p>'}]}]}
         targets = number_artifact(data)
         self.assertEqual(targets["eq:two"]["label"], "Equation (1.2)")
-        self.assertIn('<a class="xref" href="/c/s/#eq:two">equation (1.2)</a>',
-                      data["chapters"][0]["sections"][0]["html"])
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<a class="xref" href="/c/s/#eq:two">equation (1.2)</a>', html)
+        # the number is also shown to the right of each equation itself: the
+        # math/anchor pair is wrapped and the anchor carries "(C.n)".
+        self.assertIn('<span class="numbered-eq"><span class="math display">'
+                      '\\[x\\]</span><span id="eq:one" class="eqnum">(1.1)</span>'
+                      '</span>', html)
+        self.assertIn('<span class="numbered-eq"><span class="math display">'
+                      '\\[y\\]</span><span id="eq:two" class="eqnum">(1.2)</span>'
+                      '</span>', html)
+        # each equation wraps exactly once (no spill across the two math blocks)
+        self.assertEqual(html.count('<span class="numbered-eq">'), 2)
+        self.assertNotIn('<span class="numbered-eq"><span class="numbered-eq">', html)
+
+    def test_equation_number_shown_with_whitespace_before_anchor(self):
+        # real pandoc output leaves a space between the math span and the
+        # {#eq:..}-derived anchor; the number must still attach to the equation.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:law", "type": "equation"},
+            ], "html":
+                '<p><span class="math display">\\[ F = ma \\]</span> '
+                '<span id="eq:law"></span></p>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<span class="numbered-eq">', html)
+        self.assertIn('<span id="eq:law" class="eqnum">(1.1)</span>', html)
 
     def test_definition_resolves_via_def_prefix(self):
         # definitions are anchored on their bare id (::: {#magnitude .definition})
