@@ -449,10 +449,11 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<a class="xref" href="/c/s/#eq:two">equation (1.2)</a>', html)
         # the number is also shown on the equation itself, as a MathJax \tag
         # injected before the closing \] (MathJax renders it "(C.n)" right-aligned).
-        self.assertIn('<span class="math display">\\[x\\tag{1.1}\\]</span>'
-                      '<span id="eq:one"></span>', html)
-        self.assertIn('<span class="math display">\\[y\\tag{1.2}\\]</span>'
-                      '<span id="eq:two"></span>', html)
+        # the scroll anchor is relocated to just BEFORE the math (see below).
+        self.assertIn('<span class="eqanchor" id="eq:one"></span>'
+                      '<span class="math display">\\[x\\tag{1.1}\\]</span>', html)
+        self.assertIn('<span class="eqanchor" id="eq:two"></span>'
+                      '<span class="math display">\\[y\\tag{1.2}\\]</span>', html)
 
     def test_equation_tag_injected_with_whitespace_before_anchor(self):
         # real pandoc output leaves a space between the math span and the
@@ -466,7 +467,9 @@ class CrossRefResolutionTests(TestCase):
         number_artifact(data)
         html = data["chapters"][0]["sections"][0]["html"]
         self.assertIn('\\[ F = ma \\tag{1.1}\\]</span>', html)
-        self.assertIn('<span id="eq:law"></span>', html)  # scroll target kept
+        # scroll anchor kept, relocated to just before the math (lands ON the eq)
+        self.assertIn('<span class="eqanchor" id="eq:law"></span>'
+                      '<span class="math display">\\[ F = ma', html)
 
     def test_multilabel_align_tags_each_row(self):
         # a multi-line align keeps a raw \label per numbered row (build-side);
@@ -489,8 +492,10 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('K_P &= a \\tag{1.1}', html)
         self.assertIn('K_I &= b \\tag{1.2}', html)
         self.assertNotIn('\\label{', html)               # all labels consumed
-        self.assertIn('<span id="eq:kp"></span>', html)  # scroll targets kept
-        self.assertIn('<span id="eq:ki"></span>', html)
+        # both row anchors kept, relocated ahead of the block (scroll lands on it)
+        self.assertIn('<span class="eqanchor" id="eq:kp"></span>'
+                      '<span class="eqanchor" id="eq:ki"></span>'
+                      '<span class="math display">', html)
         self.assertIn('<a class="xref" href="/c/s/#eq:ki">equation (1.2)</a>', html)
 
     def test_subequations_lettered_and_counts_once(self):
@@ -523,7 +528,9 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('&= R - GE. \\tag{1.1b}', html)
         self.assertIn('\\[ z = w \\tag{1.2}\\]', html)   # plain eq still tagged
         self.assertNotIn('\\label{', html)               # label became a \tag
-        self.assertIn('<span id="eq:row2"></span>', html)  # scroll target kept
+        # row anchor kept, relocated ahead of the math inside the subequations div
+        self.assertIn('<span class="eqanchor" id="eq:row2"></span>'
+                      '<span class="math display">', html)
         self.assertIn('<a class="xref" href="/c/s/#eq:grp">equation (1.1)</a>', html)
         self.assertIn('<a class="xref" href="/c/s/#eq:row2">equation (1.1b)</a>', html)
 
@@ -579,6 +586,24 @@ class CrossRefResolutionTests(TestCase):
         html = data["chapters"][0]["sections"][0]["html"]
         self.assertIn('\\begin{aligned}', html)          # untouched
         self.assertNotIn('\\begin{align}', html)
+
+    def test_eq_anchor_relocated_before_math_for_scroll(self):
+        # the build appends the scroll anchor AFTER the math, so a cross-ref jump
+        # lands just past the equation; numbering moves it to immediately BEFORE
+        # the math (as .eqanchor) so the jump lands ON the equation. Whitespace
+        # between math and the trailing anchor (real pandoc) is absorbed.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:one", "type": "equation"},
+            ], "html":
+                '<p><span class="math display">\\[x\\]</span> '
+                '<span id="eq:one"></span></p>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<span class="eqanchor" id="eq:one"></span>'
+                      '<span class="math display">', html)
+        self.assertNotIn('</span> <span id="eq:one">', html)  # not left trailing
+        self.assertNotIn('<span id="eq:one"></span>', html)   # only the classed one
 
     def test_definition_resolves_via_def_prefix(self):
         # definitions are anchored on their bare id (::: {#magnitude .definition})

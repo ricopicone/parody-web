@@ -38,6 +38,17 @@ form.codebox .note { display: block; margin-top: .3rem; }
 .fignum { font-weight: bold; }
 /* equation numbers are rendered by MathJax as \tag{C.n} (injected by numbering),
    so they need no CSS — they right-align and vertically-centre like the print book. */
+/* equation cross-ref target: numbering relocates the scroll anchor to just before
+   its equation, so a jump lands ON the equation (with breathing room above); the
+   :target highlight briefly flashes the equation that was navigated to. */
+.eqanchor { display: inline-block; width: 0; height: 0; overflow: hidden;
+    scroll-margin-top: 3rem; }
+@keyframes eq-target-flash {
+    from { background: #fdf2b8; box-shadow: 0 0 0 .35rem #fdf2b8; }
+    to   { background: transparent; box-shadow: 0 0 0 .35rem transparent; }
+}
+.eqanchor:target ~ .math.display { animation: eq-target-flash 2.2s ease-out 1;
+    border-radius: 3px; }
 /* subfigure floats: one figure, lettered panels laid out in a grid */
 figure.subfigures { display: grid; gap: .6rem 1rem;
     grid-template-columns: repeat(var(--sf-cols, 2), 1fr); margin: 1.5rem 0; }

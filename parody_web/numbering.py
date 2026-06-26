@@ -406,6 +406,23 @@ _TAGGED_ALIGNED_RE = re.compile(
     r'\\\[\s*\\begin\{(aligned|gathered)\}(.*?)\\end\{\1\}\s*\\\]', re.S)
 
 
+# A numbered equation's scroll target is a trailing <span id="eq:..."></span>
+# the build appends AFTER the math span; relocate it to just before the math (see
+# call site) so a cross-ref scrolls to the equation rather than just past it.
+_ANCHOR_AFTER_MATH_RE = re.compile(
+    r'(<span class="math display">(?:(?!</span>).)*</span>)'
+    r'((?:\s*<span id="eq:[^"]+"></span>)+)', re.S)
+
+
+def _relocate_eq_anchors(mo):
+    """Move the trailing eq-anchor span(s) to immediately before their math span
+    and tag them .eqanchor (for scroll-margin + the :target highlight)."""
+    math, trailing = mo.group(1), mo.group(2)
+    ids = re.findall(r'<span id="(eq:[^"]+)"></span>', trailing)
+    moved = "".join(f'<span class="eqanchor" id="{i}"></span>' for i in ids)
+    return moved + math
+
+
 def _promote_tagged_aligned(body):
     r"""Promote a standalone \[\begin{aligned}…\end{aligned}\] (or {gathered})
     that contains a \tag to the tag-permitting top-level \begin{align}…\end{align}
@@ -906,6 +923,15 @@ def number_artifact(data, references=None, edition_query=""):
                 r'(<span class="math display">)((?:(?!</span>).)*)(</span>)',
                 lambda m: m.group(1) + _promote_tagged_aligned(m.group(2))
                 + m.group(3), html, flags=re.S)
+
+            # the build emits an equation's scroll/cross-ref anchor as a trailing
+            # <span id="eq:..."></span> AFTER the math, so jumping to it lands just
+            # PAST the equation (it ends up above the viewport). Move each anchor to
+            # immediately BEFORE its equation and tag it .eqanchor, so a cross-ref
+            # scrolls TO the equation (with scroll-margin breathing room + a :target
+            # highlight; see base.html). Multi-row blocks keep one anchor per row,
+            # all relocated ahead of the block.
+            html = _ANCHOR_AFTER_MATH_RE.sub(_relocate_eq_anchors, html)
 
             def resolve(mo):
                 cap = mo.group(1) == "Hashref"  # .Hashref capitalizes
