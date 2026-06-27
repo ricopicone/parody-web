@@ -657,8 +657,9 @@ class CrossRefResolutionTests(TestCase):
 
 
 class FurtherReadingTests(TestCase):
-    """Further-reading boxes (::: {.freadinglist}) get a title and their
-    .plaincite spans resolve to bibliography labels + post-notes (task #319)."""
+    """Further-reading boxes (::: {.freadinglist}) get a title and lay their
+    .plaincite entries out as a bulleted list of bibliography labels + notes
+    (task #319, bulleted-list refinement)."""
 
     REFS = {"kr1988": {"label": "Kernighan and Ritchie (1988)",
                        "full": "Kernighan, B. W. and Ritchie, D.. C. 1988."},
@@ -675,21 +676,39 @@ class FurtherReadingTests(TestCase):
         number_artifact(data, references=self.REFS)
         return data["chapters"][0]["sections"][0]["html"]
 
-    def test_plaincite_resolves_label_and_post_note(self):
+    def test_plaincite_resolves_label_and_post_note_as_list_item(self):
         html = self._render(
             '<div class="freadinglist">'
             '<p><span class="plaincite" data-post="chapters 1--4">kr1988</span></p>'
             '</div>')
-        # bib key -> linked "Author (Year)" label, post-note en-dashed after it
-        self.assertIn('<a class="cite" href="#ref-kr1988">'
-                      'Kernighan and Ritchie (1988)</a>, chapters 1–4', html)
+        # bib key -> linked "Author (Year)" label, note en-dashed, wrapped in <li>
+        self.assertIn('<li><a class="cite" href="#ref-kr1988">'
+                      'Kernighan and Ritchie (1988)</a>, chapters 1–4</li>', html)
         self.assertNotIn('plaincite', html)
 
-    def test_freading_box_gets_title(self):
+    def test_freading_box_gets_title_and_ul(self):
         html = self._render(
             '<div class="freadinglist">'
             '<p><span class="plaincite">kr1988</span></p></div>')
-        self.assertIn('<div class="freading-label">Further Reading</div>', html)
+        self.assertIn('<div class="freading-label">Further Reading</div><ul>', html)
+
+    def test_each_source_is_its_own_list_item(self):
+        html = self._render(
+            '<div class="freadinglist">'
+            '<p><span class="plaincite" data-post="ch 1, on X">kr1988</span>, '
+            '<span class="plaincite" data-post="ch 2">prata2013</span></p></div>')
+        # two sources -> exactly two <li> items inside one <ul> (commas in a
+        # note don't split the list); the inter-span source comma is dropped.
+        self.assertEqual(html.count('<li>'), 2)
+        self.assertIn('Kernighan and Ritchie (1988)</a>, ch 1, on X</li>', html)
+        self.assertIn('Prata (2013)</a>, ch 2</li>', html)
+
+    def test_postpost_note_attribute_is_shown(self):
+        html = self._render(
+            '<div class="freadinglist">'
+            '<p><span class="plaincite" data-postpost="for the C guide">kr1988</span>'
+            '</p></div>')
+        self.assertIn('Kernighan and Ritchie (1988)</a>, for the C guide</li>', html)
 
     def test_plaincite_added_to_references_list(self):
         html = self._render(
@@ -704,7 +723,7 @@ class FurtherReadingTests(TestCase):
         html = self._render(
             '<div class="freadinglist">'
             '<p><span class="plaincite" data-post="see all">mystery1</span></p></div>')
-        self.assertIn('mystery1, see all', html)
+        self.assertIn('<li>mystery1, see all</li>', html)
         self.assertNotIn('<section class="references">', html)
 
 

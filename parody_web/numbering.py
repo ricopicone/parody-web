@@ -33,16 +33,18 @@ _CITE_RE = re.compile(
 
 # Further-reading boxes (::: {.freadinglist}) list recommended sources as
 # [key]{.plaincite post="…"} spans, which pandoc renders as
-# <span class="plaincite" data-post="…">key</span>. Resolve the key against the
-# bibliography (Author (Year), linked) and show the post-note, exactly as the
-# print build's \textcite[…][post]{key} does. _FREADING_RE matches the box's
-# opening <div> so a "Further Reading" label can be injected (cf. example-label).
+# <span class="plaincite" data-post="…">key</span> (some carry data-postpost
+# instead). Resolve each key against the bibliography (Author (Year), linked) and
+# append its note, exactly as the print build's \textcite[…][post]{key} does, then
+# lay the whole box out as a titled bulleted list (one <li> per source).
+# _FREADING_BOX_RE matches the whole box; _PLAINCITE_RE matches one entry span.
 _PLAINCITE_RE = re.compile(
     r'<span class="(?:[^"]*\s)?plaincite(?:\s[^"]*)?"((?:\s+[\w-]+="[^"]*")*)\s*>'
     r'([^<]*)</span>')
-_PLAINCITE_POST_RE = re.compile(r'data-post="([^"]*)"')
-_FREADING_RE = re.compile(
-    r'(<div\b(?=[^>]*\bclass="(?:[^"]*\s)?freadinglist(?:\s[^"]*)?")[^>]*>)')
+_PLAINCITE_NOTE_RE = re.compile(r'data-post(?:post)?="([^"]*)"')
+_FREADING_BOX_RE = re.compile(
+    r'(<div\b(?=[^>]*\bclass="(?:[^"]*\s)?freadinglist(?:\s[^"]*)?")[^>]*>)'
+    r'.*?</div>', re.S)
 
 
 def _dashes(s):
@@ -986,14 +988,13 @@ def number_artifact(data, references=None, edition_query=""):
                 return ", ".join(parts)
             html = _CITE_RE.sub(resolve_cite, html)
 
-            # .plaincite spans inside further-reading boxes: resolve the bib key
-            # to its linked "Author (Year)" label (registering it for the
-            # References list, like a normal citation) and append the post-note.
-            # Unknown keys fall back to the bare key so nothing silently vanishes.
+            # .plaincite entry → its linked "Author (Year)" label (registered for
+            # the References list, like a normal citation) plus any note(s). Unknown
+            # keys fall back to the bare key so nothing silently vanishes.
             def resolve_plaincite(mo):
                 k = mo.group(2).strip()
-                pm = _PLAINCITE_POST_RE.search(mo.group(1))
-                post = _dashes(pm.group(1)) if pm else ""
+                notes = [_dashes(n) for n in _PLAINCITE_NOTE_RE.findall(mo.group(1))
+                         if n.strip()]
                 if k in references:
                     if k not in cited:
                         cited.append(k)
@@ -1001,13 +1002,20 @@ def number_artifact(data, references=None, edition_query=""):
                            f'{_esc(references[k]["label"])}</a>')
                 else:
                     out = _esc(k)
-                return out + (f', {post}' if post else '')
+                return out + ("".join(f', {n}' for n in notes))
+            # lay each further-reading box out as a titled bulleted list, one item
+            # per source (the source is a comma-run; print's freadinglist env adds
+            # the title and biblatex the bullets).
+            def render_freading(mo):
+                items = "".join(f'<li>{resolve_plaincite(m)}</li>'
+                                for m in _PLAINCITE_RE.finditer(mo.group(0)))
+                body = f'<ul>{items}</ul>' if items else ''
+                return (mo.group(1)
+                        + '<div class="freading-label">Further Reading</div>'
+                        + body + '</div>')
+            html = _FREADING_BOX_RE.sub(render_freading, html)
+            # any stray .plaincite outside a box still resolves (inline).
             html = _PLAINCITE_RE.sub(resolve_plaincite, html)
-            # give the box a visible title (the source carries none; print's
-            # freadinglist environment supplies it).
-            html = _FREADING_RE.sub(
-                lambda mo: mo.group(1)
-                + '<div class="freading-label">Further Reading</div>', html)
 
             if cited:
                 items = "".join(f'<li id="ref-{k}">{_esc(references[k]["full"])}</li>'
