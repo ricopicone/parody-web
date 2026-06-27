@@ -31,6 +31,24 @@ _HASHREF_RE = re.compile(r'<span class="([Hh]ashref)">([^<]*)</span>')
 _CITE_RE = re.compile(
     r'<span class="citation" data-cites="([^"]+)">\[@([^\]]*)\]</span>')
 
+# Further-reading boxes (::: {.freadinglist}) list recommended sources as
+# [key]{.plaincite post="…"} spans, which pandoc renders as
+# <span class="plaincite" data-post="…">key</span>. Resolve the key against the
+# bibliography (Author (Year), linked) and show the post-note, exactly as the
+# print build's \textcite[…][post]{key} does. _FREADING_RE matches the box's
+# opening <div> so a "Further Reading" label can be injected (cf. example-label).
+_PLAINCITE_RE = re.compile(
+    r'<span class="(?:[^"]*\s)?plaincite(?:\s[^"]*)?"((?:\s+[\w-]+="[^"]*")*)\s*>'
+    r'([^<]*)</span>')
+_PLAINCITE_POST_RE = re.compile(r'data-post="([^"]*)"')
+_FREADING_RE = re.compile(
+    r'(<div\b(?=[^>]*\bclass="(?:[^"]*\s)?freadinglist(?:\s[^"]*)?")[^>]*>)')
+
+
+def _dashes(s):
+    """em/en-dash literal --- / -- in a post-note, matching print typography."""
+    return s.replace("---", "—").replace("--", "–")
+
 # raw LaTeX that leaked into table cells etc. as `\cmd`{=latex}. (Math is in
 # <span class="math">…</span>, never backtick-{=latex}, so it's untouched.)
 _RAWTEX_RE = re.compile(r'`([^`]*)`\{=latex\}')
@@ -967,6 +985,29 @@ def number_artifact(data, references=None, edition_query=""):
                         return mo.group(0)  # unknown key → leave span as-is
                 return ", ".join(parts)
             html = _CITE_RE.sub(resolve_cite, html)
+
+            # .plaincite spans inside further-reading boxes: resolve the bib key
+            # to its linked "Author (Year)" label (registering it for the
+            # References list, like a normal citation) and append the post-note.
+            # Unknown keys fall back to the bare key so nothing silently vanishes.
+            def resolve_plaincite(mo):
+                k = mo.group(2).strip()
+                pm = _PLAINCITE_POST_RE.search(mo.group(1))
+                post = _dashes(pm.group(1)) if pm else ""
+                if k in references:
+                    if k not in cited:
+                        cited.append(k)
+                    out = (f'<a class="cite" href="#ref-{k}">'
+                           f'{_esc(references[k]["label"])}</a>')
+                else:
+                    out = _esc(k)
+                return out + (f', {post}' if post else '')
+            html = _PLAINCITE_RE.sub(resolve_plaincite, html)
+            # give the box a visible title (the source carries none; print's
+            # freadinglist environment supplies it).
+            html = _FREADING_RE.sub(
+                lambda mo: mo.group(1)
+                + '<div class="freading-label">Further Reading</div>', html)
 
             if cited:
                 items = "".join(f'<li id="ref-{k}">{_esc(references[k]["full"])}</li>'

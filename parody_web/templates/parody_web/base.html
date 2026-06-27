@@ -185,6 +185,15 @@ p.suppliers { font-family: system-ui, sans-serif; font-size: .9rem; }
     color: #6b5d49; margin-bottom: .4rem; }
 .example > .example-solution { margin-top: .9rem; padding-top: .9rem;
     border-top: 1px dashed #e6e0d6; }
+/* further-reading boxes (::: {.freadinglist}): a recommended-reading aside.
+   numbering.py injects the "Further Reading" label and resolves the .plaincite
+   entries inside to bibliography labels (Author (Year), post-note). */
+.freadinglist { margin: 1.6rem 0; padding: .8rem 1.2rem; font-size: .95rem;
+    border: 1px solid #e0d9cb; border-left: 3px solid #a89a86;
+    border-radius: 4px; background: #faf8f3; }
+.freading-label { font-family: system-ui, sans-serif; font-weight: 700;
+    color: #6b5d49; margin-bottom: .35rem; }
+.freadinglist p:last-child { margin-bottom: 0; }
 a.xref { text-decoration: none; color: #5a4fd0; white-space: nowrap; }
 a.xref:hover { text-decoration: underline; }
 a.cite { text-decoration: none; color: #5a4fd0; }

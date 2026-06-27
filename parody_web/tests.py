@@ -656,6 +656,58 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<a class="xref" href="/c/s/#tbl:leaf">table 1.1</a>', html)
 
 
+class FurtherReadingTests(TestCase):
+    """Further-reading boxes (::: {.freadinglist}) get a title and their
+    .plaincite spans resolve to bibliography labels + post-notes (task #319)."""
+
+    REFS = {"kr1988": {"label": "Kernighan and Ritchie (1988)",
+                       "full": "Kernighan, B. W. and Ritchie, D.. C. 1988."},
+            "prata2013": {"label": "Prata (2013)",
+                          "full": "Prata, Stephen. C Primer Plus. 2013."}}
+
+    def _book(self, html):
+        return {"chapters": [{"title": "One", "slug": "one", "hash": "c1",
+                "sections": [{"title": "S", "slug": "s1", "hash": "s1",
+                              "anchors": [], "html": html}]}]}
+
+    def _render(self, html):
+        data = self._book(html)
+        number_artifact(data, references=self.REFS)
+        return data["chapters"][0]["sections"][0]["html"]
+
+    def test_plaincite_resolves_label_and_post_note(self):
+        html = self._render(
+            '<div class="freadinglist">'
+            '<p><span class="plaincite" data-post="chapters 1--4">kr1988</span></p>'
+            '</div>')
+        # bib key -> linked "Author (Year)" label, post-note en-dashed after it
+        self.assertIn('<a class="cite" href="#ref-kr1988">'
+                      'Kernighan and Ritchie (1988)</a>, chapters 1–4', html)
+        self.assertNotIn('plaincite', html)
+
+    def test_freading_box_gets_title(self):
+        html = self._render(
+            '<div class="freadinglist">'
+            '<p><span class="plaincite">kr1988</span></p></div>')
+        self.assertIn('<div class="freading-label">Further Reading</div>', html)
+
+    def test_plaincite_added_to_references_list(self):
+        html = self._render(
+            '<div class="freadinglist">'
+            '<p><span class="plaincite" data-post="ch 1">kr1988</span>, '
+            '<span class="plaincite" data-post="ch 2">prata2013</span></p></div>')
+        self.assertIn('<section class="references">', html)
+        self.assertIn('<li id="ref-kr1988">', html)
+        self.assertIn('<li id="ref-prata2013">', html)
+
+    def test_unknown_key_falls_back_to_bare_key(self):
+        html = self._render(
+            '<div class="freadinglist">'
+            '<p><span class="plaincite" data-post="see all">mystery1</span></p></div>')
+        self.assertIn('mystery1, see all', html)
+        self.assertNotIn('<section class="references">', html)
+
+
 @override_settings(BOOK_SLUG="demo-book")
 class BookHostGatingTests(TestCase):
     def setUp(self):
