@@ -261,3 +261,10 @@ figure.subfigures, figure.subtables { max-width: 100%; }
   .math.inline { display: inline-block; max-width: 100%; overflow-x: auto;
       vertical-align: middle; }
 }
+
+/* Figures were left at their intrinsic SVG width, which since the reading
+   column narrowed leaves most diagrams well short of it (a 310px diagram in a
+   544px column). Let them fill the column — and drop the UA's default
+   `figure { margin: 1em 40px }`, which insets every float by 40px a side. */
+figure { margin-inline: 0; }
+figure > img, figure.subfigure > img { width: 100%; height: auto; }

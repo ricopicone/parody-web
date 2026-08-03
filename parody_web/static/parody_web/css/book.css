@@ -176,9 +176,12 @@ nav.edition-switcher strong { color: var(--ink); }
     color: var(--ink-faint); border-bottom: 1px solid var(--rule);
     padding-bottom: var(--s1); margin: 0 0 var(--s2); }
 .nav-list, .rail-list { list-style: none; margin: 0; padding: 0; }
-.nav-item { margin: var(--s1) 0; display: flex; gap: var(--s1); align-items: baseline; }
+/* A flex row aligned every title to the widest label, so "Lab exercise 1"
+   dragged the whole column into a deep hanging indent. A text-indent hang is
+   fixed at ~2 characters regardless of how long the label runs. */
+.nav-item { margin: var(--s1) 0; padding-left: 2.2ch; text-indent: -2.2ch; }
 .nav-item i { font-family: var(--font-display); font-style: normal; font-size: var(--fs-xs);
-    color: var(--ink-faint); flex: 0 0 auto; }
+    color: var(--ink-faint); margin-right: .5ch; }
 .nav-item a { color: var(--ink-muted); }
 .nav-item a:hover { color: var(--accent); text-decoration: none; }
 /* current section: an accent tick in the gutter rather than a filled block, so
@@ -196,11 +199,14 @@ nav.edition-switcher strong { color: var(--ink); }
    contents. Chapters collapse; previously every section of every chapter was
    dumped flat onto one page. */
 .book-hero { display: flex; gap: var(--s5); align-items: flex-start; margin-bottom: var(--s7); }
-.book-hero img.cover { float: none; max-width: 9rem; margin: 0; flex: 0 0 auto;
+.book-hero img.cover { float: none; width: 14rem; max-width: 38%; margin: 0; flex: 0 0 auto;
     border: 1px solid var(--rule); box-shadow: 0 1px 4px rgb(0 0 0 / .15); }
 .hero-text { min-width: 0; }
 .hero-text h1 { margin: 0 0 var(--s2); }
-.hero-authors { font-style: italic; color: var(--ink-muted); margin: 0 0 var(--s2); }
+/* one author per line — a comma-joined run reads as a single credit */
+.hero-authors { list-style: none; font-style: italic; color: var(--ink-muted);
+    margin: 0 0 var(--s3); padding: 0; }
+.hero-authors li { margin: 0; }
 .hero-blurb { color: var(--ink-muted); }
 
 .toc-cap { font-family: var(--font-display); font-size: var(--fs-xs); font-weight: 700;
@@ -209,7 +215,17 @@ nav.edition-switcher strong { color: var(--ink); }
 .toc-rule { border: 0; border-top: 2px solid var(--rule-strong); margin: 0 0 var(--s2); }
 .toc-chapter { margin: 0; border-bottom: 1px solid var(--rule-faint); }
 .toc-chapter > summary { display: flex; align-items: baseline; gap: var(--s2);
-    padding: var(--s2) 0; cursor: pointer; list-style: none; }
+    padding: var(--s2) var(--s2) var(--s2) 0; cursor: pointer; list-style: none;
+    border-radius: 3px; }
+/* the row toggles the chapter's section list, so say so: a rotating caret,
+   plus a hover tint over the whole hit area. (The title itself is a link to
+   the chapter page — the caret is what disambiguates the two actions.) */
+.toc-chapter > summary::before { content: "\25B8"; flex: 0 0 auto; width: 1rem;
+    color: var(--ink-faint); font-family: var(--font-display);
+    transition: transform .15s ease; display: inline-block; text-align: center; }
+.toc-chapter[open] > summary::before { transform: rotate(90deg); }
+.toc-chapter > summary:hover { background: var(--accent-wash); }
+.toc-chapter > summary:hover::before { color: var(--accent); }
 .toc-chapter > summary::-webkit-details-marker { display: none; }
 .toc-chapter > summary i { font-family: var(--font-display); font-style: normal;
     font-weight: 700; color: var(--accent); flex: 0 0 auto; min-width: 2.4rem; }
