@@ -8,6 +8,8 @@
 <meta property="og:title" content="{{ section.title|cut:"`" }} — {{ book.title }}">
 <meta property="og:description" content="{{ meta_description }}">
 {% endblock %}
+{% block side %}{% include "parody_web/_chapter_nav.html" %}{% endblock %}
+{% block rail %}{% include "parody_web/_rail.html" %}{% endblock %}
 {% block body %}
 <nav class="crumbs has-chapter"><a href="{% index_url book %}">{{ book.title }}</a><span class="crumb-sep">›</span><a class="crumb-trunc" href="{% chapter_url book chapter.slug %}" title="{{ chapter.title|cut:'`' }}">{{ chapter.title|code_spans }}</a></nav>
 

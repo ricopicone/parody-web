@@ -163,3 +163,30 @@ nav.edition-switcher strong { color: var(--ink); }
 .foot-owner button[type=submit] { border: none; background: none; color: var(--accent);
     cursor: pointer; font: inherit; padding: 0; }
 .site-foot .edition-switcher { margin: 0; font-size: inherit; }
+
+/* ---- chapter sidebar and margin rail -------------------------------------
+   The sidebar answers "where am I in this chapter?", which a reader arriving
+   from search or a printed QR code otherwise cannot tell. Both stick below the
+   masthead and scroll independently of the column. */
+.side, .rail { position: sticky; top: calc(var(--head-h) + var(--s4)); align-self: start;
+    font-size: var(--fs-sm); line-height: 1.45; }
+.side { max-height: calc(100vh - var(--head-h) - var(--s6)); overflow-y: auto; }
+.side-cap, .rail-cap { font-family: var(--font-display); font-size: var(--fs-xs);
+    font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-faint); border-bottom: 1px solid var(--rule);
+    padding-bottom: var(--s1); margin: 0 0 var(--s2); }
+.nav-list, .rail-list { list-style: none; margin: 0; padding: 0; }
+.nav-item { margin: var(--s1) 0; display: flex; gap: var(--s1); align-items: baseline; }
+.nav-item i { font-family: var(--font-display); font-style: normal; font-size: var(--fs-xs);
+    color: var(--ink-faint); flex: 0 0 auto; }
+.nav-item a { color: var(--ink-muted); }
+.nav-item a:hover { color: var(--accent); text-decoration: none; }
+/* current section: an accent tick in the gutter rather than a filled block, so
+   the sidebar stays quiet next to the reading column */
+.nav-item.on { box-shadow: -.7rem 0 0 -.62rem var(--accent); }
+.nav-item.on a { color: var(--ink); font-weight: 600; }
+.nav-item.on i { color: var(--accent); }
+.rail { color: var(--ink-faint); }
+.rail-list li { margin: var(--s1) 0; }
+.rail-list a { color: var(--ink-muted); }
+.rail-list a:hover { color: var(--accent); text-decoration: none; }

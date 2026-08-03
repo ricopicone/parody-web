@@ -1300,3 +1300,34 @@ class ChromeTests(TestCase):
         # underneath the masthead (the #297/#306 behaviour)
         self.assertIn("scroll-margin-top: calc(var(--head-h)", css)
         self.assertEqual(css.count("scroll-margin-top: calc(var(--head-h)"), 2)
+
+
+class ChapterNavTests(TestCase):
+    def setUp(self):
+        _import()
+
+    def test_sidebar_lists_siblings_with_exactly_one_current(self):
+        html = self.client.get("/hardware/specific-t1/").content.decode()
+        self.assertIn('class="side"', html)
+        self.assertEqual(html.count('class="nav-item on"'), 1)
+        self.assertIn('aria-current="page"', html)
+        self.assertIn("Licensed Chapter", html)  # a sibling is listed
+
+    def test_leadin_excluded_from_the_sidebar(self):
+        html = self.client.get("/hardware/specific-t1/").content.decode()
+        nav = html.split('class="side"')[1].split("</nav>")[0]
+        self.assertNotIn("lead-in", nav)
+
+    def test_page_anchors_extracted_from_h2_ids(self):
+        from parody_web.views import _page_anchors
+        got = _page_anchors('<h2 data-h="x" id="alpha">Alpha</h2><h2>No id</h2>'
+                            '<h2 id="beta">Beta <em>b</em></h2>')
+        self.assertEqual([a["id"] for a in got], ["alpha", "beta"])
+        self.assertEqual(got[0]["text"], "Alpha")
+        self.assertEqual(got[1]["text"], "Beta b")
+
+    def test_preview_sections_get_no_rail_anchors(self):
+        # a gated section shows only a teaser, so its subsection list would
+        # advertise structure the reader can't reach
+        html = self.client.get("/hardware/licensed/").content.decode()
+        self.assertNotIn('class="rail-cap"', html)

@@ -1,0 +1,8 @@
+<aside class="rail" aria-label="On this page">
+  {% if page_anchors %}
+  <p class="rail-cap">On this page</p>
+  <ul class="rail-list">
+    {% for a in page_anchors %}<li><a href="#{{ a.id }}">{{ a.text }}</a></li>{% endfor %}
+  </ul>
+  {% endif %}
+</aside>

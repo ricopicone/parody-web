@@ -8,6 +8,7 @@
 <meta property="og:title" content="{{ chapter.title|cut:"`" }} — {{ book.title }}">
 <meta property="og:description" content="{{ meta_description }}">
 {% endblock %}
+{% block side %}{% include "parody_web/_chapter_nav.html" %}{% endblock %}
 {% block body %}
 <nav class="crumbs"><a href="{% index_url book %}">{{ book.title }}</a></nav>
 
