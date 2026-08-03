@@ -1,7 +1,7 @@
 /* Page furniture: layout, typography, navigation, forms and gating chrome.
  * Book *content* (figures, tables, boxes, math, listings) lives in content.css. */
 
-body { max-width: var(--measure); margin: var(--s6) auto; padding: 0 var(--s4);
+body { margin: 0; padding: 0;
        font: var(--fs-base)/var(--lh-base) var(--font-body);
        color: var(--ink); background: var(--paper); }
 
@@ -103,14 +103,63 @@ nav.edition-switcher strong { color: var(--ink); }
     border: 1px solid var(--rule); border-radius: 4px; }
 .search-form button { padding: .45rem 1.1rem; font-size: 1rem; cursor: pointer; }
 
-/* top bar (temporary home for the owner line and the theme toggle until the
-   masthead lands) */
-.topbar { display: flex; align-items: center; justify-content: flex-end; gap: var(--s3);
-    font-family: var(--font-display); font-size: var(--fs-xs); color: var(--ink-faint); }
-.topbar form { display: inline; }
-.topbar button[type=submit] { border: none; background: none; color: var(--accent);
-    cursor: pointer; font: inherit; padding: 0; }
+/* ---- masthead ------------------------------------------------------------
+   Sticky and slim. --head-h is its height; the scroll anchors in content.css
+   offset by it, so keep the two in sync or equation and index deep-links land
+   underneath the bar (the behaviour shipped in #297/#306). */
+:root { --head-h: 3rem; }
+.site-head { position: sticky; top: 0; z-index: 10; display: flex; align-items: center;
+    gap: var(--s4); min-height: var(--head-h); padding: 0 var(--s5);
+    background: var(--paper); border-bottom: 1px solid var(--rule);
+    font-family: var(--font-display); font-size: var(--fs-sm); }
+.site-title { font-weight: 700; color: var(--ink); letter-spacing: -.03em; }
+.site-title:hover { color: var(--accent); text-decoration: none; }
+.site-nav { margin-left: auto; display: flex; align-items: center; gap: var(--s4); }
+.site-nav > a { color: var(--ink-muted); }
+.site-nav > a:hover { color: var(--accent); text-decoration: none; }
+.head-search input[type=search] { font: inherit; font-family: var(--font-display);
+    padding: .2rem .5rem; width: 11rem; color: var(--ink);
+    background: var(--paper-sunk); border: 1px solid var(--rule); border-radius: 4px; }
 .theme-toggle { border: 1px solid var(--rule); background: var(--paper-sunk);
     color: var(--ink-muted); border-radius: 4px; cursor: pointer; font: inherit;
     line-height: 1; padding: .2rem .4rem; }
 .theme-toggle:hover { color: var(--ink); border-color: var(--accent-soft); }
+
+/* ---- page grid -----------------------------------------------------------
+   sidebar | reading column | margin rail. The outer tracks are `auto`, so when
+   a page has neither (the index, search, subject index) they collapse to zero
+   and the symmetric gaps leave the column centred. The reading measure is
+   constant at every width — the chrome drops, the text never narrows. */
+.page { display: grid; grid-template-columns: auto minmax(0, var(--measure)) auto;
+    justify-content: center; gap: var(--s6); padding: var(--s6) var(--s5); }
+/* Pinned to the middle track: an empty {% block side %} emits no element at
+   all, so without this the column falls into the first `auto` track on
+   pages with no sidebar and stretches to the full viewport. */
+.col { grid-column: 2; min-width: 0; }
+.side { width: 12.5rem; grid-column: 1; }
+.rail { width: 9rem; grid-column: 3; }
+
+/* ---- collapse ladder: rail, then sidebar, then chrome -------------------- */
+@media (max-width: 1440px) { .rail { display: none; } }
+@media (max-width: 1180px) { .side { display: none; } }
+@media (max-width: 900px) {
+  .page { padding: var(--s5) var(--s4); gap: var(--s4); }
+  .site-head { padding: 0 var(--s4); gap: var(--s3); }
+  .head-search { display: none; }
+  nav.pager { flex-direction: column; gap: var(--s2); }
+  .site-foot { flex-direction: column; align-items: flex-start; gap: var(--s2); }
+}
+
+/* ---- footer --------------------------------------------------------------
+   Carries the edition switcher and the owner line, which used to be an
+   inline-styled div floating above the page content. */
+.site-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s4);
+    margin-top: var(--s8); padding: var(--s5); border-top: 1px solid var(--rule);
+    font-family: var(--font-display); font-size: var(--fs-xs); color: var(--ink-faint); }
+.site-foot strong { color: var(--ink); }
+.foot-book { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: baseline; }
+.foot-owner { margin-left: auto; }
+.foot-owner form { display: inline; }
+.foot-owner button[type=submit] { border: none; background: none; color: var(--accent);
+    cursor: pointer; font: inherit; padding: 0; }
+.site-foot .edition-switcher { margin: 0; font-size: inherit; }

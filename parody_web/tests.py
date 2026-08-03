@@ -1275,3 +1275,28 @@ class DarkModeTests(TestCase):
         self.assertIn('class="theme-toggle"', html)
         # the theme must be applied before the stylesheets paint
         self.assertLess(html.index("parody-theme"), html.index("tokens.css"))
+
+
+class ChromeTests(TestCase):
+    def setUp(self):
+        _import()
+
+    def test_masthead_and_footer_present(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn('class="site-head"', html)
+        self.assertIn('class="site-foot"', html)
+        self.assertIn('class="theme-toggle"', html)
+
+    def test_owner_signin_moved_out_of_the_floating_div(self):
+        html = self.client.get("/").content.decode()
+        self.assertNotIn("text-align:right", html)
+        self.assertIn("owner sign in", html)
+        self.assertLess(html.index('class="site-foot"'), html.index("owner sign in"))
+
+    def test_scroll_anchors_clear_the_sticky_masthead(self):
+        css = (Path(__file__).resolve().parent / "static" / "parody_web" / "css"
+               / "content.css").read_text()
+        # a bare 3rem/5rem offset would land equation and index deep-links
+        # underneath the masthead (the #297/#306 behaviour)
+        self.assertIn("scroll-margin-top: calc(var(--head-h)", css)
+        self.assertEqual(css.count("scroll-margin-top: calc(var(--head-h)"), 2)

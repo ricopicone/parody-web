@@ -4,7 +4,8 @@
 
 /* index markers: invisible inline, but a zero-size scroll target so the subject
    index page (/index/) can deep-link to where each term appears */
-.index { display: inline-block; width: 0; height: 0; overflow: hidden; scroll-margin-top: 5rem; }
+.index { display: inline-block; width: 0; height: 0; overflow: hidden;
+    scroll-margin-top: calc(var(--head-h) + var(--s6)); }
 .keyword { font-weight: bold; }
 
 .fignum { font-family: var(--font-display); font-weight: 700; }
@@ -14,7 +15,7 @@
    its equation, so a jump lands ON the equation (with breathing room above); the
    :target highlight briefly flashes the equation that was navigated to. */
 .eqanchor { display: inline-block; width: 0; height: 0; overflow: hidden;
-    scroll-margin-top: 3rem; }
+    scroll-margin-top: calc(var(--head-h) + var(--s5)); }
 @keyframes eq-target-flash {
     from { background: var(--flash); box-shadow: 0 0 0 .35rem var(--flash); }
     to   { background: transparent; box-shadow: 0 0 0 .35rem transparent; }

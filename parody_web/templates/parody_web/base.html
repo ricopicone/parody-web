@@ -68,24 +68,16 @@ window.MathJax = {
 {% block head_extra %}{% endblock %}
 </head>
 <body>
-{% if editions and editions|length > 1 %}
-<nav class="edition-switcher">Edition:
-{% for ed in editions %}{% if ed.pk == book.pk %}<strong>{{ ed.edition_title|default:ed.edition_id }}</strong>{% else %}<a href="{% index_url ed %}">{{ ed.edition_title|default:ed.edition_id }}</a>{% endif %}{% if ed.draft %} <span class="note">(in development)</span>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
-</nav>
-{% endif %}
+{% include "parody_web/_masthead.html" %}
 {% if book.draft %}
 <div class="draft-banner">This edition is <strong>in development</strong> and not yet public — you are viewing it as the owner.</div>
 {% endif %}
-<div class="topbar">
-<button class="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">&#9680;</button>
-{% if user.is_authenticated %}
-  owner view ({{ user.get_username }}) ·
-  <form action="{% url 'logout' %}" method="post" style="display:inline">{% csrf_token %}<button type="submit" style="border:none;background:none;color:#7a6ff0;cursor:pointer;font:inherit;padding:0">sign out</button></form>
-{% else %}
-  <a href="{% url 'login' %}">owner sign in</a>
-{% endif %}
+<div class="page">
+  {% block side %}{% endblock %}
+  <main class="col">{% block body %}{% endblock %}</main>
+  {% block rail %}{% endblock %}
 </div>
-{% block body %}{% endblock %}
+{% include "parody_web/_footer.html" %}
 <script>
 document.querySelector('.theme-toggle').addEventListener('click', function () {
   var root = document.documentElement;
