@@ -232,3 +232,24 @@ figure[id^="al:"] img, figure[id^="alg:"] img {
 @media (prefers-reduced-motion: reduce) {
   .eqanchor:target ~ .math.display { animation: none; background: var(--flash); }
 }
+
+/* ---- wide content scrolls itself, never the page -------------------------
+   A data table or a long display equation is regularly wider than the reading
+   column, and much wider than a phone. Without this the whole document scrolls
+   sideways (measured: 658px of content in a 430px viewport). Tables become
+   block-level so they can carry their own scrollbar; `width: max-content` keeps
+   narrow ones shrink-to-fit and still centred. */
+.col table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+/* pandoc emits display math as a <span>, and overflow is inert on a
+   non-replaced inline box — it must become block for this to do anything. */
+.math.display { display: block; overflow-x: auto; overflow-y: hidden; }
+figure.subfigures, figure.subtables { max-width: 100%; }
+
+/* Occasionally an INLINE formula is wider than a phone (a long expression set
+   mid-sentence). It cannot wrap, so on narrow viewports let it scroll in place
+   rather than dragging the document sideways. Short formulae are unaffected —
+   they never reach max-width. */
+@media (max-width: 900px) {
+  .math.inline { display: inline-block; max-width: 100%; overflow-x: auto;
+      vertical-align: middle; }
+}
