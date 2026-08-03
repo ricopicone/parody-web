@@ -7,7 +7,7 @@
 .index { display: inline-block; width: 0; height: 0; overflow: hidden; scroll-margin-top: 5rem; }
 .keyword { font-weight: bold; }
 
-.fignum { font-weight: bold; }
+.fignum { font-family: var(--font-display); font-weight: 700; }
 /* equation numbers are rendered by MathJax as \tag{C.n} (injected by numbering),
    so they need no CSS — they right-align and vertically-centre like the print book. */
 /* equation cross-ref target: numbering relocates the scroll anchor to just before
@@ -30,7 +30,7 @@ figure.subfigures > figure.subfigure { margin: 0; text-align: center;
 figure.subfigure > img { margin: 0 auto; }
 figure.subfigure > figcaption { font-size: .9rem; color: var(--ink-muted); margin-top: .3rem; }
 figure.subfigures > figcaption.subfigures-caption { grid-column: 1 / -1; margin-top: .2rem; }
-.subfignum { font-weight: bold; }
+.subfignum { font-family: var(--font-display); font-weight: 700; }
 
 /* sub-tables: side-by-side data tables sharing one "Table C.n" number */
 figure.subtables { display: grid; gap: .6rem 1.5rem; justify-items: center;
@@ -40,14 +40,17 @@ figure.subtables > div.subtable table caption { caption-side: top; font-size: .9
     color: var(--ink-muted); text-align: center; }
 figure.subtables > figcaption.subtables-caption { grid-column: 1 / -1; margin-bottom: .2rem; }
 
-.rights-placeholder { background: var(--paper-sunk); border: 1px dashed #ccc; border-radius: 6px;
+.rights-placeholder { background: var(--paper-sunk); border: 1px dashed var(--rule); border-radius: 6px;
     padding: 1.2rem; text-align: center; color: var(--ink-faint); font-family: var(--font-display);
     font-size: .9rem; font-style: italic; }
 
-.listing-caption { font-size: .9rem; color: var(--ink-muted); margin: .3rem 0; }
+.listing-caption { font-size: var(--fs-sm); color: var(--ink-muted); margin: .3rem 0; }
 img.ebtn { height: 1.1em; vertical-align: -0.2em; }
 
-pre { background: var(--paper-sunk); padding: .8rem 1rem; overflow-x: auto; font-size: .85rem; }
+pre { background: var(--paper-sunk); color: var(--ink); padding: var(--s3) var(--s4);
+    border-radius: 4px; overflow-x: auto; font-size: var(--fs-sm);
+    font-family: var(--font-mono); }
+code { font-family: var(--font-mono); }
 
 table { border-collapse: collapse; margin: 1rem auto; } th, td { padding: .3rem .7rem; }
 /* book / booktabs: heavy top & bottom rules, light rule under the header, no
@@ -55,17 +58,17 @@ table { border-collapse: collapse; margin: 1rem auto; } th, td { padding: .3rem 
    (i.e. born from a \begin{table} float). Plain layout tabulars (no caption, used
    for alignment/illustration) and .plain get no rules; .ruled forces book rules. */
 table.notes-table th, table.notes-table td { border: 0; }
-table.notes-table:is(:has(caption), .ruled):not(.plain) > thead > tr:first-child > th { border-top: 1.5px solid #222; }
-table.notes-table:is(:has(caption), .ruled):not(.plain):not(.grouped-header) > thead > tr:last-child > th { border-bottom: 1px solid #999; }
-table.notes-table:is(:has(caption), .ruled):not(.plain) > tbody > tr:last-child > td { border-bottom: 1.5px solid #222; }
-table.notes-table:is(:has(caption), .ruled):not(.plain):not(:has(thead)) > tbody > tr:first-child > td { border-top: 1.5px solid #222; }
+table.notes-table:is(:has(caption), .ruled):not(.plain) > thead > tr:first-child > th { border-top: 1.5px solid var(--rule-strong); }
+table.notes-table:is(:has(caption), .ruled):not(.plain):not(.grouped-header) > thead > tr:last-child > th { border-bottom: 1px solid var(--rule-mid); }
+table.notes-table:is(:has(caption), .ruled):not(.plain) > tbody > tr:last-child > td { border-bottom: 1.5px solid var(--rule-strong); }
+table.notes-table:is(:has(caption), .ruled):not(.plain):not(:has(thead)) > tbody > tr:first-child > td { border-top: 1.5px solid var(--rule-strong); }
 /* segmented header rule (LaTeX \cmidrule): full-HTML tables can mark groups of
    header cells with .cmid; .cmid-l / .cmid-r trim the ends so groups separate.
    .grouped-header drops the default full-width rule in favour of the segments. */
 table.notes-table.grouped-header > thead > tr > th { border-bottom: 0; }
 table.notes-table th.cmid { position: relative; }
 table.notes-table th.cmid::after { content: ""; position: absolute; left: 0; right: 0;
-    bottom: 0; border-bottom: 1px solid #999; }
+    bottom: 0; border-bottom: 1px solid var(--rule-mid); }
 table.notes-table th.cmid.cmid-l::after { left: 7px; }
 table.notes-table th.cmid.cmid-r::after { right: 7px; }
 /* tables and algorithms rendered as an image (<figure id="tbl:.."/"al:.."/"alg:..">):
@@ -78,16 +81,16 @@ figure[id^="al:"] > figcaption,
 figure[id^="alg:"] > figcaption { order: -1; margin: 0 0 .4rem; }
 /* a thin rule between row-groups (e.g. operator-precedence levels), drawn under
    the grouped cells so the spanning (rowspan) columns read as continuous */
-table.notes-table td.grp { border-top: 1px solid #bbb; }
+table.notes-table td.grp { border-top: 1px solid var(--rule-mid); }
 /* .vsep2: a vertical rule after the 2nd column (e.g. truth-table inputs|outputs) */
 table.notes-table.vsep2 > thead > tr > :nth-child(2),
-table.notes-table.vsep2 > tbody > tr > :nth-child(2) { border-right: 1px solid #999; }
+table.notes-table.vsep2 > tbody > tr > :nth-child(2) { border-right: 1px solid var(--rule-mid); }
 /* non-content tables (e.g. .specs) keep a light grid */
-table:not(.notes-table) th, table:not(.notes-table) td { border: 1px solid #ccc; }
+table:not(.notes-table) th, table:not(.notes-table) td { border: 1px solid var(--rule); }
 
 /* subject index page */
 .book-index { columns: 17rem; column-gap: 2.5rem; margin-top: 1rem; }
-.index-letter { font-size: 1.15rem; margin: .7rem 0 .2rem; padding-bottom: .1rem;
+.index-letter { font-family: var(--font-display); font-size: 1.15rem; margin: .7rem 0 .2rem; padding-bottom: .1rem;
     border-bottom: 1px solid var(--rule); break-inside: avoid; break-after: avoid-column; }
 .index-entry { font-size: .9rem; margin: .1rem 0; text-indent: -1rem; padding-left: 1rem;
     break-inside: avoid; }
@@ -100,8 +103,9 @@ table:not(.notes-table) th, table:not(.notes-table) td { border: 1px solid #ccc;
 .search-results { list-style: none; padding: 0; }
 .search-results > li { margin: 0 0 1.2rem; }
 .search-hit { font-weight: 600; text-decoration: none; }
-.search-hit .num { color: var(--ink-faint); font-weight: 400; }
-.search-results .snippet { margin: .2rem 0 0; color: #333; font-size: .92rem; line-height: 1.45; }
+.search-hit .num { font-family: var(--font-display); color: var(--ink-faint);
+    font-weight: 400; }
+.search-results .snippet { margin: .2rem 0 0; color: var(--ink-muted); font-size: .92rem; line-height: 1.45; }
 .search-results mark { background: var(--mark); padding: 0 .1em; }
 
 /* hardware systems / parts catalog */
@@ -109,8 +113,8 @@ table:not(.notes-table) th, table:not(.notes-table) td { border: 1px solid #ccc;
 .get-cell-placeholder { color: var(--ink-faint); }
 section.component { border-top: 1px solid var(--rule-faint); margin-top: 1.5rem; }
 table.specs { font-family: var(--font-display); font-size: .9rem; }
-table.specs th { text-align: left; font-weight: 600; color: #444;
-    background: #f8f8f8; white-space: nowrap; vertical-align: top; }
+table.specs th { text-align: left; font-weight: 600; color: var(--ink-muted);
+    background: var(--paper-sunk); white-space: nowrap; vertical-align: top; }
 p.suppliers { font-family: var(--font-display); font-size: .9rem; }
 .choices details { margin: .3rem 0; }
 
@@ -139,7 +143,7 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
 .example-label { font-family: var(--font-display); font-weight: 700;
     color: var(--accent); margin-bottom: .4rem; }
 .example > .example-solution { margin-top: .9rem; padding-top: .9rem;
-    border-top: 1px dashed #e6e0d6; }
+    border-top: 1px dashed var(--rule); }
 
 /* further-reading boxes (::: {.freadinglist}): a recommended-reading aside.
    numbering.py injects the "Further Reading" label and lays the .plaincite
@@ -164,7 +168,7 @@ section.references li { margin: .3rem 0; }
 /* keyboard keys / menu items (.key spans are empty; glyph via ::after) */
 .key, .keys, .menu .m-item { font-family: var(--font-display); font-size: .85em;
     border: 1px solid var(--accent-soft); border-radius: 4px; padding: 0 .35em;
-    background: #f8f8f8; box-shadow: 0 1px 0 var(--accent-soft); white-space: nowrap; }
+    background: var(--paper-sunk); box-shadow: 0 1px 0 var(--accent-soft); white-space: nowrap; }
 .menu { white-space: nowrap; }
 .menu .m-item { background: var(--accent-wash); box-shadow: none; }
 .menu .m-arrow { color: var(--ink-faint); margin: 0 .15em; }
@@ -175,20 +179,38 @@ section.references li { margin: .3rem 0; }
 .key.down::after, .keys.downarrow::after { content: "\2193"; }
 .key.windows::after { content: "\229E"; }
 
-/* pandoc/skylighting syntax highlighting */
-code span.kw { color: #007020; font-weight: bold; }
-code span.dt { color: #902000; }
-code span.dv, code span.bn, code span.fl { color: #40a070; }
-code span.ch, code span.st, code span.vs { color: #4070a0; }
-code span.co { color: #60a0b0; font-style: italic; }
-code span.cf, code span.im { color: #007020; font-weight: bold; }
-code span.op { color: #666; }
-code span.fu { color: #06287e; }
-code span.cn, code span.sc, code span.ss { color: #880000; }
-code span.va { color: #19177c; }
-code span.bu, code span.at { color: #007020; }
-code span.pp { color: #bc7a00; }
-code span.al, code span.er { color: #ff0000; font-weight: bold; }
+/* pandoc/skylighting syntax highlighting. Tokenised so the dark theme can flip
+   it — the previous palette was hardcoded light-mode values with no dark form. */
+:root {
+  --syn-kw: #007020; --syn-dt: #902000; --syn-num: #40a070; --syn-str: #4070a0;
+  --syn-com: #60a0b0; --syn-op: #666666; --syn-fun: #06287e; --syn-con: #880000;
+  --syn-var: #19177c; --syn-pp: #bc7a00; --syn-err: #d11;
+}
+:root[data-theme="dark"] {
+  --syn-kw: #7ec699; --syn-dt: #e2a072; --syn-num: #9ad1a5; --syn-str: #8fb8e0;
+  --syn-com: #7f9fa8; --syn-op: #a8a49c; --syn-fun: #9db4ef; --syn-con: #e08f8f;
+  --syn-var: #b0aee8; --syn-pp: #e0b56a; --syn-err: #ff8a80;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --syn-kw: #7ec699; --syn-dt: #e2a072; --syn-num: #9ad1a5; --syn-str: #8fb8e0;
+    --syn-com: #7f9fa8; --syn-op: #a8a49c; --syn-fun: #9db4ef; --syn-con: #e08f8f;
+    --syn-var: #b0aee8; --syn-pp: #e0b56a; --syn-err: #ff8a80;
+  }
+}
+code span.kw { color: var(--syn-kw); font-weight: bold; }
+code span.dt { color: var(--syn-dt); }
+code span.dv, code span.bn, code span.fl { color: var(--syn-num); }
+code span.ch, code span.st, code span.vs { color: var(--syn-str); }
+code span.co { color: var(--syn-com); font-style: italic; }
+code span.cf, code span.im { color: var(--syn-kw); font-weight: bold; }
+code span.op { color: var(--syn-op); }
+code span.fu { color: var(--syn-fun); }
+code span.cn, code span.sc, code span.ss { color: var(--syn-con); }
+code span.va { color: var(--syn-var); }
+code span.bu, code span.at { color: var(--syn-kw); }
+code span.pp { color: var(--syn-pp); }
+code span.al, code span.er { color: var(--syn-err); font-weight: bold; }
 pre.sourceCode a { text-decoration: none; color: inherit; }
 
 /* LaTeX-baked images carry their own white/transparent background, so in dark

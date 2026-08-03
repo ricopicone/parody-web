@@ -31,7 +31,8 @@ nav.crumbs.has-chapter .crumb-trunc { flex: 0 1 auto; min-width: 4ch;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 nav.pager { display: flex; justify-content: space-between;
-            font-family: var(--font-display); font-size: .9rem; margin-top: 3rem; }
+            font-family: var(--font-display); font-size: var(--fs-sm);
+            margin-top: var(--s7); }
 
 img { max-width: 100%; }
 
@@ -48,7 +49,7 @@ ul.toc li { margin: .25rem 0; }
     padding: .8rem 1rem; font-family: var(--font-display); font-size: .95rem; }
 
 a.continue-button { display: inline-block; font-family: var(--font-display);
-    font-size: .95rem; background: var(--accent); color: #fff; border-radius: 4px;
+    font-size: .95rem; background: var(--accent); color: var(--paper); border-radius: 4px;
     padding: .4rem .9rem; text-decoration: none; margin-top: 1rem; }
 
 /* "go to a code" box on the index — resolves a printed short code to its page */
@@ -58,11 +59,11 @@ form.codebox { font-family: var(--font-display); font-size: .9rem;
 form.codebox input { font: inherit; padding: .2rem .4rem; width: 7rem;
     border: 1px solid var(--accent-soft); border-radius: 4px; }
 form.codebox button { font: inherit; padding: .2rem .7rem; cursor: pointer;
-    border: 1px solid var(--accent); border-radius: 4px; background: #fff; color: var(--accent-ink); }
+    border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--accent-ink); }
 form.codebox .note { display: block; margin-top: .3rem; }
 
 img.cover { float: right; max-width: 38%; margin: 0 0 1rem 1.5rem;
-    border: 1px solid var(--rule); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+    border: 1px solid var(--rule); box-shadow: 0 1px 4px rgb(0 0 0 / .15); }
 
 details { margin: .4rem 0; } summary { cursor: pointer; }
 
@@ -84,19 +85,22 @@ nav.edition-switcher strong { color: var(--ink); }
    wide screens, inline otherwise. ts = purple, ds = teal. */
 .version-icon { font-family: var(--font-display); font-size: .7rem;
     font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
-    color: #fff; background: var(--accent); border-radius: 4px; padding: .05rem .35rem;
+    color: var(--paper); background: var(--accent); border-radius: 4px; padding: .05rem .35rem;
     float: right; clear: right; margin: .1rem 0 .2rem .5rem; }
+/* the one deliberate literal in the sheet: ts/ds is a SEMANTIC distinction
+   (which target system a passage applies to), not part of the theme, so it
+   does not follow the accent. */
 .version-icon.ds { background: #2a9d8f; }
 @media (min-width: 62rem) { .version-icon { margin-right: -3.6rem; } }
 
 .draft-banner { font-family: var(--font-display); font-size: .85rem;
-    background: #fff7e6; border: 1px solid #f0c060; border-radius: 6px;
+    background: var(--accent-wash); border: 1px solid var(--accent-soft); border-radius: 6px;
     padding: .5rem .8rem; margin: .3rem 0 1rem; }
 
 /* search inside */
 .search-form { display: flex; gap: .5rem; margin: 1rem 0 1.5rem; max-width: 34rem; }
 .search-form input[type=search] { flex: 1; padding: .45rem .7rem; font-size: 1rem;
-    border: 1px solid #bbb; border-radius: 4px; }
+    border: 1px solid var(--rule); border-radius: 4px; }
 .search-form button { padding: .45rem 1.1rem; font-size: 1rem; cursor: pointer; }
 
 /* top bar (temporary home for the owner line and the theme toggle until the

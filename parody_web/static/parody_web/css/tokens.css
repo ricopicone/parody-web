@@ -40,6 +40,7 @@
   /* lines */
   --rule: #e8e3d9;
   --rule-faint: #f0ece3;
+  --rule-mid: #b8b1a4;
   --rule-strong: #1c1b19;
 
   /* accent — cool against the warm paper; 6.3:1 */
@@ -95,6 +96,7 @@
   --ink-ghost: #5a5852;
   --rule: #2c2e34;
   --rule-faint: #24262b;
+  --rule-mid: #4a4d55;
   --rule-strong: #e8e6e1;
   --accent: #93a6f5;
   --accent-ink: #b9c4f8;
@@ -113,6 +115,7 @@
   --ink-ghost: #5a5852;
   --rule: #2c2e34;
   --rule-faint: #24262b;
+  --rule-mid: #4a4d55;
   --rule-strong: #e8e6e1;
   --accent: #93a6f5;
   --accent-ink: #b9c4f8;
