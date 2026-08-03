@@ -225,3 +225,27 @@ nav.edition-switcher strong { color: var(--ink); }
     font-size: var(--fs-xs); color: var(--ink-faint); flex: 0 0 auto;
     align-self: flex-end; margin-bottom: .15rem; }
 .toc-chapter ul.toc { margin: 0 0 var(--s3) 2.4rem; }
+
+/* ---- sign-in form -------------------------------------------------------- */
+.form-error { color: var(--syn-err); font-family: var(--font-display);
+    font-size: var(--fs-sm); }
+.signin-form { max-width: 22rem; }
+.signin-form label { font-family: var(--font-display); font-size: var(--fs-sm);
+    color: var(--ink-muted); display: block; }
+.signin-form input { font: inherit; width: 100%; margin-top: var(--s1);
+    padding: .35rem .5rem; color: var(--ink); background: var(--paper-sunk);
+    border: 1px solid var(--rule); border-radius: 4px; }
+.signin-form button { font-family: var(--font-display); font-size: var(--fs-sm);
+    cursor: pointer; padding: .35rem 1rem; color: var(--paper);
+    background: var(--accent); border: 0; border-radius: 4px; }
+
+/* ---- generic buttons on content pages (search, code box) ----------------- */
+.search-form button { font-family: var(--font-display); font-size: var(--fs-sm);
+    cursor: pointer; padding: .4rem 1rem; color: var(--paper);
+    background: var(--accent); border: 0; border-radius: 4px; }
+.search-form input[type=search] { color: var(--ink); background: var(--paper-sunk); }
+form.codebox input { color: var(--ink); background: var(--paper); }
+
+/* The subject index is a multi-column reference list, not prose — the reading
+   measure would force it to a single column and double its length. */
+.page.wide { grid-template-columns: auto minmax(0, 54rem) auto; }

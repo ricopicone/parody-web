@@ -72,7 +72,7 @@ window.MathJax = {
 {% if book.draft %}
 <div class="draft-banner">This edition is <strong>in development</strong> and not yet public — you are viewing it as the owner.</div>
 {% endif %}
-<div class="page">
+<div class="page {% block page_class %}{% endblock %}">
   {% block side %}{% endblock %}
   <main class="col">{% block body %}{% endblock %}</main>
   {% block rail %}{% endblock %}

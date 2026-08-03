@@ -4,6 +4,7 @@
 <meta name="description" content="{{ meta_description }}">
 <link rel="canonical" href="{{ canonical_url }}">
 {% endblock %}
+{% block page_class %}wide{% endblock %}
 {% block body %}
 <nav class="crumbs"><a href="{% url 'parody_web:index' %}{{ ed_query }}">{{ book.title }}</a> › Index</nav>
 <h1>Index</h1>
