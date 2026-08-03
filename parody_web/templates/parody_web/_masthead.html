@@ -1,0 +1,14 @@
+{% load parody_web %}
+<header class="site-head">
+  <a class="site-title" href="{% index_url book %}">{{ book.title }}</a>
+  <nav class="site-nav" aria-label="Book">
+    <a href="{% index_url book %}">Contents</a>
+    <a href="{% url 'parody_web:book_index' %}{{ ed_query }}">Index</a>
+    <form class="head-search" action="{% url 'parody_web:search' %}" method="get" role="search">
+      <input type="search" name="q" placeholder="Search inside…"
+             aria-label="Search inside the book">
+    </form>
+    <button class="theme-toggle" type="button"
+            aria-label="Toggle dark mode" title="Toggle dark mode">&#9680;</button>
+  </nav>
+</header>

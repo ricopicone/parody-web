@@ -1,0 +1,27 @@
+{% load parody_web %}
+<footer class="site-foot">
+  <div class="foot-book">
+    <strong>{{ book.title }}</strong>
+    {% if book.authors %}<span class="foot-authors">{{ book.authors|join:", " }}</span>{% endif %}
+    {% with ed=book.book_metadata.editions.0 %}
+    {% if ed.publisher or ed.year %}
+      <span class="foot-pub">{% if ed.publisher %}{{ ed.publisher }}{% endif %}{% if ed.year %} ({{ ed.year }}){% endif %}</span>
+    {% endif %}
+    {% endwith %}
+  </div>
+
+  {% if editions and editions|length > 1 %}
+  <nav class="edition-switcher" aria-label="Edition">Edition:
+  {% for ed in editions %}{% if ed.pk == book.pk %}<strong>{{ ed.edition_title|default:ed.edition_id }}</strong>{% else %}<a href="{% index_url ed %}">{{ ed.edition_title|default:ed.edition_id }}</a>{% endif %}{% if ed.draft %} <span class="note">(in development)</span>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
+  </nav>
+  {% endif %}
+
+  <div class="foot-owner">
+  {% if user.is_authenticated %}
+    owner view ({{ user.get_username }}) ·
+    <form action="{% url 'logout' %}" method="post"><button type="submit">sign out</button></form>
+  {% else %}
+    <a href="{% url 'login' %}">owner sign in</a>
+  {% endif %}
+  </div>
+</footer>

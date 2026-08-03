@@ -8,11 +8,13 @@ import tempfile
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 
 from parody_web.models import Book, Section
 from parody_web.numbering import number_artifact
+from parody_web.theme import theme_css, validate_theme
 from parody_web.templatetags.parody_web import render_book
 
 ARTIFACT = {
@@ -1188,3 +1190,165 @@ class SearchInsideTests(TestCase):
         r = self.client.get("/search/")
         self.assertEqual(r.status_code, 200)
         self.assertNotContains(r, '<ol class="search-results">')
+
+
+class StylesheetTests(TestCase):
+    """The site's CSS lives in static stylesheets, not an inline <style> block."""
+
+    def setUp(self):
+        _import()
+
+    def test_stylesheets_linked(self):
+        html = self.client.get("/").content.decode()
+        for name in ("tokens.css", "book.css", "content.css"):
+            self.assertIn(f"parody_web/css/{name}", html)
+
+    def test_inline_style_block_is_gone(self):
+        # selectors that used to be inlined into every page
+        html = self.client.get("/").content.decode()
+        self.assertNotIn("nav.crumbs.has-chapter", html)
+        self.assertNotIn("figure.subfigures", html)
+        self.assertNotIn("code span.kw", html)
+
+
+class ThemeSettingTests(TestCase):
+    """A deployment retints the site through PARODY_WEB_THEME; the setting is a
+    whitelist, not a CSS escape hatch."""
+
+    def setUp(self):
+        _import()
+
+    def test_tokens_emitted_for_light_and_dark(self):
+        css = theme_css({"light": {"accent": "#b3261e"},
+                         "dark": {"accent": "#ff8a80"}})
+        self.assertIn(":root{--accent:#b3261e;}", css)
+        self.assertIn(':root[data-theme="dark"]{--accent:#ff8a80;}', css)
+
+    def test_unknown_token_rejected(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_theme({"light": {"background-image": "url(evil.png)"}})
+
+    def test_malformed_value_rejected(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_theme({"light": {"accent": "red; } body { display:none"}})
+
+    def test_unknown_mode_rejected(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_theme({"sepia": {"accent": "#000000"}})
+
+    def test_font_stack_value_accepted(self):
+        validate_theme({"light": {"font-display": '"Courier Prime", monospace'}})
+
+    @override_settings(PARODY_WEB_THEME={"light": {"accent": "#b3261e"}})
+    def test_theme_reaches_the_page(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn("--accent:#b3261e", html)
+
+    def test_absent_setting_emits_nothing(self):
+        self.assertEqual(theme_css(None), "")
+        self.assertEqual(theme_css({}), "")
+
+
+class PaletteContrastTests(TestCase):
+    """--ink-ghost scores 3.2:1 on the paper and fails WCAG AA for normal text.
+    It exists for decoration (leader dots, hairlines) only — this guards against
+    it drifting back into a text colour."""
+
+    CSS_DIR = Path(__file__).resolve().parent / "static" / "parody_web" / "css"
+
+    def test_ghost_token_never_used_as_a_text_colour(self):
+        offenders = []
+        for name in ("book.css", "content.css"):
+            for n, line in enumerate((self.CSS_DIR / name).read_text().splitlines(), 1):
+                if "color: var(--ink-ghost)" in line:
+                    offenders.append(f"{name}:{n}: {line.strip()}")
+        self.assertEqual(offenders, [], "--ink-ghost used as a text colour")
+
+
+class DarkModeTests(TestCase):
+    def setUp(self):
+        _import()
+
+    def test_no_flash_script_and_toggle_present(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn("parody-theme", html)
+        self.assertIn('class="theme-toggle"', html)
+        # the theme must be applied before the stylesheets paint
+        self.assertLess(html.index("parody-theme"), html.index("tokens.css"))
+
+
+class ChromeTests(TestCase):
+    def setUp(self):
+        _import()
+
+    def test_masthead_and_footer_present(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn('class="site-head"', html)
+        self.assertIn('class="site-foot"', html)
+        self.assertIn('class="theme-toggle"', html)
+
+    def test_owner_signin_moved_out_of_the_floating_div(self):
+        html = self.client.get("/").content.decode()
+        self.assertNotIn("text-align:right", html)
+        self.assertIn("owner sign in", html)
+        self.assertLess(html.index('class="site-foot"'), html.index("owner sign in"))
+
+    def test_scroll_anchors_clear_the_sticky_masthead(self):
+        css = (Path(__file__).resolve().parent / "static" / "parody_web" / "css"
+               / "content.css").read_text()
+        # a bare 3rem/5rem offset would land equation and index deep-links
+        # underneath the masthead (the #297/#306 behaviour)
+        self.assertIn("scroll-margin-top: calc(var(--head-h)", css)
+        self.assertEqual(css.count("scroll-margin-top: calc(var(--head-h)"), 2)
+
+
+class ChapterNavTests(TestCase):
+    def setUp(self):
+        _import()
+
+    def test_sidebar_lists_siblings_with_exactly_one_current(self):
+        html = self.client.get("/hardware/specific-t1/").content.decode()
+        self.assertIn('class="side"', html)
+        self.assertEqual(html.count('class="nav-item on"'), 1)
+        self.assertIn('aria-current="page"', html)
+        self.assertIn("Licensed Chapter", html)  # a sibling is listed
+
+    def test_leadin_excluded_from_the_sidebar(self):
+        html = self.client.get("/hardware/specific-t1/").content.decode()
+        nav = html.split('class="side"')[1].split("</nav>")[0]
+        self.assertNotIn("lead-in", nav)
+
+    def test_page_anchors_extracted_from_h2_ids(self):
+        from parody_web.views import _page_anchors
+        got = _page_anchors('<h2 data-h="x" id="alpha">Alpha</h2><h2>No id</h2>'
+                            '<h2 id="beta">Beta <em>b</em></h2>')
+        self.assertEqual([a["id"] for a in got], ["alpha", "beta"])
+        self.assertEqual(got[0]["text"], "Alpha")
+        self.assertEqual(got[1]["text"], "Beta b")
+
+    def test_preview_sections_get_no_rail_anchors(self):
+        # a gated section shows only a teaser, so its subsection list would
+        # advertise structure the reader can't reach
+        html = self.client.get("/hardware/licensed/").content.decode()
+        self.assertNotIn('class="rail-cap"', html)
+
+
+class LandingPageTests(TestCase):
+    def setUp(self):
+        _import()
+
+    def test_chapters_collapse_with_the_first_open(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn('class="toc-chapter"', html)
+        self.assertIn('<details class="toc-chapter" open>', html)
+
+    def test_search_and_printed_code_boxes_survive(self):
+        # the QR codes printed in the book point at this page — both forms are
+        # load-bearing and must not be lost to the redesign
+        html = self.client.get("/").content.decode()
+        self.assertIn('name="q"', html)
+        self.assertIn('id="code"', html)
+
+    def test_cover_no_longer_floats(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn('class="book-hero"', html)

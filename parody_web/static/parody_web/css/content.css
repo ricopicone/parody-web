@@ -1,0 +1,255 @@
+/* Book content: figures, tables, boxes, math, listings, listings' captions, the
+ * subject index, search results and syntax highlighting. Page furniture lives
+ * in book.css. */
+
+/* index markers: invisible inline, but a zero-size scroll target so the subject
+   index page (/index/) can deep-link to where each term appears */
+.index { display: inline-block; width: 0; height: 0; overflow: hidden;
+    scroll-margin-top: calc(var(--head-h) + var(--s6)); }
+.keyword { font-weight: bold; }
+
+.fignum { font-family: var(--font-display); font-weight: 700; }
+/* equation numbers are rendered by MathJax as \tag{C.n} (injected by numbering),
+   so they need no CSS — they right-align and vertically-centre like the print book. */
+/* equation cross-ref target: numbering relocates the scroll anchor to just before
+   its equation, so a jump lands ON the equation (with breathing room above); the
+   :target highlight briefly flashes the equation that was navigated to. */
+.eqanchor { display: inline-block; width: 0; height: 0; overflow: hidden;
+    scroll-margin-top: calc(var(--head-h) + var(--s5)); }
+@keyframes eq-target-flash {
+    from { background: var(--flash); box-shadow: 0 0 0 .35rem var(--flash); }
+    to   { background: transparent; box-shadow: 0 0 0 .35rem transparent; }
+}
+.eqanchor:target ~ .math.display { animation: eq-target-flash 2.2s ease-out 1;
+    border-radius: 3px; }
+
+/* subfigure floats: one figure, lettered panels laid out in a grid */
+figure.subfigures { display: grid; gap: .6rem 1rem;
+    grid-template-columns: repeat(var(--sf-cols, 2), 1fr); margin: 1.5rem 0; }
+figure.subfigures > figure.subfigure { margin: 0; text-align: center;
+    display: flex; flex-direction: column; }
+figure.subfigure > img { margin: 0 auto; }
+figure.subfigure > figcaption { font-size: .9rem; color: var(--ink-muted); margin-top: .3rem; }
+figure.subfigures > figcaption.subfigures-caption { grid-column: 1 / -1; margin-top: .2rem; }
+.subfignum { font-family: var(--font-display); font-weight: 700; }
+
+/* sub-tables: side-by-side data tables sharing one "Table C.n" number */
+figure.subtables { display: grid; gap: .6rem 1.5rem; justify-items: center;
+    grid-template-columns: repeat(var(--st-cols, 2), auto); margin: 1.5rem 0; }
+figure.subtables > div.subtable { margin: 0; }
+figure.subtables > div.subtable table caption { caption-side: top; font-size: .9rem;
+    color: var(--ink-muted); text-align: center; }
+figure.subtables > figcaption.subtables-caption { grid-column: 1 / -1; margin-bottom: .2rem; }
+
+.rights-placeholder { background: var(--paper-sunk); border: 1px dashed var(--rule); border-radius: 6px;
+    padding: 1.2rem; text-align: center; color: var(--ink-faint); font-family: var(--font-display);
+    font-size: .9rem; font-style: italic; }
+
+.listing-caption { font-size: var(--fs-sm); color: var(--ink-muted); margin: .3rem 0; }
+img.ebtn { height: 1.1em; vertical-align: -0.2em; }
+
+pre { background: var(--paper-sunk); color: var(--ink); padding: var(--s3) var(--s4);
+    border-radius: 4px; overflow-x: auto; font-size: var(--fs-sm);
+    font-family: var(--font-mono); }
+code { font-family: var(--font-mono); }
+
+table { border-collapse: collapse; margin: 1rem auto; } th, td { padding: .3rem .7rem; }
+/* book / booktabs: heavy top & bottom rules, light rule under the header, no
+   vertical or interior rules. Applied to *formal* tables — those with a caption
+   (i.e. born from a \begin{table} float). Plain layout tabulars (no caption, used
+   for alignment/illustration) and .plain get no rules; .ruled forces book rules. */
+table.notes-table th, table.notes-table td { border: 0; }
+table.notes-table:is(:has(caption), .ruled):not(.plain) > thead > tr:first-child > th { border-top: 1.5px solid var(--rule-strong); }
+table.notes-table:is(:has(caption), .ruled):not(.plain):not(.grouped-header) > thead > tr:last-child > th { border-bottom: 1px solid var(--rule-mid); }
+table.notes-table:is(:has(caption), .ruled):not(.plain) > tbody > tr:last-child > td { border-bottom: 1.5px solid var(--rule-strong); }
+table.notes-table:is(:has(caption), .ruled):not(.plain):not(:has(thead)) > tbody > tr:first-child > td { border-top: 1.5px solid var(--rule-strong); }
+/* segmented header rule (LaTeX \cmidrule): full-HTML tables can mark groups of
+   header cells with .cmid; .cmid-l / .cmid-r trim the ends so groups separate.
+   .grouped-header drops the default full-width rule in favour of the segments. */
+table.notes-table.grouped-header > thead > tr > th { border-bottom: 0; }
+table.notes-table th.cmid { position: relative; }
+table.notes-table th.cmid::after { content: ""; position: absolute; left: 0; right: 0;
+    bottom: 0; border-bottom: 1px solid var(--rule-mid); }
+table.notes-table th.cmid.cmid-l::after { left: 7px; }
+table.notes-table th.cmid.cmid-r::after { right: 7px; }
+/* tables and algorithms rendered as an image (<figure id="tbl:.."/"al:.."/"alg:..">):
+   caption ABOVE the image (table/algorithm convention), unlike real figures.
+   Subtables manage their own order. */
+figure[id^="tbl:"]:not(.subtables),
+figure[id^="al:"], figure[id^="alg:"] { display: flex; flex-direction: column; }
+figure[id^="tbl:"]:not(.subtables) > figcaption,
+figure[id^="al:"] > figcaption,
+figure[id^="alg:"] > figcaption { order: -1; margin: 0 0 .4rem; }
+/* a thin rule between row-groups (e.g. operator-precedence levels), drawn under
+   the grouped cells so the spanning (rowspan) columns read as continuous */
+table.notes-table td.grp { border-top: 1px solid var(--rule-mid); }
+/* .vsep2: a vertical rule after the 2nd column (e.g. truth-table inputs|outputs) */
+table.notes-table.vsep2 > thead > tr > :nth-child(2),
+table.notes-table.vsep2 > tbody > tr > :nth-child(2) { border-right: 1px solid var(--rule-mid); }
+/* non-content tables (e.g. .specs) keep a light grid */
+table:not(.notes-table) th, table:not(.notes-table) td { border: 1px solid var(--rule); }
+
+/* subject index page */
+.book-index { columns: 17rem; column-gap: 2.5rem; margin-top: 1rem; }
+.index-letter { font-family: var(--font-display); font-size: 1.15rem; margin: .7rem 0 .2rem; padding-bottom: .1rem;
+    border-bottom: 1px solid var(--rule); break-inside: avoid; break-after: avoid-column; }
+.index-entry { font-size: .9rem; margin: .1rem 0; text-indent: -1rem; padding-left: 1rem;
+    break-inside: avoid; }
+.index-entry.index-level-1 { padding-left: 2.2rem; }
+.index-entry.index-level-2 { padding-left: 3.4rem; }
+
+/* search results */
+.search-count { color: var(--ink-muted); font-size: .9rem; }
+.search-cta { font-size: .9rem; }
+.search-results { list-style: none; padding: 0; }
+.search-results > li { margin: 0 0 1.2rem; }
+.search-hit { font-weight: 600; text-decoration: none; }
+.search-hit .num { font-family: var(--font-display); color: var(--ink-faint);
+    font-weight: 400; }
+.search-results .snippet { margin: .2rem 0 0; color: var(--ink-muted); font-size: .92rem; line-height: 1.45; }
+.search-results mark { background: var(--mark); padding: 0 .1em; }
+
+/* hardware systems / parts catalog */
+.version-list-item { margin: .15rem 0 .15rem 1rem; font-size: .95rem; }
+.get-cell-placeholder { color: var(--ink-faint); }
+section.component { border-top: 1px solid var(--rule-faint); margin-top: 1.5rem; }
+table.specs { font-family: var(--font-display); font-size: .9rem; }
+table.specs th { text-align: left; font-weight: 600; color: var(--ink-muted);
+    background: var(--paper-sunk); white-space: nowrap; vertical-align: top; }
+p.suppliers { font-family: var(--font-display); font-size: .9rem; }
+.choices details { margin: .3rem 0; }
+
+/* example environments (::: {.example}): a subtle [ … ] bracket box mirroring
+   the print book's boxed examples. The left/right sides are full-height rules;
+   the top/bottom show only short arms at the corners, so each side reads as a
+   square bracket. Drawn with gradients (no border) so the arms meet the verticals
+   exactly at the corners. A faint dashed rule separates the solution
+   (.example-solution) from the problem statement. Colour is a placeholder accent
+   until real theme colours land. --exc = corner arm length, --ext = thickness. */
+.example { --exc: 18px; --ext: 1.5px; --excol: var(--accent);
+    margin: 1.6rem 0; padding: 1rem 1.3rem;
+    background-image:
+      linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol)),
+      linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol)),
+      linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol));
+    background-repeat: no-repeat;
+    background-size:
+      var(--ext) 100%, var(--ext) 100%,
+      var(--exc) var(--ext), var(--exc) var(--ext),
+      var(--exc) var(--ext), var(--exc) var(--ext);
+    background-position:
+      left top, right top,
+      left top, right top,
+      left bottom, right bottom; }
+.example-label { font-family: var(--font-display); font-weight: 700;
+    color: var(--accent); margin-bottom: .4rem; }
+.example > .example-solution { margin-top: .9rem; padding-top: .9rem;
+    border-top: 1px dashed var(--rule); }
+
+/* further-reading boxes (::: {.freadinglist}): a recommended-reading aside.
+   numbering.py injects the "Further Reading" label and lays the .plaincite
+   entries out as a bulleted list of bibliography labels (Author (Year), note). */
+.freadinglist { margin: 1.6rem 0; padding: .8rem 1.2rem; font-size: .95rem;
+    border: 1px solid var(--accent-soft); border-left: 3px solid var(--accent);
+    border-radius: 4px; background: var(--accent-wash); }
+.freading-label { font-family: var(--font-display); font-weight: 700;
+    color: var(--accent); margin-bottom: .35rem; }
+.freadinglist ul { margin: 0; padding-left: 1.3rem; }
+.freadinglist li { margin: .25rem 0; }
+
+a.xref { text-decoration: none; color: var(--accent-ink); white-space: nowrap; }
+a.xref:hover { text-decoration: underline; }
+a.cite { text-decoration: none; color: var(--accent-ink); }
+a.cite:hover { text-decoration: underline; }
+
+section.references { border-top: 1px solid var(--rule); margin-top: 2.5rem; font-size: .9rem; }
+section.references ol { padding-left: 1.2rem; }
+section.references li { margin: .3rem 0; }
+
+/* keyboard keys / menu items (.key spans are empty; glyph via ::after) */
+.key, .keys, .menu .m-item { font-family: var(--font-display); font-size: .85em;
+    border: 1px solid var(--accent-soft); border-radius: 4px; padding: 0 .35em;
+    background: var(--paper-sunk); box-shadow: 0 1px 0 var(--accent-soft); white-space: nowrap; }
+.menu { white-space: nowrap; }
+.menu .m-item { background: var(--accent-wash); box-shadow: none; }
+.menu .m-arrow { color: var(--ink-faint); margin: 0 .15em; }
+.key.enter::after, .key.return::after { content: "\21B5"; }
+.key.leftarrow::after, .key.left::after { content: "\2190"; }
+.key.rightarrow::after, .key.right::after { content: "\2192"; }
+.key.up::after, .keys.uparrow::after { content: "\2191"; }
+.key.down::after, .keys.downarrow::after { content: "\2193"; }
+.key.windows::after { content: "\229E"; }
+
+/* pandoc/skylighting syntax highlighting. Tokenised so the dark theme can flip
+   it — the previous palette was hardcoded light-mode values with no dark form. */
+:root {
+  --syn-kw: #007020; --syn-dt: #902000; --syn-num: #40a070; --syn-str: #4070a0;
+  --syn-com: #60a0b0; --syn-op: #666666; --syn-fun: #06287e; --syn-con: #880000;
+  --syn-var: #19177c; --syn-pp: #bc7a00; --syn-err: #d11;
+}
+:root[data-theme="dark"] {
+  --syn-kw: #7ec699; --syn-dt: #e2a072; --syn-num: #9ad1a5; --syn-str: #8fb8e0;
+  --syn-com: #7f9fa8; --syn-op: #a8a49c; --syn-fun: #9db4ef; --syn-con: #e08f8f;
+  --syn-var: #b0aee8; --syn-pp: #e0b56a; --syn-err: #ff8a80;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --syn-kw: #7ec699; --syn-dt: #e2a072; --syn-num: #9ad1a5; --syn-str: #8fb8e0;
+    --syn-com: #7f9fa8; --syn-op: #a8a49c; --syn-fun: #9db4ef; --syn-con: #e08f8f;
+    --syn-var: #b0aee8; --syn-pp: #e0b56a; --syn-err: #ff8a80;
+  }
+}
+code span.kw { color: var(--syn-kw); font-weight: bold; }
+code span.dt { color: var(--syn-dt); }
+code span.dv, code span.bn, code span.fl { color: var(--syn-num); }
+code span.ch, code span.st, code span.vs { color: var(--syn-str); }
+code span.co { color: var(--syn-com); font-style: italic; }
+code span.cf, code span.im { color: var(--syn-kw); font-weight: bold; }
+code span.op { color: var(--syn-op); }
+code span.fu { color: var(--syn-fun); }
+code span.cn, code span.sc, code span.ss { color: var(--syn-con); }
+code span.va { color: var(--syn-var); }
+code span.bu, code span.at { color: var(--syn-kw); }
+code span.pp { color: var(--syn-pp); }
+code span.al, code span.er { color: var(--syn-err); font-weight: bold; }
+pre.sourceCode a { text-decoration: none; color: inherit; }
+
+/* LaTeX-baked images carry their own white/transparent background, so in dark
+   mode they sit on a light panel rather than being inverted — an invert filter
+   would wreck the colour figures, photos and screenshots this book contains. */
+figure img, img.cover, figure[id^="tbl:"] img,
+figure[id^="al:"] img, figure[id^="alg:"] img {
+    background: var(--paper-panel); border-radius: 3px; }
+:root[data-theme="dark"] figure img,
+:root[data-theme="dark"] figure[id^="tbl:"] img,
+:root[data-theme="dark"] figure[id^="al:"] img,
+:root[data-theme="dark"] figure[id^="alg:"] img { padding: var(--s2); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) figure img,
+  :root:not([data-theme="light"]) figure[id^="tbl:"] img { padding: var(--s2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eqanchor:target ~ .math.display { animation: none; background: var(--flash); }
+}
+
+/* ---- wide content scrolls itself, never the page -------------------------
+   A data table or a long display equation is regularly wider than the reading
+   column, and much wider than a phone. Without this the whole document scrolls
+   sideways (measured: 658px of content in a 430px viewport). Tables become
+   block-level so they can carry their own scrollbar; `width: max-content` keeps
+   narrow ones shrink-to-fit and still centred. */
+.col table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+/* pandoc emits display math as a <span>, and overflow is inert on a
+   non-replaced inline box — it must become block for this to do anything. */
+.math.display { display: block; overflow-x: auto; overflow-y: hidden; }
+figure.subfigures, figure.subtables { max-width: 100%; }
+
+/* Occasionally an INLINE formula is wider than a phone (a long expression set
+   mid-sentence). It cannot wrap, so on narrow viewports let it scroll in place
+   rather than dragging the document sideways. Short formulae are unaffected —
+   they never reach max-width. */
+@media (max-width: 900px) {
+  .math.inline { display: inline-block; max-width: 100%; overflow-x: auto;
+      vertical-align: middle; }
+}

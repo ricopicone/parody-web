@@ -1,0 +1,12 @@
+{% load parody_web %}
+<nav class="side" aria-label="Chapter contents">
+  <p class="side-cap">{% if chapter.number %}{% if chapter.appendix %}Appendix {{ chapter.number }}{% else %}Chapter {{ chapter.number }}{% endif %}{% else %}Contents{% endif %}</p>
+  <ol class="nav-list">
+  {% for s in chapter_nav %}
+    <li class="nav-item{% if s.is_current %} on{% endif %}">
+      {% if s.number %}<i>{{ s.number }}</i>{% endif %}<a
+        href="{% section_url book chapter.slug s.slug %}"{% if s.is_current %} aria-current="page"{% endif %}>{{ s.title|code_spans }}</a>
+    </li>
+  {% endfor %}
+  </ol>
+</nav>

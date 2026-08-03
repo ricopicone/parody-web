@@ -174,3 +174,13 @@ def render_book(html):
             f"<!-- book-host: unresolved template content: "
             f"{conditional_escape(str(exc))} -->" + html
         )
+
+
+@register.simple_tag
+def theme_css():
+    """Per-deployment token overrides (settings.PARODY_WEB_THEME) as CSS.
+
+    A tag rather than a context processor: parody-web is an installable app and
+    must not require every consuming project to edit its TEMPLATES setting."""
+    from ..theme import theme_css as _css
+    return mark_safe(_css(getattr(settings, "PARODY_WEB_THEME", None)))

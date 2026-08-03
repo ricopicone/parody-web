@@ -96,6 +96,34 @@ def _all_sections_ordered(book):
         .order_by("chapter__order", "order"))
 
 
+_H2_ID_RE = re.compile(r'<h2\b[^>]*\bid="(?P<id>[^"]+)"[^>]*>(?P<text>.*?)</h2>', re.S)
+
+
+def _chapter_nav(book, chapter, current=None):
+    """The chapter's content sections in reading order, each flagged whether it
+    is the one being read. The lead-in is intro prose, not a contents entry."""
+    out = []
+    for s in chapter.sections.all():
+        if s.slug == "lead-in":
+            continue
+        s.is_current = bool(current and s.pk == current.pk)
+        out.append(s)
+    return out
+
+
+def _page_anchors(html):
+    """Subsection targets for the margin rail: <h2 id="..."> only.
+
+    Some migrated sections carry headings with no id at all; those can't be
+    linked, so they are skipped rather than guessed at."""
+    out = []
+    for mo in _H2_ID_RE.finditer(html or ""):
+        text = " ".join(strip_tags(mo.group("text")).split())
+        if text:
+            out.append({"id": mo.group("id"), "text": text})
+    return out
+
+
 def _resolve_code(request, code):
     """Map a printed short code (a chapter/section/figure/exercise hash, or a
     float id like ``fig:bode``) to a canonical in-site URL.
@@ -283,6 +311,7 @@ def chapter_detail(request, chapter_slug):
     return render(request, "parody_web/chapter.html", {
         "book": book, "editions": editions,
         "chapter": chapter, "leadin": leadin, "contents": contents,
+        "chapter_nav": _chapter_nav(book, chapter),
         "first": first, "public": public, "preview": preview,
         "next_path": request.get_full_path(),
         "meta_description": _excerpt(leadin.html if leadin else "")
@@ -306,6 +335,8 @@ def section_detail(request, chapter_slug, section_slug):
     return render(request, "parody_web/section.html", {
         "book": book, "editions": editions,
         "section": section, "chapter": section.chapter,
+        "chapter_nav": _chapter_nav(book, section.chapter, current=section),
+        "page_anchors": [] if preview else _page_anchors(section.html),
         "prev": prev_s, "next": next_s,
         # The artifact html usually carries its own <h1>; only render the
         # template title when it doesn't (e.g. chapter "lead-in" intros).

@@ -1,0 +1,251 @@
+/* Page furniture: layout, typography, navigation, forms and gating chrome.
+ * Book *content* (figures, tables, boxes, math, listings) lives in content.css. */
+
+body { margin: 0; padding: 0;
+       font: var(--fs-base)/var(--lh-base) var(--font-body);
+       color: var(--ink); background: var(--paper); }
+
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: var(--lh-head);
+                 letter-spacing: -.03em; font-weight: 700; }
+h1 { font-size: var(--fs-h1); }
+h2 { font-size: var(--fs-h2); }
+h3 { font-size: var(--fs-h3); }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+/* the site had no focus styling at all; every interactive stop needs one */
+a:focus-visible, button:focus-visible, summary:focus-visible,
+input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+nav.crumbs { font-family: var(--font-body); font-size: var(--fs-sm);
+    color: var(--ink-faint); margin-bottom: var(--s6); }
+/* section-page breadcrumb carries a chapter rung; keep the whole trail on one line
+   and let the (possibly long) chapter title ellipsize so it never wraps or pushes
+   off-screen on narrow viewports. The book/home link stays whole; the chapter link
+   is the one that shrinks. */
+nav.crumbs.has-chapter { display: flex; align-items: baseline; gap: .3rem; }
+nav.crumbs.has-chapter > a:first-child,
+nav.crumbs.has-chapter .crumb-sep { flex: 0 0 auto; white-space: nowrap; }
+nav.crumbs.has-chapter .crumb-trunc { flex: 0 1 auto; min-width: 4ch;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+nav.pager { display: flex; justify-content: space-between;
+            font-family: var(--font-display); font-size: var(--fs-sm);
+            margin-top: var(--s7); }
+
+img { max-width: 100%; }
+
+/* Section/chapter numbers are part of the typewriter layer, not the prose. */
+.secnum { font-family: var(--font-display); font-weight: 700; color: var(--accent);
+    margin-right: var(--s2); font-variant-numeric: tabular-nums; }
+
+/* table-of-contents lists (index + chapter pages): no bullets */
+ul.toc { list-style: none; padding-left: 0; font-family: var(--font-body); }
+ul.toc li { margin: .25rem 0; }
+
+.preview { mask-image: linear-gradient(to bottom, black 60%, transparent); }
+.signin-gate { background: var(--paper-sunk); border: 1px solid var(--rule); border-radius: 6px;
+    padding: .8rem 1rem; font-family: var(--font-display); font-size: .95rem; }
+
+a.continue-button { display: inline-block; font-family: var(--font-display);
+    font-size: .95rem; background: var(--accent); color: var(--paper); border-radius: 4px;
+    padding: .4rem .9rem; text-decoration: none; margin-top: 1rem; }
+
+/* "go to a code" box on the index — resolves a printed short code to its page */
+form.codebox { font-family: var(--font-display); font-size: .9rem;
+    background: var(--paper-sunk); border: 1px solid var(--rule); border-radius: 6px;
+    padding: .6rem .8rem; margin: 1.5rem 0; }
+form.codebox input { font: inherit; padding: .2rem .4rem; width: 7rem;
+    border: 1px solid var(--accent-soft); border-radius: 4px; }
+form.codebox button { font: inherit; padding: .2rem .7rem; cursor: pointer;
+    border: 1px solid var(--accent); border-radius: 4px; background: var(--paper); color: var(--accent-ink); }
+form.codebox .note { display: block; margin-top: .3rem; }
+
+img.cover { float: right; max-width: 38%; margin: 0 0 1rem 1.5rem;
+    border: 1px solid var(--rule); box-shadow: 0 1px 4px rgb(0 0 0 / .15); }
+
+details { margin: .4rem 0; } summary { cursor: pointer; }
+
+section.online-resources { border-top: 1px solid var(--rule); margin-top: 2.5rem; }
+
+a.download-button { display: inline-block; font-family: var(--font-display);
+    font-size: .9rem; border: 1px solid var(--accent); border-radius: 4px;
+    padding: .25rem .7rem; text-decoration: none; }
+
+.note { color: var(--ink-faint); font-size: .8rem; }
+
+nav.edition-switcher { font-family: var(--font-display); font-size: .8rem;
+    color: var(--ink-faint); margin-bottom: .3rem; }
+nav.edition-switcher a { color: var(--accent); text-decoration: none; }
+nav.edition-switcher strong { color: var(--ink); }
+
+/* margin version icon ([]{.tsicon} -> [T1]{.version-icon .ts}): a small badge
+   marking which version a passage applies to; pulled into the right margin on
+   wide screens, inline otherwise. ts = purple, ds = teal. */
+.version-icon { font-family: var(--font-display); font-size: .7rem;
+    font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
+    color: var(--paper); background: var(--accent); border-radius: 4px; padding: .05rem .35rem;
+    float: right; clear: right; margin: .1rem 0 .2rem .5rem; }
+/* the one deliberate literal in the sheet: ts/ds is a SEMANTIC distinction
+   (which target system a passage applies to), not part of the theme, so it
+   does not follow the accent. */
+.version-icon.ds { background: #2a9d8f; }
+@media (min-width: 62rem) { .version-icon { margin-right: -3.6rem; } }
+
+.draft-banner { font-family: var(--font-display); font-size: .85rem;
+    background: var(--accent-wash); border: 1px solid var(--accent-soft); border-radius: 6px;
+    padding: .5rem .8rem; margin: .3rem 0 1rem; }
+
+/* search inside */
+.search-form { display: flex; gap: .5rem; margin: 1rem 0 1.5rem; max-width: 34rem; }
+.search-form input[type=search] { flex: 1; padding: .45rem .7rem; font-size: 1rem;
+    border: 1px solid var(--rule); border-radius: 4px; }
+.search-form button { padding: .45rem 1.1rem; font-size: 1rem; cursor: pointer; }
+
+/* ---- masthead ------------------------------------------------------------
+   Sticky and slim. --head-h is its height; the scroll anchors in content.css
+   offset by it, so keep the two in sync or equation and index deep-links land
+   underneath the bar (the behaviour shipped in #297/#306). */
+:root { --head-h: 3rem; }
+.site-head { position: sticky; top: 0; z-index: 10; display: flex; align-items: center;
+    gap: var(--s4); min-height: var(--head-h); padding: 0 var(--s5);
+    background: var(--paper); border-bottom: 1px solid var(--rule);
+    font-family: var(--font-display); font-size: var(--fs-sm); }
+.site-title { font-weight: 700; color: var(--ink); letter-spacing: -.03em; }
+.site-title:hover { color: var(--accent); text-decoration: none; }
+.site-nav { margin-left: auto; display: flex; align-items: center; gap: var(--s4); }
+.site-nav > a { color: var(--ink-muted); }
+.site-nav > a:hover { color: var(--accent); text-decoration: none; }
+.head-search input[type=search] { font: inherit; font-family: var(--font-display);
+    padding: .2rem .5rem; width: 11rem; color: var(--ink);
+    background: var(--paper-sunk); border: 1px solid var(--rule); border-radius: 4px; }
+.theme-toggle { border: 1px solid var(--rule); background: var(--paper-sunk);
+    color: var(--ink-muted); border-radius: 4px; cursor: pointer; font: inherit;
+    line-height: 1; padding: .2rem .4rem; }
+.theme-toggle:hover { color: var(--ink); border-color: var(--accent-soft); }
+
+/* ---- page grid -----------------------------------------------------------
+   sidebar | reading column | margin rail. The outer tracks are `auto`, so when
+   a page has neither (the index, search, subject index) they collapse to zero
+   and the symmetric gaps leave the column centred. The reading measure is
+   constant at every width — the chrome drops, the text never narrows. */
+.page { display: grid; grid-template-columns: auto minmax(0, var(--measure)) auto;
+    justify-content: center; gap: var(--s6); padding: var(--s6) var(--s5); }
+/* Pinned to the middle track: an empty {% block side %} emits no element at
+   all, so without this the column falls into the first `auto` track on
+   pages with no sidebar and stretches to the full viewport. */
+.col { grid-column: 2; min-width: 0; }
+.side { width: 12.5rem; grid-column: 1; }
+.rail { width: 9rem; grid-column: 3; }
+
+/* ---- collapse ladder: rail, then sidebar, then chrome -------------------- */
+@media (max-width: 1440px) { .rail { display: none; } }
+@media (max-width: 1180px) { .side { display: none; } }
+@media (max-width: 900px) {
+  .page { padding: var(--s5) var(--s4); gap: var(--s4); }
+  .site-head { padding: 0 var(--s4); gap: var(--s3); }
+  .head-search { display: none; }
+  nav.pager { flex-direction: column; gap: var(--s2); }
+  .site-foot { flex-direction: column; align-items: flex-start; gap: var(--s2); }
+}
+
+/* ---- footer --------------------------------------------------------------
+   Carries the edition switcher and the owner line, which used to be an
+   inline-styled div floating above the page content. */
+.site-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s4);
+    margin-top: var(--s8); padding: var(--s5); border-top: 1px solid var(--rule);
+    font-family: var(--font-display); font-size: var(--fs-xs); color: var(--ink-faint); }
+.site-foot strong { color: var(--ink); }
+.foot-book { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: baseline; }
+.foot-owner { margin-left: auto; }
+.foot-owner form { display: inline; }
+.foot-owner button[type=submit] { border: none; background: none; color: var(--accent);
+    cursor: pointer; font: inherit; padding: 0; }
+.site-foot .edition-switcher { margin: 0; font-size: inherit; }
+
+/* ---- chapter sidebar and margin rail -------------------------------------
+   The sidebar answers "where am I in this chapter?", which a reader arriving
+   from search or a printed QR code otherwise cannot tell. Both stick below the
+   masthead and scroll independently of the column. */
+.side, .rail { position: sticky; top: calc(var(--head-h) + var(--s4)); align-self: start;
+    font-size: var(--fs-sm); line-height: 1.45; }
+.side { max-height: calc(100vh - var(--head-h) - var(--s6)); overflow-y: auto; }
+.side-cap, .rail-cap { font-family: var(--font-display); font-size: var(--fs-xs);
+    font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-faint); border-bottom: 1px solid var(--rule);
+    padding-bottom: var(--s1); margin: 0 0 var(--s2); }
+.nav-list, .rail-list { list-style: none; margin: 0; padding: 0; }
+.nav-item { margin: var(--s1) 0; display: flex; gap: var(--s1); align-items: baseline; }
+.nav-item i { font-family: var(--font-display); font-style: normal; font-size: var(--fs-xs);
+    color: var(--ink-faint); flex: 0 0 auto; }
+.nav-item a { color: var(--ink-muted); }
+.nav-item a:hover { color: var(--accent); text-decoration: none; }
+/* current section: an accent tick in the gutter rather than a filled block, so
+   the sidebar stays quiet next to the reading column */
+.nav-item.on { box-shadow: -.7rem 0 0 -.62rem var(--accent); }
+.nav-item.on a { color: var(--ink); font-weight: 600; }
+.nav-item.on i { color: var(--accent); }
+.rail { color: var(--ink-faint); }
+.rail-list li { margin: var(--s1) 0; }
+.rail-list a { color: var(--ink-muted); }
+.rail-list a:hover { color: var(--accent); text-decoration: none; }
+
+/* ---- landing page --------------------------------------------------------
+   The book presented properly, then its contents typeset as a table of
+   contents. Chapters collapse; previously every section of every chapter was
+   dumped flat onto one page. */
+.book-hero { display: flex; gap: var(--s5); align-items: flex-start; margin-bottom: var(--s7); }
+.book-hero img.cover { float: none; max-width: 9rem; margin: 0; flex: 0 0 auto;
+    border: 1px solid var(--rule); box-shadow: 0 1px 4px rgb(0 0 0 / .15); }
+.hero-text { min-width: 0; }
+.hero-text h1 { margin: 0 0 var(--s2); }
+.hero-authors { font-style: italic; color: var(--ink-muted); margin: 0 0 var(--s2); }
+.hero-blurb { color: var(--ink-muted); }
+
+.toc-cap { font-family: var(--font-display); font-size: var(--fs-xs); font-weight: 700;
+    letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint);
+    margin: 0 0 var(--s1); }
+.toc-rule { border: 0; border-top: 2px solid var(--rule-strong); margin: 0 0 var(--s2); }
+.toc-chapter { margin: 0; border-bottom: 1px solid var(--rule-faint); }
+.toc-chapter > summary { display: flex; align-items: baseline; gap: var(--s2);
+    padding: var(--s2) 0; cursor: pointer; list-style: none; }
+.toc-chapter > summary::-webkit-details-marker { display: none; }
+.toc-chapter > summary i { font-family: var(--font-display); font-style: normal;
+    font-weight: 700; color: var(--accent); flex: 0 0 auto; min-width: 2.4rem; }
+.toc-chapter > summary em { font-style: normal; }
+.toc-chapter > summary em a { color: var(--ink); }
+.toc-chapter[open] > summary em a { color: var(--accent); }
+/* leader rules — the one place --ink-ghost is legitimate: decoration, not text */
+/* leaders sit on the LAST line of a wrapped chapter title, not floating at
+   mid-height where they read as a smudge */
+.toc-chapter > summary .dots { flex: 1 1 2rem; min-width: 2rem; align-self: flex-end;
+    margin-bottom: .42rem; border-bottom: 1px dotted var(--ink-ghost); }
+.toc-chapter > summary u { text-decoration: none; font-family: var(--font-display);
+    font-size: var(--fs-xs); color: var(--ink-faint); flex: 0 0 auto;
+    align-self: flex-end; margin-bottom: .15rem; }
+.toc-chapter ul.toc { margin: 0 0 var(--s3) 2.4rem; }
+
+/* ---- sign-in form -------------------------------------------------------- */
+.form-error { color: var(--syn-err); font-family: var(--font-display);
+    font-size: var(--fs-sm); }
+.signin-form { max-width: 22rem; }
+.signin-form label { font-family: var(--font-display); font-size: var(--fs-sm);
+    color: var(--ink-muted); display: block; }
+.signin-form input { font: inherit; width: 100%; margin-top: var(--s1);
+    padding: .35rem .5rem; color: var(--ink); background: var(--paper-sunk);
+    border: 1px solid var(--rule); border-radius: 4px; }
+.signin-form button { font-family: var(--font-display); font-size: var(--fs-sm);
+    cursor: pointer; padding: .35rem 1rem; color: var(--paper);
+    background: var(--accent); border: 0; border-radius: 4px; }
+
+/* ---- generic buttons on content pages (search, code box) ----------------- */
+.search-form button { font-family: var(--font-display); font-size: var(--fs-sm);
+    cursor: pointer; padding: .4rem 1rem; color: var(--paper);
+    background: var(--accent); border: 0; border-radius: 4px; }
+.search-form input[type=search] { color: var(--ink); background: var(--paper-sunk); }
+form.codebox input { color: var(--ink); background: var(--paper); }
+
+/* The subject index is a multi-column reference list, not prose — the reading
+   measure would force it to a single column and double its length. */
+.page.wide { grid-template-columns: auto minmax(0, 54rem) auto; }

@@ -2,244 +2,27 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>
+/* Apply the stored theme before first paint so a dark-mode reader never sees
+   a white flash. No stored preference = follow the OS. */
+(function () {
+  try {
+    var t = localStorage.getItem('parody-theme');
+    if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ book.title }}{% endblock %}</title>
-<style>
-body { max-width: 46rem; margin: 2rem auto; padding: 0 1rem;
-       font: 1.05rem/1.6 Georgia, 'Times New Roman', serif; color: #1a1a1a; }
-nav.crumbs { font-family: system-ui, sans-serif; font-size: .85rem; margin-bottom: 2rem; }
-/* section-page breadcrumb carries a chapter rung; keep the whole trail on one line
-   and let the (possibly long) chapter title ellipsize so it never wraps or pushes
-   off-screen on narrow viewports. The book/home link stays whole; the chapter link
-   is the one that shrinks. */
-nav.crumbs.has-chapter { display: flex; align-items: baseline; gap: .3rem; }
-nav.crumbs.has-chapter > a:first-child,
-nav.crumbs.has-chapter .crumb-sep { flex: 0 0 auto; white-space: nowrap; }
-nav.crumbs.has-chapter .crumb-trunc { flex: 0 1 auto; min-width: 4ch;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-nav.pager { display: flex; justify-content: space-between;
-            font-family: system-ui, sans-serif; font-size: .9rem; margin-top: 3rem; }
-h1, h2, h3 { font-family: system-ui, sans-serif; line-height: 1.25; }
-img { max-width: 100%; }
-/* index markers: invisible inline, but a zero-size scroll target so the subject
-   index page (/index/) can deep-link to where each term appears */
-.index { display: inline-block; width: 0; height: 0; overflow: hidden; scroll-margin-top: 5rem; }
-.keyword { font-weight: bold; }
-.preview { mask-image: linear-gradient(to bottom, black 60%, transparent); }
-.signin-gate { background: #f6f6f4; border: 1px solid #ddd; border-radius: 6px;
-    padding: .8rem 1rem; font-family: system-ui, sans-serif; font-size: .95rem; }
-.secnum { color: #555; font-variant-numeric: tabular-nums; }
-/* table-of-contents lists (index + chapter pages): no bullets */
-ul.toc { list-style: none; padding-left: 0; }
-ul.toc li { margin: .25rem 0; }
-a.continue-button { display: inline-block; font-family: system-ui, sans-serif;
-    font-size: .95rem; background: #7a6ff0; color: #fff; border-radius: 4px;
-    padding: .4rem .9rem; text-decoration: none; margin-top: 1rem; }
-/* "go to a code" box on the index — resolves a printed short code to its page */
-form.codebox { font-family: system-ui, sans-serif; font-size: .9rem;
-    background: #f6f6f4; border: 1px solid #ddd; border-radius: 6px;
-    padding: .6rem .8rem; margin: 1.5rem 0; }
-form.codebox input { font: inherit; padding: .2rem .4rem; width: 7rem;
-    border: 1px solid #c8c8c8; border-radius: 4px; }
-form.codebox button { font: inherit; padding: .2rem .7rem; cursor: pointer;
-    border: 1px solid #7a6ff0; border-radius: 4px; background: #fff; color: #5a4fd0; }
-form.codebox .note { display: block; margin-top: .3rem; }
-.fignum { font-weight: bold; }
-/* equation numbers are rendered by MathJax as \tag{C.n} (injected by numbering),
-   so they need no CSS — they right-align and vertically-centre like the print book. */
-/* equation cross-ref target: numbering relocates the scroll anchor to just before
-   its equation, so a jump lands ON the equation (with breathing room above); the
-   :target highlight briefly flashes the equation that was navigated to. */
-.eqanchor { display: inline-block; width: 0; height: 0; overflow: hidden;
-    scroll-margin-top: 3rem; }
-@keyframes eq-target-flash {
-    from { background: #fdf2b8; box-shadow: 0 0 0 .35rem #fdf2b8; }
-    to   { background: transparent; box-shadow: 0 0 0 .35rem transparent; }
-}
-.eqanchor:target ~ .math.display { animation: eq-target-flash 2.2s ease-out 1;
-    border-radius: 3px; }
-/* subfigure floats: one figure, lettered panels laid out in a grid */
-figure.subfigures { display: grid; gap: .6rem 1rem;
-    grid-template-columns: repeat(var(--sf-cols, 2), 1fr); margin: 1.5rem 0; }
-figure.subfigures > figure.subfigure { margin: 0; text-align: center;
-    display: flex; flex-direction: column; }
-figure.subfigure > img { margin: 0 auto; }
-figure.subfigure > figcaption { font-size: .9rem; color: #555; margin-top: .3rem; }
-figure.subfigures > figcaption.subfigures-caption { grid-column: 1 / -1; margin-top: .2rem; }
-.subfignum { font-weight: bold; }
-/* sub-tables: side-by-side data tables sharing one "Table C.n" number */
-figure.subtables { display: grid; gap: .6rem 1.5rem; justify-items: center;
-    grid-template-columns: repeat(var(--st-cols, 2), auto); margin: 1.5rem 0; }
-figure.subtables > div.subtable { margin: 0; }
-figure.subtables > div.subtable table caption { caption-side: top; font-size: .9rem;
-    color: #555; text-align: center; }
-figure.subtables > figcaption.subtables-caption { grid-column: 1 / -1; margin-bottom: .2rem; }
-.rights-placeholder { background: #f6f6f4; border: 1px dashed #ccc; border-radius: 6px;
-    padding: 1.2rem; text-align: center; color: #777; font-family: system-ui, sans-serif;
-    font-size: .9rem; font-style: italic; }
-.listing-caption { font-size: .9rem; color: #555; margin: .3rem 0; }
-img.ebtn { height: 1.1em; vertical-align: -0.2em; }
-img.cover { float: right; max-width: 38%; margin: 0 0 1rem 1.5rem;
-    border: 1px solid #ddd; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
-pre { background: #f6f6f4; padding: .8rem 1rem; overflow-x: auto; font-size: .85rem; }
-table { border-collapse: collapse; margin: 1rem auto; } th, td { padding: .3rem .7rem; }
-/* book / booktabs: heavy top & bottom rules, light rule under the header, no
-   vertical or interior rules. Applied to *formal* tables — those with a caption
-   (i.e. born from a \begin{table} float). Plain layout tabulars (no caption, used
-   for alignment/illustration) and .plain get no rules; .ruled forces book rules. */
-table.notes-table th, table.notes-table td { border: 0; }
-table.notes-table:is(:has(caption), .ruled):not(.plain) > thead > tr:first-child > th { border-top: 1.5px solid #222; }
-table.notes-table:is(:has(caption), .ruled):not(.plain):not(.grouped-header) > thead > tr:last-child > th { border-bottom: 1px solid #999; }
-table.notes-table:is(:has(caption), .ruled):not(.plain) > tbody > tr:last-child > td { border-bottom: 1.5px solid #222; }
-table.notes-table:is(:has(caption), .ruled):not(.plain):not(:has(thead)) > tbody > tr:first-child > td { border-top: 1.5px solid #222; }
-/* segmented header rule (LaTeX \cmidrule): full-HTML tables can mark groups of
-   header cells with .cmid; .cmid-l / .cmid-r trim the ends so groups separate.
-   .grouped-header drops the default full-width rule in favour of the segments. */
-table.notes-table.grouped-header > thead > tr > th { border-bottom: 0; }
-table.notes-table th.cmid { position: relative; }
-table.notes-table th.cmid::after { content: ""; position: absolute; left: 0; right: 0;
-    bottom: 0; border-bottom: 1px solid #999; }
-table.notes-table th.cmid.cmid-l::after { left: 7px; }
-table.notes-table th.cmid.cmid-r::after { right: 7px; }
-/* tables and algorithms rendered as an image (<figure id="tbl:.."/"al:.."/"alg:..">):
-   caption ABOVE the image (table/algorithm convention), unlike real figures.
-   Subtables manage their own order. */
-figure[id^="tbl:"]:not(.subtables),
-figure[id^="al:"], figure[id^="alg:"] { display: flex; flex-direction: column; }
-figure[id^="tbl:"]:not(.subtables) > figcaption,
-figure[id^="al:"] > figcaption,
-figure[id^="alg:"] > figcaption { order: -1; margin: 0 0 .4rem; }
-/* a thin rule between row-groups (e.g. operator-precedence levels), drawn under
-   the grouped cells so the spanning (rowspan) columns read as continuous */
-table.notes-table td.grp { border-top: 1px solid #bbb; }
-/* .vsep2: a vertical rule after the 2nd column (e.g. truth-table inputs|outputs) */
-table.notes-table.vsep2 > thead > tr > :nth-child(2),
-table.notes-table.vsep2 > tbody > tr > :nth-child(2) { border-right: 1px solid #999; }
-/* non-content tables (e.g. .specs) keep a light grid */
-table:not(.notes-table) th, table:not(.notes-table) td { border: 1px solid #ccc; }
-/* subject index page */
-.book-index { columns: 17rem; column-gap: 2.5rem; margin-top: 1rem; }
-.index-letter { font-size: 1.15rem; margin: .7rem 0 .2rem; padding-bottom: .1rem;
-    border-bottom: 1px solid #ddd; break-inside: avoid; break-after: avoid-column; }
-.index-entry { font-size: .9rem; margin: .1rem 0; text-indent: -1rem; padding-left: 1rem;
-    break-inside: avoid; }
-.index-entry.index-level-1 { padding-left: 2.2rem; }
-.index-entry.index-level-2 { padding-left: 3.4rem; }
-/* search inside */
-.search-form { display: flex; gap: .5rem; margin: 1rem 0 1.5rem; max-width: 34rem; }
-.search-form input[type=search] { flex: 1; padding: .45rem .7rem; font-size: 1rem;
-    border: 1px solid #bbb; border-radius: 4px; }
-.search-form button { padding: .45rem 1.1rem; font-size: 1rem; cursor: pointer; }
-.search-count { color: #555; font-size: .9rem; }
-.search-cta { font-size: .9rem; }
-.search-results { list-style: none; padding: 0; }
-.search-results > li { margin: 0 0 1.2rem; }
-.search-hit { font-weight: 600; text-decoration: none; }
-.search-hit .num { color: #777; font-weight: 400; }
-.search-results .snippet { margin: .2rem 0 0; color: #333; font-size: .92rem; line-height: 1.45; }
-.search-results mark { background: #fde68a; padding: 0 .1em; }
-details { margin: .4rem 0; } summary { cursor: pointer; }
-.version-list-item { margin: .15rem 0 .15rem 1rem; font-size: .95rem; }
-section.online-resources { border-top: 1px solid #ddd; margin-top: 2.5rem; }
-.get-cell-placeholder { color: #999; }
-a.download-button { display: inline-block; font-family: system-ui, sans-serif;
-    font-size: .9rem; border: 1px solid #7a6ff0; border-radius: 4px;
-    padding: .25rem .7rem; text-decoration: none; }
-.note { color:#999; font-size:.8rem; }
-nav.edition-switcher { font-family: system-ui, sans-serif; font-size: .8rem;
-    color: #999; margin-bottom: .3rem; }
-nav.edition-switcher a { color: #7a6ff0; text-decoration: none; }
-nav.edition-switcher strong { color: #1a1a1a; }
-section.component { border-top: 1px solid #eee; margin-top: 1.5rem; }
-table.specs { font-family: system-ui, sans-serif; font-size: .9rem; }
-table.specs th { text-align: left; font-weight: 600; color: #444;
-    background: #f8f8f8; white-space: nowrap; vertical-align: top; }
-p.suppliers { font-family: system-ui, sans-serif; font-size: .9rem; }
-.choices details { margin: .3rem 0; }
-/* margin version icon ([]{.tsicon} -> [T1]{.version-icon .ts}): a small badge
-   marking which version a passage applies to; pulled into the right margin on
-   wide screens, inline otherwise. ts = purple, ds = teal. */
-.version-icon { font-family: system-ui, sans-serif; font-size: .7rem;
-    font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
-    color: #fff; background: #7a6ff0; border-radius: 4px; padding: .05rem .35rem;
-    float: right; clear: right; margin: .1rem 0 .2rem .5rem; }
-.version-icon.ds { background: #2a9d8f; }
-@media (min-width: 62rem) { .version-icon { margin-right: -3.6rem; } }
-.draft-banner { font-family: system-ui, sans-serif; font-size: .85rem;
-    background: #fff7e6; border: 1px solid #f0c060; border-radius: 6px;
-    padding: .5rem .8rem; margin: .3rem 0 1rem; }
-/* example environments (::: {.example}): a subtle [ … ] bracket box mirroring
-   the print book's boxed examples. The left/right sides are full-height rules;
-   the top/bottom show only short arms at the corners, so each side reads as a
-   square bracket. Drawn with gradients (no border) so the arms meet the verticals
-   exactly at the corners. A faint dashed rule separates the solution
-   (.example-solution) from the problem statement. Colour is a placeholder accent
-   until real theme colours land. --exc = corner arm length, --ext = thickness. */
-.example { --exc: 18px; --ext: 1.5px; --excol: #a89a86;
-    margin: 1.6rem 0; padding: 1rem 1.3rem;
-    background-image:
-      linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol)),
-      linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol)),
-      linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol));
-    background-repeat: no-repeat;
-    background-size:
-      var(--ext) 100%, var(--ext) 100%,
-      var(--exc) var(--ext), var(--exc) var(--ext),
-      var(--exc) var(--ext), var(--exc) var(--ext);
-    background-position:
-      left top, right top,
-      left top, right top,
-      left bottom, right bottom; }
-.example-label { font-family: system-ui, sans-serif; font-weight: 700;
-    color: #6b5d49; margin-bottom: .4rem; }
-.example > .example-solution { margin-top: .9rem; padding-top: .9rem;
-    border-top: 1px dashed #e6e0d6; }
-/* further-reading boxes (::: {.freadinglist}): a recommended-reading aside.
-   numbering.py injects the "Further Reading" label and lays the .plaincite
-   entries out as a bulleted list of bibliography labels (Author (Year), note). */
-.freadinglist { margin: 1.6rem 0; padding: .8rem 1.2rem; font-size: .95rem;
-    border: 1px solid #e0d9cb; border-left: 3px solid #a89a86;
-    border-radius: 4px; background: #faf8f3; }
-.freading-label { font-family: system-ui, sans-serif; font-weight: 700;
-    color: #6b5d49; margin-bottom: .35rem; }
-.freadinglist ul { margin: 0; padding-left: 1.3rem; }
-.freadinglist li { margin: .25rem 0; }
-a.xref { text-decoration: none; color: #5a4fd0; white-space: nowrap; }
-a.xref:hover { text-decoration: underline; }
-a.cite { text-decoration: none; color: #5a4fd0; }
-a.cite:hover { text-decoration: underline; }
-section.references { border-top: 1px solid #ddd; margin-top: 2.5rem; font-size: .9rem; }
-section.references ol { padding-left: 1.2rem; }
-section.references li { margin: .3rem 0; }
-/* keyboard keys / menu items (.key spans are empty; glyph via ::after) */
-.key, .keys, .menu .m-item { font-family: system-ui, sans-serif; font-size: .85em;
-    border: 1px solid #c8c8c8; border-radius: 4px; padding: 0 .35em;
-    background: #f8f8f8; box-shadow: 0 1px 0 #c8c8c8; white-space: nowrap; }
-.menu { white-space: nowrap; }
-.menu .m-item { background: #eef0fb; box-shadow: none; }
-.menu .m-arrow { color: #999; margin: 0 .15em; }
-.key.enter::after, .key.return::after { content: "\21B5"; }
-.key.leftarrow::after, .key.left::after { content: "\2190"; }
-.key.rightarrow::after, .key.right::after { content: "\2192"; }
-.key.up::after, .keys.uparrow::after { content: "\2191"; }
-.key.down::after, .keys.downarrow::after { content: "\2193"; }
-.key.windows::after { content: "\229E"; }
-/* pandoc/skylighting syntax highlighting */
-code span.kw { color: #007020; font-weight: bold; }
-code span.dt { color: #902000; }
-code span.dv, code span.bn, code span.fl { color: #40a070; }
-code span.ch, code span.st, code span.vs { color: #4070a0; }
-code span.co { color: #60a0b0; font-style: italic; }
-code span.cf, code span.im { color: #007020; font-weight: bold; }
-code span.op { color: #666; }
-code span.fu { color: #06287e; }
-code span.cn, code span.sc, code span.ss { color: #880000; }
-code span.va { color: #19177c; }
-code span.bu, code span.at { color: #007020; }
-code span.pp { color: #bc7a00; }
-code span.al, code span.er { color: #ff0000; font-weight: bold; }
-pre.sourceCode a { text-decoration: none; color: inherit; }
-</style>
+{% load static %}
+<link rel="preload" as="font" type="font/woff2" crossorigin
+      href="{% static 'parody_web/fonts/source-serif-4-variable.woff2' %}">
+<link rel="preload" as="font" type="font/woff2" crossorigin
+      href="{% static 'parody_web/fonts/courier-prime-700.woff2' %}">
+<link rel="stylesheet" href="{% static 'parody_web/css/tokens.css' %}">
+<link rel="stylesheet" href="{% static 'parody_web/css/book.css' %}">
+<link rel="stylesheet" href="{% static 'parody_web/css/content.css' %}">
+<style>{% theme_css %}</style>
 <script>
 /* Common math packages used by the LaTeX source (bm/boldsymbol, mathtools,
    cancel, color, upgreek) + the custom RTC-book macros, so the book's math
@@ -285,22 +68,24 @@ window.MathJax = {
 {% block head_extra %}{% endblock %}
 </head>
 <body>
-{% if editions and editions|length > 1 %}
-<nav class="edition-switcher">Edition:
-{% for ed in editions %}{% if ed.pk == book.pk %}<strong>{{ ed.edition_title|default:ed.edition_id }}</strong>{% else %}<a href="{% index_url ed %}">{{ ed.edition_title|default:ed.edition_id }}</a>{% endif %}{% if ed.draft %} <span class="note">(in development)</span>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
-</nav>
-{% endif %}
+{% include "parody_web/_masthead.html" %}
 {% if book.draft %}
 <div class="draft-banner">This edition is <strong>in development</strong> and not yet public — you are viewing it as the owner.</div>
 {% endif %}
-<div style="font-family:system-ui,sans-serif;font-size:.8rem;text-align:right;color:#999">
-{% if user.is_authenticated %}
-  owner view ({{ user.get_username }}) ·
-  <form action="{% url 'logout' %}" method="post" style="display:inline">{% csrf_token %}<button type="submit" style="border:none;background:none;color:#7a6ff0;cursor:pointer;font:inherit;padding:0">sign out</button></form>
-{% else %}
-  <a href="{% url 'login' %}">owner sign in</a>
-{% endif %}
+<div class="page {% block page_class %}{% endblock %}">
+  {% block side %}{% endblock %}
+  <main class="col">{% block body %}{% endblock %}</main>
+  {% block rail %}{% endblock %}
 </div>
-{% block body %}{% endblock %}
+{% include "parody_web/_footer.html" %}
+<script>
+document.querySelector('.theme-toggle').addEventListener('click', function () {
+  var root = document.documentElement;
+  var dark = getComputedStyle(root).getPropertyValue('--paper').trim() === '#16171a';
+  var next = dark ? 'light' : 'dark';
+  root.dataset.theme = next;
+  try { localStorage.setItem('parody-theme', next); } catch (e) {}
+});
+</script>
 </body>
 </html>

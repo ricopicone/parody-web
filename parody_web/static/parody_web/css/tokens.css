@@ -1,0 +1,126 @@
+/* Design tokens for the book site.
+ *
+ * Everything visual is expressed as a custom property so a deployment can
+ * retint the site through settings.PARODY_WEB_THEME (see parody_web/theme.py)
+ * without forking a stylesheet.
+ *
+ * PHASE 1 NOTE: these values are the site's PREVIOUS hardcoded values, recorded
+ * verbatim so extracting the inline <style> block is visually neutral. The
+ * identity phase replaces them. */
+
+/* Self-hosted so the site has no third-party font dependency and no request to
+ * a CDN on first paint. Latin subsets; see fonts/OFL.txt for the licences. */
+@font-face { font-family: "Courier Prime"; font-style: normal; font-weight: 400;
+  font-display: swap; src: url("../fonts/courier-prime-400.woff2") format("woff2"); }
+@font-face { font-family: "Courier Prime"; font-style: italic; font-weight: 400;
+  font-display: swap; src: url("../fonts/courier-prime-400-italic.woff2") format("woff2"); }
+@font-face { font-family: "Courier Prime"; font-style: normal; font-weight: 700;
+  font-display: swap; src: url("../fonts/courier-prime-700.woff2") format("woff2"); }
+@font-face { font-family: "Courier Prime"; font-style: italic; font-weight: 700;
+  font-display: swap; src: url("../fonts/courier-prime-700-italic.woff2") format("woff2"); }
+@font-face { font-family: "Source Serif 4"; font-style: normal; font-weight: 200 900;
+  font-display: swap; src: url("../fonts/source-serif-4-variable.woff2") format("woff2"); }
+@font-face { font-family: "Source Serif 4"; font-style: italic; font-weight: 200 900;
+  font-display: swap; src: url("../fonts/source-serif-4-variable-italic.woff2") format("woff2"); }
+
+:root {
+  /* surfaces */
+  --paper: #fbf9f5;
+  --paper-sunk: #f4f0e7;
+  /* images only. LaTeX bakes a white or transparent background into every
+     figure, so they keep a light panel even in dark mode — see content.css. */
+  --paper-panel: #ffffff;
+
+  /* text. Contrast against --paper, measured: 15.6 / 7.6 / 4.8 / 3.2. */
+  --ink: #1c1b19;
+  --ink-muted: #56534c;
+  --ink-faint: #6f6c64;   /* the lowest token allowed for text (AA at 4.8:1) */
+  --ink-ghost: #8d8a80;   /* fails AA — DECORATION ONLY, never text */
+
+  /* lines */
+  --rule: #e8e3d9;
+  --rule-faint: #f0ece3;
+  --rule-mid: #b8b1a4;
+  --rule-strong: #1c1b19;
+
+  /* accent — cool against the warm paper; 6.3:1 */
+  --accent: #3550c8;
+  --accent-ink: #2a3fa0;
+  --accent-soft: #ccd4f3;
+  --accent-wash: #eef1fb;
+
+  /* highlights */
+  --flash: #fdf2b8;
+  --mark: #fde68a;
+
+  /* spacing */
+  --s1: .25rem; --s2: .5rem; --s3: .75rem; --s4: 1rem;
+  --s5: 1.5rem; --s6: 2rem; --s7: 3rem; --s8: 4rem;
+
+  /* type */
+  /* Monospace for numbers, labels and headings; serif for anything that runs
+     long. Chapter titles here reach 94 characters — monospaced running text at
+     list size is where the identity breaks. */
+  --font-display: "Courier Prime", "Courier New", monospace;
+  --font-body: "Source Serif 4", Charter, Georgia, serif;
+  --font-mono: "Courier Prime", "Courier New", monospace;
+
+  --fs-xs: .72rem;   /* mono labels, badges */
+  --fs-sm: .82rem;   /* captions, meta */
+  --fs-base: 1.0625rem;
+  --fs-lg: 1.25rem;
+  --fs-h3: 1.35rem;
+  --fs-h2: 1.6rem;
+  --fs-h1: 1.9rem;
+  --lh-base: 1.62;
+  --lh-head: 1.18;
+  --measure: 34rem;
+}
+
+/* Dark mode.
+ *
+ * --paper-panel deliberately does NOT flip: figures are images with a white or
+ * transparent background baked in by LaTeX, so they keep a light panel. Tables,
+ * display math and code are live text and recolour correctly, so they follow
+ * the theme like everything else.
+ *
+ * The media query is scoped :not([data-theme="light"]) and the attribute rule is
+ * repeated verbatim, so an explicit choice wins over the OS in BOTH directions. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  --paper: #16171a;
+  --paper-sunk: #1e2025;
+  --ink: #e8e6e1;
+  --ink-muted: #a8a49c;
+  --ink-faint: #78756e;
+  --ink-ghost: #5a5852;
+  --rule: #2c2e34;
+  --rule-faint: #24262b;
+  --rule-mid: #4a4d55;
+  --rule-strong: #e8e6e1;
+  --accent: #93a6f5;
+  --accent-ink: #b9c4f8;
+  --accent-soft: #2f3a63;
+  --accent-wash: #1b1f2e;
+  --flash: #4a4326;
+  --mark: #6b5d1f;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #16171a;
+  --paper-sunk: #1e2025;
+  --ink: #e8e6e1;
+  --ink-muted: #a8a49c;
+  --ink-faint: #78756e;
+  --ink-ghost: #5a5852;
+  --rule: #2c2e34;
+  --rule-faint: #24262b;
+  --rule-mid: #4a4d55;
+  --rule-strong: #e8e6e1;
+  --accent: #93a6f5;
+  --accent-ink: #b9c4f8;
+  --accent-soft: #2f3a63;
+  --accent-wash: #1b1f2e;
+  --flash: #4a4326;
+  --mark: #6b5d1f;
+}
