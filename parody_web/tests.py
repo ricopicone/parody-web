@@ -1355,3 +1355,26 @@ class LandingPageTests(TestCase):
     def test_cover_no_longer_floats(self):
         html = self.client.get("/").content.decode()
         self.assertIn('class="book-hero"', html)
+
+
+class BookFullNameTests(TestCase):
+    """The homepage is the title page — it carries the book's full name; the
+    short `title` stays the running head everywhere else."""
+
+    def setUp(self):
+        _import()
+
+    def test_homepage_prefers_the_full_book_name(self):
+        html = self.client.get("/").content.decode()
+        # ARTIFACT's book.name is "Demo"; its title is "Demo Book"
+        self.assertIn("<h1>Demo</h1>", html)
+
+    def test_running_head_keeps_the_short_title(self):
+        html = self.client.get("/").content.decode()
+        head = html.split("</header>")[0]
+        self.assertIn("Demo Book", head)
+
+    def test_falls_back_to_title_without_book_metadata(self):
+        Book.objects.filter(slug="demo-book").update(book_metadata=None)
+        html = self.client.get("/").content.decode()
+        self.assertIn("<h1>Demo Book</h1>", html)
