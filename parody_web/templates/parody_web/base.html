@@ -8,6 +8,15 @@
 body { max-width: 46rem; margin: 2rem auto; padding: 0 1rem;
        font: 1.05rem/1.6 Georgia, 'Times New Roman', serif; color: #1a1a1a; }
 nav.crumbs { font-family: system-ui, sans-serif; font-size: .85rem; margin-bottom: 2rem; }
+/* section-page breadcrumb carries a chapter rung; keep the whole trail on one line
+   and let the (possibly long) chapter title ellipsize so it never wraps or pushes
+   off-screen on narrow viewports. The book/home link stays whole; the chapter link
+   is the one that shrinks. */
+nav.crumbs.has-chapter { display: flex; align-items: baseline; gap: .3rem; }
+nav.crumbs.has-chapter > a:first-child,
+nav.crumbs.has-chapter .crumb-sep { flex: 0 0 auto; white-space: nowrap; }
+nav.crumbs.has-chapter .crumb-trunc { flex: 0 1 auto; min-width: 4ch;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 nav.pager { display: flex; justify-content: space-between;
             font-family: system-ui, sans-serif; font-size: .9rem; margin-top: 3rem; }
 h1, h2, h3 { font-family: system-ui, sans-serif; line-height: 1.25; }

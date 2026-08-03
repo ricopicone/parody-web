@@ -766,6 +766,16 @@ class BookHostGatingTests(TestCase):
         self.assertIn("<details>", html)
         self.assertIn("Online resources", html)  # online_resources rendered
 
+    def test_section_breadcrumb_includes_chapter_rung(self):
+        # On a section page the breadcrumb shows the chapter level, linking back
+        # to the chapter landing page, and marks it truncatable so a long title
+        # ellipsizes instead of overflowing.
+        r = self.anon.get("/hardware/specific-t1/")
+        html = r.content.decode()
+        self.assertIn('class="crumbs has-chapter"', html)
+        self.assertIn('class="crumb-trunc" href="/hardware/"', html)
+        self.assertIn(">Hardware</a>", html)
+
     def test_preview_section_gates_anonymous(self):
         # A preview section shows the public a teaser + sign-in gate (200, not a
         # redirect); the owner sees the full text.
