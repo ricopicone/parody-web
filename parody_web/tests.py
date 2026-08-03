@@ -1299,7 +1299,10 @@ class ChromeTests(TestCase):
         # a bare 3rem/5rem offset would land equation and index deep-links
         # underneath the masthead (the #297/#306 behaviour)
         self.assertIn("scroll-margin-top: calc(var(--head-h)", css)
-        self.assertEqual(css.count("scroll-margin-top: calc(var(--head-h)"), 2)
+        # not just the equation/index anchors: section headings (the rail links
+        # to them), figures, tables and listings are all cross-ref destinations
+        self.assertIn(".col [id] { scroll-margin-top: calc(var(--head-h)", css)
+        self.assertEqual(css.count("scroll-margin-top: calc(var(--head-h)"), 5)
 
 
 class ChapterNavTests(TestCase):

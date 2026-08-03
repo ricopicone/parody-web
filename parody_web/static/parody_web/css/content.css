@@ -16,6 +16,14 @@
    :target highlight briefly flashes the equation that was navigated to. */
 .eqanchor { display: inline-block; width: 0; height: 0; overflow: hidden;
     scroll-margin-top: calc(var(--head-h) + var(--s5)); }
+
+/* EVERY linkable target must clear the sticky masthead, not just the equation
+   and subject-index anchors: section headings (the rail links to them), figures,
+   tables and listings are all cross-ref destinations. Before the masthead landed
+   a bare top-of-viewport jump was correct, so nothing here needed an offset. */
+.col [id] { scroll-margin-top: calc(var(--head-h) + var(--s4)); }
+.col .eqanchor[id] { scroll-margin-top: calc(var(--head-h) + var(--s5)); }
+.col .index[id] { scroll-margin-top: calc(var(--head-h) + var(--s6)); }
 @keyframes eq-target-flash {
     from { background: var(--flash); box-shadow: 0 0 0 .35rem var(--flash); }
     to   { background: transparent; box-shadow: 0 0 0 .35rem transparent; }
