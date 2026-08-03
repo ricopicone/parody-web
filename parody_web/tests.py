@@ -1188,3 +1188,22 @@ class SearchInsideTests(TestCase):
         r = self.client.get("/search/")
         self.assertEqual(r.status_code, 200)
         self.assertNotContains(r, '<ol class="search-results">')
+
+
+class StylesheetTests(TestCase):
+    """The site's CSS lives in static stylesheets, not an inline <style> block."""
+
+    def setUp(self):
+        _import()
+
+    def test_stylesheets_linked(self):
+        html = self.client.get("/").content.decode()
+        for name in ("tokens.css", "book.css", "content.css"):
+            self.assertIn(f"parody_web/css/{name}", html)
+
+    def test_inline_style_block_is_gone(self):
+        # selectors that used to be inlined into every page
+        html = self.client.get("/").content.decode()
+        self.assertNotIn("nav.crumbs.has-chapter", html)
+        self.assertNotIn("figure.subfigures", html)
+        self.assertNotIn("code span.kw", html)

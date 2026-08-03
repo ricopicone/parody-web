@@ -1,0 +1,50 @@
+/* Design tokens for the book site.
+ *
+ * Everything visual is expressed as a custom property so a deployment can
+ * retint the site through settings.PARODY_WEB_THEME (see parody_web/theme.py)
+ * without forking a stylesheet.
+ *
+ * PHASE 1 NOTE: these values are the site's PREVIOUS hardcoded values, recorded
+ * verbatim so extracting the inline <style> block is visually neutral. The
+ * identity phase replaces them. */
+
+:root {
+  /* surfaces */
+  --paper: #ffffff;
+  --paper-sunk: #f6f6f4;
+
+  /* text */
+  --ink: #1a1a1a;
+  --ink-muted: #555555;
+  --ink-faint: #777777;
+  --ink-ghost: #999999;
+
+  /* lines */
+  --rule: #dddddd;
+  --rule-faint: #eeeeee;
+
+  /* accent */
+  --accent: #7a6ff0;
+  --accent-ink: #5a4fd0;
+  --accent-soft: #c8c8c8;
+  --accent-wash: #eef0fb;
+
+  /* content boxes (example / further-reading) */
+  --box-line: #a89a86;
+  --box-label: #6b5d49;
+  --box-wash: #faf8f3;
+  --box-rule: #e0d9cb;
+
+  /* highlights */
+  --flash: #fdf2b8;
+  --mark: #fde68a;
+
+  /* type */
+  --font-display: system-ui, sans-serif;
+  --font-body: Georgia, 'Times New Roman', serif;
+  --font-mono: ui-monospace, Menlo, monospace;
+
+  --fs-base: 1.05rem;
+  --lh-base: 1.6;
+  --measure: 46rem;
+}
