@@ -8,11 +8,13 @@ import tempfile
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 
 from parody_web.models import Book, Section
 from parody_web.numbering import number_artifact
+from parody_web.theme import theme_css, validate_theme
 from parody_web.templatetags.parody_web import render_book
 
 ARTIFACT = {
@@ -1207,3 +1209,41 @@ class StylesheetTests(TestCase):
         self.assertNotIn("nav.crumbs.has-chapter", html)
         self.assertNotIn("figure.subfigures", html)
         self.assertNotIn("code span.kw", html)
+
+
+class ThemeSettingTests(TestCase):
+    """A deployment retints the site through PARODY_WEB_THEME; the setting is a
+    whitelist, not a CSS escape hatch."""
+
+    def setUp(self):
+        _import()
+
+    def test_tokens_emitted_for_light_and_dark(self):
+        css = theme_css({"light": {"accent": "#b3261e"},
+                         "dark": {"accent": "#ff8a80"}})
+        self.assertIn(":root{--accent:#b3261e;}", css)
+        self.assertIn(':root[data-theme="dark"]{--accent:#ff8a80;}', css)
+
+    def test_unknown_token_rejected(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_theme({"light": {"background-image": "url(evil.png)"}})
+
+    def test_malformed_value_rejected(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_theme({"light": {"accent": "red; } body { display:none"}})
+
+    def test_unknown_mode_rejected(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_theme({"sepia": {"accent": "#000000"}})
+
+    def test_font_stack_value_accepted(self):
+        validate_theme({"light": {"font-display": '"Courier Prime", monospace'}})
+
+    @override_settings(PARODY_WEB_THEME={"light": {"accent": "#b3261e"}})
+    def test_theme_reaches_the_page(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn("--accent:#b3261e", html)
+
+    def test_absent_setting_emits_nothing(self):
+        self.assertEqual(theme_css(None), "")
+        self.assertEqual(theme_css({}), "")
