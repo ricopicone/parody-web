@@ -1247,3 +1247,19 @@ class ThemeSettingTests(TestCase):
     def test_absent_setting_emits_nothing(self):
         self.assertEqual(theme_css(None), "")
         self.assertEqual(theme_css({}), "")
+
+
+class PaletteContrastTests(TestCase):
+    """--ink-ghost scores 3.2:1 on the paper and fails WCAG AA for normal text.
+    It exists for decoration (leader dots, hairlines) only — this guards against
+    it drifting back into a text colour."""
+
+    CSS_DIR = Path(__file__).resolve().parent / "static" / "parody_web" / "css"
+
+    def test_ghost_token_never_used_as_a_text_colour(self):
+        offenders = []
+        for name in ("book.css", "content.css"):
+            for n, line in enumerate((self.CSS_DIR / name).read_text().splitlines(), 1):
+                if "color: var(--ink-ghost)" in line:
+                    offenders.append(f"{name}:{n}: {line.strip()}")
+        self.assertEqual(offenders, [], "--ink-ghost used as a text colour")

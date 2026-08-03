@@ -106,7 +106,7 @@ table:not(.notes-table) th, table:not(.notes-table) td { border: 1px solid #ccc;
 
 /* hardware systems / parts catalog */
 .version-list-item { margin: .15rem 0 .15rem 1rem; font-size: .95rem; }
-.get-cell-placeholder { color: var(--ink-ghost); }
+.get-cell-placeholder { color: var(--ink-faint); }
 section.component { border-top: 1px solid var(--rule-faint); margin-top: 1.5rem; }
 table.specs { font-family: var(--font-display); font-size: .9rem; }
 table.specs th { text-align: left; font-weight: 600; color: #444;
@@ -121,7 +121,7 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
    exactly at the corners. A faint dashed rule separates the solution
    (.example-solution) from the problem statement. Colour is a placeholder accent
    until real theme colours land. --exc = corner arm length, --ext = thickness. */
-.example { --exc: 18px; --ext: 1.5px; --excol: var(--box-line);
+.example { --exc: 18px; --ext: 1.5px; --excol: var(--accent);
     margin: 1.6rem 0; padding: 1rem 1.3rem;
     background-image:
       linear-gradient(var(--excol),var(--excol)), linear-gradient(var(--excol),var(--excol)),
@@ -137,7 +137,7 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
       left top, right top,
       left bottom, right bottom; }
 .example-label { font-family: var(--font-display); font-weight: 700;
-    color: var(--box-label); margin-bottom: .4rem; }
+    color: var(--accent); margin-bottom: .4rem; }
 .example > .example-solution { margin-top: .9rem; padding-top: .9rem;
     border-top: 1px dashed #e6e0d6; }
 
@@ -145,10 +145,10 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
    numbering.py injects the "Further Reading" label and lays the .plaincite
    entries out as a bulleted list of bibliography labels (Author (Year), note). */
 .freadinglist { margin: 1.6rem 0; padding: .8rem 1.2rem; font-size: .95rem;
-    border: 1px solid var(--box-rule); border-left: 3px solid var(--box-line);
-    border-radius: 4px; background: var(--box-wash); }
+    border: 1px solid var(--accent-soft); border-left: 3px solid var(--accent);
+    border-radius: 4px; background: var(--accent-wash); }
 .freading-label { font-family: var(--font-display); font-weight: 700;
-    color: var(--box-label); margin-bottom: .35rem; }
+    color: var(--accent); margin-bottom: .35rem; }
 .freadinglist ul { margin: 0; padding-left: 1.3rem; }
 .freadinglist li { margin: .25rem 0; }
 
@@ -167,7 +167,7 @@ section.references li { margin: .3rem 0; }
     background: #f8f8f8; box-shadow: 0 1px 0 var(--accent-soft); white-space: nowrap; }
 .menu { white-space: nowrap; }
 .menu .m-item { background: var(--accent-wash); box-shadow: none; }
-.menu .m-arrow { color: var(--ink-ghost); margin: 0 .15em; }
+.menu .m-arrow { color: var(--ink-faint); margin: 0 .15em; }
 .key.enter::after, .key.return::after { content: "\21B5"; }
 .key.leftarrow::after, .key.left::after { content: "\2190"; }
 .key.rightarrow::after, .key.right::after { content: "\2192"; }
