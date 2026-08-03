@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ book.title }}{% endblock %}</title>
 {% load static %}
+<link rel="preload" as="font" type="font/woff2" crossorigin
+      href="{% static 'parody_web/fonts/source-serif-4-variable.woff2' %}">
+<link rel="preload" as="font" type="font/woff2" crossorigin
+      href="{% static 'parody_web/fonts/courier-prime-700.woff2' %}">
 <link rel="stylesheet" href="{% static 'parody_web/css/tokens.css' %}">
 <link rel="stylesheet" href="{% static 'parody_web/css/book.css' %}">
 <link rel="stylesheet" href="{% static 'parody_web/css/content.css' %}">
