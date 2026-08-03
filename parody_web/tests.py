@@ -1331,3 +1331,24 @@ class ChapterNavTests(TestCase):
         # advertise structure the reader can't reach
         html = self.client.get("/hardware/licensed/").content.decode()
         self.assertNotIn('class="rail-cap"', html)
+
+
+class LandingPageTests(TestCase):
+    def setUp(self):
+        _import()
+
+    def test_chapters_collapse_with_the_first_open(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn('class="toc-chapter"', html)
+        self.assertIn('<details class="toc-chapter" open>', html)
+
+    def test_search_and_printed_code_boxes_survive(self):
+        # the QR codes printed in the book point at this page — both forms are
+        # load-bearing and must not be lost to the redesign
+        html = self.client.get("/").content.decode()
+        self.assertIn('name="q"', html)
+        self.assertIn('id="code"', html)
+
+    def test_cover_no_longer_floats(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn('class="book-hero"', html)
