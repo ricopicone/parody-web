@@ -190,3 +190,22 @@ code span.bu, code span.at { color: #007020; }
 code span.pp { color: #bc7a00; }
 code span.al, code span.er { color: #ff0000; font-weight: bold; }
 pre.sourceCode a { text-decoration: none; color: inherit; }
+
+/* LaTeX-baked images carry their own white/transparent background, so in dark
+   mode they sit on a light panel rather than being inverted — an invert filter
+   would wreck the colour figures, photos and screenshots this book contains. */
+figure img, img.cover, figure[id^="tbl:"] img,
+figure[id^="al:"] img, figure[id^="alg:"] img {
+    background: var(--paper-panel); border-radius: 3px; }
+:root[data-theme="dark"] figure img,
+:root[data-theme="dark"] figure[id^="tbl:"] img,
+:root[data-theme="dark"] figure[id^="al:"] img,
+:root[data-theme="dark"] figure[id^="alg:"] img { padding: var(--s2); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) figure img,
+  :root:not([data-theme="light"]) figure[id^="tbl:"] img { padding: var(--s2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eqanchor:target ~ .math.display { animation: none; background: var(--flash); }
+}

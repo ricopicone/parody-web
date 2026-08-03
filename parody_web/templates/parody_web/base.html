@@ -2,6 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>
+/* Apply the stored theme before first paint so a dark-mode reader never sees
+   a white flash. No stored preference = follow the OS. */
+(function () {
+  try {
+    var t = localStorage.getItem('parody-theme');
+    if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ book.title }}{% endblock %}</title>
 {% load static %}
@@ -66,7 +76,8 @@ window.MathJax = {
 {% if book.draft %}
 <div class="draft-banner">This edition is <strong>in development</strong> and not yet public — you are viewing it as the owner.</div>
 {% endif %}
-<div style="font-family:system-ui,sans-serif;font-size:.8rem;text-align:right;color:#999">
+<div class="topbar">
+<button class="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">&#9680;</button>
 {% if user.is_authenticated %}
   owner view ({{ user.get_username }}) ·
   <form action="{% url 'logout' %}" method="post" style="display:inline">{% csrf_token %}<button type="submit" style="border:none;background:none;color:#7a6ff0;cursor:pointer;font:inherit;padding:0">sign out</button></form>
@@ -75,5 +86,14 @@ window.MathJax = {
 {% endif %}
 </div>
 {% block body %}{% endblock %}
+<script>
+document.querySelector('.theme-toggle').addEventListener('click', function () {
+  var root = document.documentElement;
+  var dark = getComputedStyle(root).getPropertyValue('--paper').trim() === '#16171a';
+  var next = dark ? 'light' : 'dark';
+  root.dataset.theme = next;
+  try { localStorage.setItem('parody-theme', next); } catch (e) {}
+});
+</script>
 </body>
 </html>

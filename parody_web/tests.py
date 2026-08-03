@@ -1263,3 +1263,15 @@ class PaletteContrastTests(TestCase):
                 if "color: var(--ink-ghost)" in line:
                     offenders.append(f"{name}:{n}: {line.strip()}")
         self.assertEqual(offenders, [], "--ink-ghost used as a text colour")
+
+
+class DarkModeTests(TestCase):
+    def setUp(self):
+        _import()
+
+    def test_no_flash_script_and_toggle_present(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn("parody-theme", html)
+        self.assertIn('class="theme-toggle"', html)
+        # the theme must be applied before the stylesheets paint
+        self.assertLess(html.index("parody-theme"), html.index("tokens.css"))

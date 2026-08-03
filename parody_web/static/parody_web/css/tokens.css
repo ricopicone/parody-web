@@ -75,3 +75,49 @@
   --lh-head: 1.18;
   --measure: 34rem;
 }
+
+/* Dark mode.
+ *
+ * --paper-panel deliberately does NOT flip: figures are images with a white or
+ * transparent background baked in by LaTeX, so they keep a light panel. Tables,
+ * display math and code are live text and recolour correctly, so they follow
+ * the theme like everything else.
+ *
+ * The media query is scoped :not([data-theme="light"]) and the attribute rule is
+ * repeated verbatim, so an explicit choice wins over the OS in BOTH directions. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  --paper: #16171a;
+  --paper-sunk: #1e2025;
+  --ink: #e8e6e1;
+  --ink-muted: #a8a49c;
+  --ink-faint: #78756e;
+  --ink-ghost: #5a5852;
+  --rule: #2c2e34;
+  --rule-faint: #24262b;
+  --rule-strong: #e8e6e1;
+  --accent: #93a6f5;
+  --accent-ink: #b9c4f8;
+  --accent-soft: #2f3a63;
+  --accent-wash: #1b1f2e;
+  --flash: #4a4326;
+  --mark: #6b5d1f;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #16171a;
+  --paper-sunk: #1e2025;
+  --ink: #e8e6e1;
+  --ink-muted: #a8a49c;
+  --ink-faint: #78756e;
+  --ink-ghost: #5a5852;
+  --rule: #2c2e34;
+  --rule-faint: #24262b;
+  --rule-strong: #e8e6e1;
+  --accent: #93a6f5;
+  --accent-ink: #b9c4f8;
+  --accent-soft: #2f3a63;
+  --accent-wash: #1b1f2e;
+  --flash: #4a4326;
+  --mark: #6b5d1f;
+}

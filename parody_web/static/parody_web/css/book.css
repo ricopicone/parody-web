@@ -98,3 +98,15 @@ nav.edition-switcher strong { color: var(--ink); }
 .search-form input[type=search] { flex: 1; padding: .45rem .7rem; font-size: 1rem;
     border: 1px solid #bbb; border-radius: 4px; }
 .search-form button { padding: .45rem 1.1rem; font-size: 1rem; cursor: pointer; }
+
+/* top bar (temporary home for the owner line and the theme toggle until the
+   masthead lands) */
+.topbar { display: flex; align-items: center; justify-content: flex-end; gap: var(--s3);
+    font-family: var(--font-display); font-size: var(--fs-xs); color: var(--ink-faint); }
+.topbar form { display: inline; }
+.topbar button[type=submit] { border: none; background: none; color: var(--accent);
+    cursor: pointer; font: inherit; padding: 0; }
+.theme-toggle { border: 1px solid var(--rule); background: var(--paper-sunk);
+    color: var(--ink-muted); border-radius: 4px; cursor: pointer; font: inherit;
+    line-height: 1; padding: .2rem .4rem; }
+.theme-toggle:hover { color: var(--ink); border-color: var(--accent-soft); }
