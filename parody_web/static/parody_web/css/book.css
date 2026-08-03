@@ -202,7 +202,11 @@ nav.edition-switcher strong { color: var(--ink); }
 .book-hero img.cover { float: none; width: 14rem; max-width: 38%; margin: 0; flex: 0 0 auto;
     border: 1px solid var(--rule); box-shadow: 0 1px 4px rgb(0 0 0 / .15); }
 .hero-text { min-width: 0; }
-.hero-text h1 { margin: 0 0 var(--s2); }
+/* The full book name is long and monospaced, and the enlarged cover leaves it
+   a narrow column — step it down from the page h1 size so it sets in a few
+   lines rather than a stack. */
+.hero-text h1 { margin: 0 0 var(--s3); font-size: var(--fs-h2);
+    letter-spacing: -.04em; line-height: 1.15; }
 /* one author per line — a comma-joined run reads as a single credit */
 .hero-authors { list-style: none; font-style: italic; color: var(--ink-muted);
     margin: 0 0 var(--s3); padding: 0; }

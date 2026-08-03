@@ -3,7 +3,7 @@
 <meta name="description" content="{{ meta_description }}">
 <link rel="canonical" href="{{ canonical_url }}">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Book","name":"{{ book.title|escapejs }}",
+{"@context":"https://schema.org","@type":"Book","name":"{{ book.book_metadata.name|default:book.title|escapejs }}",
 "author":[{% for a in book.authors %}{"@type":"Person","name":"{{ a|escapejs }}"}{% if not forloop.last %},{% endif %}{% endfor %}]
 {% with ed=book.book_metadata.editions.0 %}{% if ed.isbn %},"isbn":"{{ ed.isbn|escapejs }}"{% endif %}{% if ed.publisher %},"publisher":{"@type":"Organization","name":"{{ ed.publisher|escapejs }}"}{% endif %}{% if ed.year %},"datePublished":"{{ ed.year|escapejs }}"{% endif %}{% endwith %}
 ,"url":"{{ canonical_url }}"}
@@ -14,7 +14,7 @@
 <div class="book-hero">
   {% if book.cover_image %}<img class="cover" src="{% media book.cover_image %}" alt="{{ book.title }} cover">{% endif %}
   <div class="hero-text">
-    <h1>{{ book.title }}</h1>
+    <h1>{{ book.book_metadata.name|default:book.title }}</h1>
     {% if book.authors %}<ul class="hero-authors">
       {% for a in book.authors %}<li>{{ a }}</li>{% endfor %}
     </ul>{% endif %}
