@@ -624,15 +624,26 @@ def number_artifact(data, references=None, edition_query=""):
                 lvl = a.get("level", 1)
                 h = a.get("hash")
                 anchor_id = a.get("id", "")
+
+                # register under BOTH the 2-char hash and the heading's own id,
+                # exactly as figures/tables/equations/infoboxes do below. Headings
+                # used to be hash-only, so a ref written with the id
+                # ([@sec:character-codes], [sec:foo]{.hashref}) found no target and
+                # fell through raw even though the heading was right there (#500).
+                def register(entry, h=h, anchor_id=anchor_id):
+                    if h:
+                        targets[h] = entry
+                    if anchor_id:
+                        targets[anchor_id] = entry
+
                 if lvl == 1:
                     label_num = secnum  # may be None (lab/problems/leadin)
-                    if h:
-                        if secnum:
-                            targets[h] = {"label": f"Section {secnum}", "url": url}
-                        elif sec["number"]:  # lab
-                            targets[h] = {"label": sec["number"], "url": url}
-                        else:
-                            targets[h] = {"label": sec.get("title", ""), "url": url}
+                    if secnum:
+                        register({"label": f"Section {secnum}", "url": url})
+                    elif sec["number"]:  # lab
+                        register({"label": sec["number"], "url": url})
+                    else:
+                        register({"label": sec.get("title", ""), "url": url})
                     if label_num:
                         heading_numbers.setdefault(sec["slug"], {})[h] = label_num
                 elif secnum:  # number subsections only inside numbered sections
@@ -642,18 +653,17 @@ def number_artifact(data, references=None, edition_query=""):
                     parts = [secnum] + [str(counters[x]) for x in
                                         sorted(k for k in counters if k >= 2 and k <= lvl)]
                     sub = ".".join(parts)
+                    register({"label": f"Section {sub}",
+                              "url": f"{url}#{anchor_id}"})
                     if h:
-                        targets[h] = {"label": f"Section {sub}",
-                                      "url": f"{url}#{anchor_id}"}
                         heading_numbers.setdefault(sec["slug"], {})[h] = sub
-                elif h:
+                else:
                     # subsection inside an unnumbered section (a lab/problems
                     # section has no C.m number, so its subsections get none
                     # either). Still register the heading so refs to it land —
                     # labelled by its title (backticks are markdown, drop them).
                     title = (a.get("title") or "").replace("`", "")
-                    targets[h] = {"label": title,
-                                  "url": f"{url}#{anchor_id}"}
+                    register({"label": title, "url": f"{url}#{anchor_id}"})
 
             # subfigure floats: ::: {.subfigures #fig:main} renders one outer
             # <figure class="figure subfigures"> wrapping <figure class="subfigure">
