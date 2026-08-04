@@ -739,6 +739,49 @@ class CrossRefResolutionTests(TestCase):
         self.assertEqual(data["chapters"][1]["sections"][0]["number"],
                          "Lab exercise 1")
 
+    EXERCISE_HTML = (
+        '<div id="{id}"\n'
+        'class="exercise numbered-environment rounded border border-green-400'
+        ' shadow-md my-4 bg-white scroll-mt-20{lab}"\n'
+        'data-h="{id}" data-env-type="exercise"{labattr}>\n'
+        '<section\n'
+        'class="text-lg font-semibold text-green-900 px-4 py-2 border-b'
+        ' border-green-400 bg-green-50 rounded-t">\n'
+        '<h3 class="text-lg font-semibold text-green-900">Exercise</h3>\n'
+        '</section>\n'
+        '<div class="px-4 py-3 text-sm text-gray-700">\n'
+        '<p>Body of {id}.</p>\n'
+        '</div>\n'
+        '</div>\n'
+    )
+
+    def test_problem_label_replaces_legacy_exercise_chrome(self):
+        # The filter's box is Tailwind markup for homepage-django; the book site
+        # renders a run-in "Problem N.n" heading instead, like print. Task #499.
+        html = (self.EXERCISE_HTML.format(id="p1", lab="", labattr="")
+                + self.EXERCISE_HTML.format(id="l1", lab=" lab",
+                                            labattr=' data-lab="1"'))
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "p1", "type": "exercise", "hash": "p1"},
+                {"id": "l1", "type": "exercise", "hash": "l1", "lab": True},
+            ], "html": html}]}]}
+        number_artifact(data)
+        out = data["chapters"][0]["sections"][0]["html"]
+        # dead Tailwind chrome gone, semantic classes in
+        self.assertNotIn("border-green-400", out)
+        self.assertNotIn("text-gray-700", out)
+        self.assertNotIn("<h3", out)
+        self.assertIn('<div id="p1" class="exercise" data-h="p1" '
+                      'data-env-type="exercise">'
+                      '<div class="problem-label">Problem 1.1</div>', out)
+        self.assertIn('class="exercise lab"', out)
+        self.assertIn('<div class="problem-label">Problem L1.1</div>', out)
+        self.assertEqual(out.count('class="problem-body"'), 2)
+        # the bodies survive
+        self.assertIn("<p>Body of p1.</p>", out)
+        self.assertIn("<p>Body of l1.</p>", out)
+
 
 class FurtherReadingTests(TestCase):
     """Further-reading boxes (::: {.freadinglist}) get a title and lay their

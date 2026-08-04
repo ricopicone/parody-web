@@ -546,6 +546,32 @@ def _gate_rights_figures(html):
     return _RIGHTS_IMG_RE.sub(_RIGHTS_PLACEHOLDER, html)
 
 
+# The exercise box comes from parody's filter.lua as Tailwind markup, because
+# homepage-django renders those class names for real. The book site wants what
+# print gives: a run-in "Problem N.n" heading over the statement. So rewrite the
+# box here — normalize the wrapper's classes, swap the <h3>Exercise</h3> header
+# block for a .problem-label, and rename the Tailwind body wrapper. pandoc wraps
+# long tags across lines, so every part below matches newlines too.
+def _rewrite_exercise_box(html, eid, label, is_lab):
+    """Rewrite one exercise div (matched by `eid`) into its web presentation."""
+    pat = re.compile(
+        r'(<div\b(?=[^>]*\bdata-env-type="exercise")[^>]*\bid="'
+        + re.escape(eid) + r'"[^>]*>)'
+        r'(?:\s*<section\b[^>]*>\s*<h3\b[^>]*>[^<]*</h3>\s*</section>)?'
+        r'(\s*<div\b[^>]*\bclass="px-4 py-3 text-sm text-gray-700"[^>]*>)?')
+
+    def rep(mo):
+        cls = "exercise lab" if is_lab else "exercise"
+        open_tag = re.sub(r'\bclass="[^"]*"', f'class="{cls}"', mo.group(1),
+                          count=1)
+        # collapse the newlines pandoc wrapped into the opening tag
+        open_tag = re.sub(r'\s+', " ", open_tag)
+        body = '<div class="problem-body">' if mo.group(2) else ""
+        return (open_tag + f'<div class="problem-label">{label}</div>' + body)
+
+    return pat.sub(rep, html, count=1)
+
+
 def _section_kind(sec):
     html = sec.get("html") or ""
     if (sec.get("title") or "").strip().lower() == "problems":
@@ -918,6 +944,11 @@ def number_artifact(data, references=None, edition_query=""):
                     r'(<div\b(?=[^>]*\bclass="(?:[^"]*\s)?example(?:\s[^"]*)?")'
                     r'[^>]*\bid="' + re.escape(eid) + r'"[^>]*>)',
                     lambda mo, lab=label: mo.group(1) + lab, html, count=1)
+
+            # exercises/lab problems: rewrite the filter's Tailwind box into the
+            # web's run-in "Problem N.n" heading (see _rewrite_exercise_box).
+            for eid, (label, is_lab) in problem_caps.get(sec["slug"], {}).items():
+                html = _rewrite_exercise_box(html, eid, label, is_lab)
 
             # subequations groups: \tag every row "N a", "N b", … then stash the
             # whole <div> behind a placeholder so the single/multi-label tagger
