@@ -274,6 +274,36 @@ class CrossRefResolutionTests(TestCase):
         self.assertEqual(html.count('class="example-label"'), 2)
         self.assertIn('<a class="xref" href="/c/s/#exa-b">example 1.2</a>', html)
 
+    def test_problems_and_lab_problems_use_separate_counters(self):
+        # ::: {.exercise} → "Problem C.n"; ::: {.exercise .lab} → "Problem LC.k"
+        # on its own counter. Headings say "Problem" for both (the book's
+        # exercise-name); cross-refs say "problem" / "lab problem" (its
+        # crefnames). Task #499.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "p1", "type": "exercise", "hash": "p1"},
+                {"id": "l1", "type": "exercise", "hash": "l1", "lab": True},
+                {"id": "p2", "type": "exercise", "hash": "p2"},
+                {"id": "l2", "type": "exercise", "hash": "l2", "lab": True},
+            ], "html": ""}]}]}
+        targets = number_artifact(data)
+        self.assertEqual(targets["p1"]["label"], "Problem 1.1")
+        self.assertEqual(targets["p2"]["label"], "Problem 1.2")
+        self.assertEqual(targets["l1"]["label"], "Lab problem L1.1")
+        self.assertEqual(targets["l2"]["label"], "Lab problem L1.2")
+
+    def test_problem_crossrefs_follow_reference_site_case(self):
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "p1", "type": "exercise", "hash": "p1"},
+                {"id": "l1", "type": "exercise", "hash": "l1", "lab": True},
+            ], "html": '<p><span class="hashref">p1</span> '
+                       '<span class="Hashref">l1</span></p>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('>problem 1.1</a>', html)
+        self.assertIn('>Lab problem L1.1</a>', html)
+
     def test_chapter_start_zero_offsets_numbering(self):
         # chapter_start: 0 (RTC) → first chapter is "0"; its section, figure and
         # the chapter cross-ref all inherit it (0.1, Figure 0.1, "Chapter 0").

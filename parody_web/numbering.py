@@ -347,9 +347,11 @@ def _clean_tables(html):
 
 
 # anchor type -> cross-reference label word (per-chapter numbered: "Table 3.1")
+# "exercise" is listed so the loop's membership guard admits it, but its label
+# is built in the dedicated branch below (lab and non-lab problems differ).
 _TYPE_LABELS = {
     "figure": "Figure", "table": "Table", "equation": "Equation",
-    "exercise": "Exercise", "example": "Example", "theorem": "Theorem",
+    "exercise": "Problem", "example": "Example", "theorem": "Theorem",
     "definition": "Definition", "listing": "Listing", "algorithm": "Algorithm",
 }
 
@@ -575,6 +577,7 @@ def number_artifact(data, references=None, edition_query=""):
     eq_caps = {}          # per-section: eq-id -> number (shown right of the math)
     subeq_caps = {}       # per-section: subequations parent-id -> group number N
     example_caps = {}     # per-section: example div-id -> number N.n (label inject)
+    problem_caps = {}     # per-section: exercise div-id -> (heading label, is_lab)
     # chapter_start: the number the first (non-appendix) chapter takes. The
     # artifact omits it at the default of 1; RTC sets 0 ("Chapter 0").
     # _chapter_label pre-increments "arabic", so seed it one below the start.
@@ -698,6 +701,31 @@ def number_artifact(data, references=None, edition_query=""):
                         targets[a["hash"]] = entry
                     continue
                 if t == "heading" or t not in _TYPE_LABELS:
+                    continue
+                if t == "exercise":
+                    # Problems and lab problems run on separate per-chapter
+                    # counters, exactly as the book does: `exercise` is
+                    # `within = chapter` ("Problem 3.2") and `lab` counts
+                    # L\thechapter.\arabic{labexercise} ("Problem L4.1").
+                    # Headings read "Problem" for both (exercise-name = Problem);
+                    # cross-refs read "problem" / "lab problem" (the crefnames).
+                    is_lab = bool(a.get("lab"))
+                    key = "labexercise" if is_lab else "exercise"
+                    type_counters[key] = type_counters.get(key, 0) + 1
+                    num = (f"L{cnum}.{type_counters[key]}" if is_lab
+                           else f"{cnum}.{type_counters[key]}")
+                    word = "Lab problem" if is_lab else "Problem"
+                    entry = {"label": f"{word} {num}",
+                             "url": f"{url}#{a.get('id', '')}"}
+                    if a.get("id"):
+                        targets[a["id"]] = entry
+                    if a.get("hash"):
+                        targets[a["hash"]] = entry
+                    if a.get("id"):
+                        # pass 2 injects this as the box's run-in heading and
+                        # needs is_lab to set the wrapper's class
+                        problem_caps.setdefault(sec["slug"], {})[a["id"]] = \
+                            (f"Problem {num}", is_lab)
                     continue
                 if (a.get("id") in sf_subids or a.get("id") in st_subids
                         or a.get("id") in subeq_subids):
