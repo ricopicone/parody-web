@@ -154,6 +154,18 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
 .example > .example-solution { margin-top: .9rem; padding-top: .9rem;
     border-top: 1px dashed var(--rule); }
 
+/* problems (::: {.exercise}) and lab problems (::: {.exercise .lab}). The book
+   sets these as a run-in subsubsection — a bold "Problem 3.2" / "Problem L4.1"
+   heading over the statement, no frame — and pages that are nothing but
+   problems read far better that way than as a stack of boxes. numbering.py
+   injects the label and strips the filter's Tailwind chrome (task #499).
+   `.col [id]` already gives the wrapper its sticky-masthead scroll offset. */
+.exercise { margin: 1.6rem 0; }
+.problem-label { font-family: var(--font-display); font-weight: 700;
+    color: var(--accent); margin-bottom: .35rem; }
+.problem-body > :first-child { margin-top: 0; }
+.problem-body > :last-child { margin-bottom: 0; }
+
 /* further-reading boxes (::: {.freadinglist}): a recommended-reading aside.
    numbering.py injects the "Further Reading" label and lays the .plaincite
    entries out as a bulleted list of bibliography labels (Author (Year), note). */
