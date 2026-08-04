@@ -584,7 +584,6 @@ def number_artifact(data, references=None, edition_query=""):
     # Section/figure/equation numbers all read cnum, so they inherit it (0.1,
     # Figure 0.4, …). Appendix chapters (lettered) are unaffected.
     idx_state = {"arabic": int(data.get("chapter_start", 1)) - 1, "appendix": 0}
-    lab_n = 0
 
     # ---- pass 1: assign numbers, build the target map ----
     for ch in data.get("chapters", []):
@@ -606,12 +605,14 @@ def number_artifact(data, references=None, edition_query=""):
                 secnum = f"{cnum}.{sec_m}"
                 sec["number"] = secnum
             elif kind == "lab":
-                lab_n += 1
                 secnum = None
-                # sentence case ("Lab exercise N") so a cross-ref recases only the
-                # first letter — "Lab exercise 6" / "lab exercise 6", never the
-                # mid-phrase "lab Exercise 6". (_recase_label toggles label[:1].)
-                sec["number"] = f"Lab exercise {lab_n}"
+                # The lab number is the CHAPTER number: the book titles these
+                # sections "Lab 0" … "Lab 8", and their problems are numbered
+                # L<chapter>.<n>. Sentence case ("Lab exercise N") so a cross-ref
+                # recases only the first letter — "Lab exercise 6" /
+                # "lab exercise 6", never the mid-phrase "lab Exercise 6".
+                # (_recase_label toggles label[:1].)
+                sec["number"] = f"Lab exercise {cnum}"
             elif kind == "problems":
                 secnum = None
                 sec["number"] = ""

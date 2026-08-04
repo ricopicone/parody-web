@@ -719,6 +719,26 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<a class="xref" href="/c/s/#fig:leaf">figure 1.1</a>', html)
         self.assertIn('<a class="xref" href="/c/s/#tbl:leaf">table 1.1</a>', html)
 
+    def test_lab_section_number_is_its_chapter_number(self):
+        # The book titles lab sections "Lab 0" … "Lab 8" — the lab number IS the
+        # chapter number, so its problems can read "Problem L4.1". parody-web
+        # used a running 1-based count, which is off by one for any book with
+        # chapter_start: 0 (RTC). Task #499.
+        def lab_section():
+            return {"title": "Lab", "slug": "lab", "hash": "lb", "anchors": [],
+                    "html": '<h1 data-h="lb" class="lab">Lab</h1>'}
+        data = {"chapter_start": 0, "chapters": [
+            {"title": "Zero", "slug": "zero", "hash": "c0",
+             "sections": [lab_section()]},
+            {"title": "One", "slug": "one", "hash": "c1",
+             "sections": [lab_section()]},
+        ]}
+        number_artifact(data)
+        self.assertEqual(data["chapters"][0]["sections"][0]["number"],
+                         "Lab exercise 0")
+        self.assertEqual(data["chapters"][1]["sections"][0]["number"],
+                         "Lab exercise 1")
+
 
 class FurtherReadingTests(TestCase):
     """Further-reading boxes (::: {.freadinglist}) get a title and lay their
