@@ -340,6 +340,38 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('href="/c/s/#eq:euler">equation (1.1)</a>', html)
         self.assertIn('href="/c/s/#eq:euler">Equation (1.1)</a>', html)
 
+    def test_heading_refs_resolve_by_id_as_well_as_hash(self):
+        # task #500: headings registered cross-ref targets under their 2-char
+        # hash ONLY, unlike figures/tables/equations/infoboxes, which register
+        # both id and hash. A ref written with the heading's id
+        # ([@sec:character-codes]) therefore found no target and fell through
+        # raw, even though the heading and its id are in the artifact.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [
+                {"title": "S", "slug": "s", "hash": "s1", "anchors": [
+                    {"id": "sec:memory", "type": "heading", "level": 1,
+                     "hash": "s1"},
+                    {"id": "sec:character-codes", "type": "heading", "level": 2,
+                     "title": "Character codes", "hash": "76"}],
+                 "html": ""},
+                {"title": "T", "slug": "t", "hash": "t1", "anchors": [],
+                 "html":
+                    '<p>cite <span class="citation" data-cites="sec:character-codes">'
+                    '[@sec:character-codes]</span>, upper <span class="citation" '
+                    'data-cites="Sec:character-codes">[@Sec:character-codes]</span>, '
+                    'hashref <span class="hashref">sec:character-codes</span>, '
+                    'top <span class="hashref">sec:memory</span>.</p>'}]}]}
+        targets = number_artifact(data)
+        # id and hash address the same target, with the same label/url
+        self.assertEqual(targets["sec:character-codes"], targets["76"])
+        self.assertEqual(targets["sec:memory"], targets["s1"])
+        self.assertEqual(targets["sec:character-codes"]["label"], "Section 1.1.1")
+        html = data["chapters"][0]["sections"][1]["html"]
+        self.assertNotIn("[@sec:character-codes]", html)
+        self.assertIn('href="/c/s/#sec:character-codes">section 1.1.1</a>', html)
+        self.assertIn('href="/c/s/#sec:character-codes">Section 1.1.1</a>', html)
+        self.assertIn('href="/c/s/">section 1.1</a>', html)
+
     def _rights_book(self, preview):
         return {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
             "sections": [{"title": "S", "slug": "s", "preview": preview, "anchors": [
