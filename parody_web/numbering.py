@@ -8,13 +8,19 @@ where TARGET is a heading hash (2 chars), a chapter hash, or a ``fig:``/``tbl:``
 here and rewrite the stored html:
 
 * chapters → ``1, 2, …`` (arabic) or ``A, B, …`` (appendix)
-* sections → ``C.m`` — except "Problems" (unnumbered) and labs ("Lab Exercise N:")
+* sections → ``C.m`` — except "Problems" (unnumbered) and labs ("Lab exercise N",
+  N = the chapter number, not a running count of lab sections)
 * subsections → ``C.m.k[.j]`` within numbered sections
 * figures → ``Figure C.k`` (per chapter), captions prefixed
+* exercises → ``Problem C.n`` (own per-chapter counter) and lab problems →
+  ``Problem LC.n`` (their own separate per-chapter counter), each with a
+  run-in heading injected into the box (see ``_rewrite_exercise_box``);
+  cross-refs read "problem"/"lab problem" per the book's crefnames
 * ``hashref`` spans → links showing the target's label ("Section 3.2", "Figure 3.1", …)
 
-Conventions (Problems unnumbered, labs get an exercise prefix) match the book's
-print layout. Targets it can't resolve (tbl:/eq:/… for now) are left as-is.
+Conventions (Problems/labs numbered per-chapter on separate counters, section
+titles unnumbered) match the book's print layout. Targets it can't resolve
+(tbl:/eq:/… for now) are left as-is.
 """
 import re
 from html import escape as _esc
@@ -360,11 +366,14 @@ def _clean_tables(html):
 
 
 # anchor type -> cross-reference label word (per-chapter numbered: "Table 3.1")
-# "exercise" is listed so the loop's membership guard admits it, but its label
-# is built in the dedicated branch below (lab and non-lab problems differ).
+# "exercise" is listed only so the loop's `t not in _TYPE_LABELS` membership
+# guard admits it; its dedicated branch above always `continue`s before this
+# map's value is ever read, so None (rather than a live-looking "Problem")
+# makes that unreachability honest — lab and non-lab problems get their label
+# ("Problem"/"Lab problem") built in that branch instead.
 _TYPE_LABELS = {
     "figure": "Figure", "table": "Table", "equation": "Equation",
-    "exercise": "Problem", "example": "Example", "theorem": "Theorem",
+    "exercise": None, "example": "Example", "theorem": "Theorem",
     "definition": "Definition", "listing": "Listing", "algorithm": "Algorithm",
 }
 
