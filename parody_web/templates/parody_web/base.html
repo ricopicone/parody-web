@@ -29,9 +29,14 @@
    renders on the web. Set before MathJax loads. */
 window.MathJax = {
   loader: { load: ['[tex]/boldsymbol', '[tex]/mathtools', '[tex]/cancel',
-                   '[tex]/color', '[tex]/upgreek'] },
+                   '[tex]/color', '[tex]/upgreek', '[tex]/html'] },
   tex: {
-    packages: { '[+]': ['boldsymbol', 'mathtools', 'cancel', 'color', 'upgreek'] },
+    /* html supplies \class, which a `key` (instructor) build emits around a
+       cloze answer inside math. BOTH the loader entry above and this packages
+       entry are required — with only one, \class renders as a red
+       undefined-macro error. */
+    packages: { '[+]': ['boldsymbol', 'mathtools', 'cancel', 'color', 'upgreek',
+                        'html'] },
     macros: {
     /* numbering injects \tag{C.n} for equation numbers; \label is mapped to a
        no-op so any raw \label left in a multi-label aligned block (kept by the

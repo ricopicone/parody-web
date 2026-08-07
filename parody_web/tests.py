@@ -1410,3 +1410,42 @@ class BookFullNameTests(TestCase):
         Book.objects.filter(slug="demo-book").update(book_metadata=None)
         html = self.client.get("/").content.decode()
         self.assertIn("<h1>Demo Book</h1>", html)
+
+
+class ClozeAssetsTests(TestCase):
+    """Fill-in-the-blank styling. parody strips the answer at build time; this
+    repo only draws what arrives. Both assertions guard things that fail
+    silently — a missing MathJax loader entry renders a red error in the page,
+    and a dropped CSS rule leaves blanks invisible rather than broken."""
+
+    STATIC = Path(__file__).parent / "static" / "parody_web" / "css"
+    BASE = Path(__file__).parent / "templates" / "parody_web" / "base.html"
+
+    def test_mathjax_html_package_declared_in_both_places(self):
+        # \class (emitted by a `key` build inside math) needs the loader entry
+        # AND the packages entry. With only one, MathJax renders a red
+        # undefined-macro error — verified in a browser.
+        base = self.BASE.read_text(encoding="utf-8")
+        self.assertIn("'[tex]/html'", base)
+        loader = base.split("loader:")[1].split("}")[0]
+        self.assertIn("'[tex]/html'", loader)
+        packages = base.split("packages:")[1].split("}")[0]
+        self.assertIn("'html'", packages)
+
+    def test_cloze_classes_are_styled(self):
+        css = (self.STATIC / "content.css").read_text(encoding="utf-8")
+        for cls in (".cloze-blank", ".cloze-key", ".cloze-key-block",
+                    ".cloze-lines"):
+            self.assertIn(cls, css, f"{cls} has no styling")
+
+    def test_blank_width_comes_from_the_custom_property(self):
+        css = (self.STATIC / "content.css").read_text(encoding="utf-8")
+        blank = css.split(".cloze-blank {")[1].split("}")[0]
+        self.assertIn("var(--cloze-w", blank)
+
+    def test_ruled_block_height_scales_with_the_line_count(self):
+        # CSS cannot read data-lines into a length, so parody also emits
+        # --cloze-lines; losing this makes every block one fixed height.
+        css = self.STATIC.joinpath("content.css").read_text(encoding="utf-8")
+        lines = css.split(".cloze-lines {")[1].split("}")[0]
+        self.assertIn("var(--cloze-lines", lines)

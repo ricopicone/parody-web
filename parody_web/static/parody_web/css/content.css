@@ -165,6 +165,33 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
 .freadinglist ul { margin: 0; padding-left: 1.3rem; }
 .freadinglist li { margin: .25rem 0; }
 
+/* fill-in-the-blank (cloze) content. parody's build decides what reaches the
+   browser; this file only draws it. In a `blank` build the answer is stripped
+   at build time — .cloze-blank is an EMPTY span, so there is nothing in the DOM
+   to reveal and no click-to-reveal is possible by design. Its width arrives as
+   --cloze-w (an em estimate from the answer's length; print measures the real
+   box instead). A `key` build keeps the answer in .cloze-key / .cloze-key-block,
+   accented so an instructor sees at a glance what a student must supply. A
+   `full` build emits none of these classes at all. */
+.cloze-blank { display: inline-block; width: var(--cloze-w, 5em);
+    border-bottom: 1px solid var(--rule-mid); margin: 0 .15em; }
+.cloze-key { color: var(--accent-ink); border-bottom: 1px solid var(--accent-soft); }
+.cloze-key-block { color: var(--accent-ink);
+    border-left: 3px solid var(--accent-soft); padding-left: var(--s4);
+    margin: var(--s4) 0; }
+
+/* Ruled writing space (::: {.blank lines=6}, or a hidden ::: {.cloze} block).
+   The rule count comes from --cloze-lines: CSS cannot read the data-lines
+   attribute into a length. Each band is one writing line with a rule at its
+   foot, so the block is exactly as tall as the space it offers. */
+.cloze-lines { --cloze-line-h: 2.1em;
+    height: calc(var(--cloze-lines, 4) * var(--cloze-line-h));
+    margin: var(--s5) 0;
+    background-image: repeating-linear-gradient(to bottom,
+      transparent 0, transparent calc(var(--cloze-line-h) - 1px),
+      var(--rule-mid) calc(var(--cloze-line-h) - 1px),
+      var(--rule-mid) var(--cloze-line-h)); }
+
 a.xref { text-decoration: none; color: var(--accent-ink); white-space: nowrap; }
 a.xref:hover { text-decoration: underline; }
 a.cite { text-decoration: none; color: var(--accent-ink); }
