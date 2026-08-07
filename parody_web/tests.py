@@ -782,6 +782,52 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn("<p>Body of p1.</p>", out)
         self.assertIn("<p>Body of l1.</p>", out)
 
+    TITLED_EXERCISE_HTML = (
+        '<div id="{id}"\n'
+        'class="exercise numbered-environment rounded border border-green-400'
+        ' shadow-md my-4 bg-white scroll-mt-20"\n'
+        'data-h="{id}" data-env-type="exercise">\n'
+        '<section\n'
+        'class="text-lg font-semibold text-green-900 px-4 py-2 border-b'
+        ' border-green-400 bg-green-50 rounded-t">\n'
+        '<h3 class="text-lg font-semibold text-green-900">{title}</h3>\n'
+        '</section>\n'
+        '<div class="px-4 py-3 text-sm text-gray-700">\n'
+        '<p>Body of {id}.</p>\n'
+        '</div>\n'
+        '</div>\n'
+    )
+
+    def test_titled_exercise_keeps_its_title(self):
+        # filter.lua renders a title= attribute into the legacy <h3>; that data
+        # reaches the renderer (artifact.py records it, filter.lua emits it) but
+        # _rewrite_exercise_box used to discard the whole header unconditionally.
+        # A real title must survive, appended after the number (task #499 F2).
+        html = self.TITLED_EXERCISE_HTML.format(id="p1", title="Root locus")
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "p1", "type": "exercise", "hash": "p1"},
+            ], "html": html}]}]}
+        number_artifact(data)
+        out = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<div class="problem-label">Problem 1.1 '
+                      '<span class="problem-title">Root locus</span></div>', out)
+
+    def test_untitled_exercise_has_no_stray_title_span(self):
+        # the default <h3>Exercise</h3> filter.lua emits when no title= is given
+        # is discarded, not rendered as a literal "Exercise" title, and no empty
+        # .problem-title span is left behind.
+        html = self.EXERCISE_HTML.format(id="p1", lab="", labattr="")
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "p1", "type": "exercise", "hash": "p1"},
+            ], "html": html}]}]}
+        number_artifact(data)
+        out = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<div class="problem-label">Problem 1.1</div>', out)
+        self.assertNotIn("problem-title", out)
+        self.assertNotIn("Exercise", out)
+
 
 class FurtherReadingTests(TestCase):
     """Further-reading boxes (::: {.freadinglist}) get a title and lay their

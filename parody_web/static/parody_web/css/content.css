@@ -163,6 +163,10 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
 .exercise { margin: 1.6rem 0; }
 .problem-label { font-family: var(--font-display); font-weight: 700;
     color: var(--accent); margin-bottom: .35rem; }
+/* an exercise's title= attribute (no book currently sets one) appended after
+   the number as a gloss — the number is the label, so keep it visually
+   secondary: normal weight, italic, muted (task #499 F2). */
+.problem-title { font-weight: 400; font-style: italic; color: var(--ink-muted); }
 .problem-body > :first-child { margin-top: 0; }
 .problem-body > :last-child { margin-bottom: 0; }
 

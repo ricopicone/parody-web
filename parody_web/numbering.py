@@ -553,12 +553,17 @@ def _gate_rights_figures(html):
 # block for a .problem-label, and rename the Tailwind body wrapper. pandoc wraps
 # long tags across lines, so every part below matches newlines too.
 def _rewrite_exercise_box(html, eid, label, is_lab):
-    """Rewrite one exercise div (matched by `eid`) into its web presentation."""
+    """Rewrite one exercise div (matched by `eid`) into its web presentation.
+
+    The legacy header's <h3> carries a title when the source exercise had a
+    title= attribute (filter.lua defaults it to the literal "Exercise" when
+    absent). That default is discarded, but a real title survives, appended
+    after the number rather than dropped (task #499 F2)."""
     pat = re.compile(
         r'(<div\b(?=[^>]*\bdata-env-type="exercise")[^>]*\bid="'
         + re.escape(eid) + r'"[^>]*>)'
-        r'(?:\s*<section\b[^>]*>\s*<h3\b[^>]*>[^<]*</h3>\s*</section>)?'
-        r'(\s*<div\b[^>]*\bclass="px-4 py-3 text-sm text-gray-700"[^>]*>)?')
+        r'(?:\s*<section\b[^>]*>\s*<h3\b[^>]*>(?P<h3>[^<]*)</h3>\s*</section>)?'
+        r'(?P<bodytag>\s*<div\b[^>]*\bclass="px-4 py-3 text-sm text-gray-700"[^>]*>)?')
 
     def rep(mo):
         cls = "exercise lab" if is_lab else "exercise"
@@ -566,8 +571,12 @@ def _rewrite_exercise_box(html, eid, label, is_lab):
                           count=1)
         # collapse the newlines pandoc wrapped into the opening tag
         open_tag = re.sub(r'\s+', " ", open_tag)
-        body = '<div class="problem-body">' if mo.group(2) else ""
-        return (open_tag + f'<div class="problem-label">{label}</div>' + body)
+        body = '<div class="problem-body">' if mo.group('bodytag') else ""
+        title = (mo.group('h3') or "").strip()
+        title_html = (f' <span class="problem-title">{title}</span>'
+                      if title and title != "Exercise" else "")
+        return (open_tag + f'<div class="problem-label">{label}{title_html}'
+                '</div>' + body)
 
     return pat.sub(rep, html, count=1)
 
