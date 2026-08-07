@@ -13,7 +13,7 @@ from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 
 from parody_web.models import Book, Section
-from parody_web.numbering import number_artifact
+from parody_web.numbering import number_artifact, _num_components, _consecutive
 from parody_web.theme import theme_css, validate_theme
 from parody_web.templatetags.parody_web import render_book
 
@@ -273,6 +273,99 @@ class CrossRefResolutionTests(TestCase):
         # the label is injected once per example, not into .example-solution
         self.assertEqual(html.count('class="example-label"'), 2)
         self.assertIn('<a class="xref" href="/c/s/#exa-b">example 1.2</a>', html)
+
+    def test_problems_and_lab_problems_use_separate_counters(self):
+        # ::: {.exercise} → "Problem C.n"; ::: {.exercise .lab} → "Problem LC.k"
+        # on its own counter. Headings say "Problem" for both (the book's
+        # exercise-name); cross-refs say "problem" / "lab problem" (its
+        # crefnames). Task #499.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "p1", "type": "exercise", "hash": "p1"},
+                {"id": "l1", "type": "exercise", "hash": "l1", "lab": True},
+                {"id": "p2", "type": "exercise", "hash": "p2"},
+                {"id": "l2", "type": "exercise", "hash": "l2", "lab": True},
+            ], "html": ""}]}]}
+        targets = number_artifact(data)
+        self.assertEqual(targets["p1"]["label"], "Problem 1.1")
+        self.assertEqual(targets["p2"]["label"], "Problem 1.2")
+        self.assertEqual(targets["l1"]["label"], "Lab problem L1.1")
+        self.assertEqual(targets["l2"]["label"], "Lab problem L1.2")
+
+    def test_problem_counters_persist_across_sections_reset_at_chapter(self):
+        # the per-chapter counters must persist across sections within a
+        # chapter (not reset per-section) and reset only at the chapter
+        # boundary — the existing counter tests only cover a single
+        # chapter/section, so this was untested (task #499 F5).
+        data = {"chapters": [
+            {"title": "One", "slug": "one", "hash": "c1", "sections": [
+                {"title": "A", "slug": "a", "anchors": [
+                    {"id": "p1", "type": "exercise", "hash": "p1"},
+                    {"id": "l1", "type": "exercise", "hash": "l1", "lab": True},
+                ], "html": ""},
+                {"title": "B", "slug": "b", "anchors": [
+                    {"id": "p2", "type": "exercise", "hash": "p2"},
+                    {"id": "l2", "type": "exercise", "hash": "l2", "lab": True},
+                ], "html": ""},
+            ]},
+            {"title": "Two", "slug": "two", "hash": "c2", "sections": [
+                {"title": "A", "slug": "a2", "anchors": [
+                    {"id": "p3", "type": "exercise", "hash": "p3"},
+                    {"id": "l3", "type": "exercise", "hash": "l3", "lab": True},
+                ], "html": ""},
+            ]},
+        ]}
+        targets = number_artifact(data)
+        # chapter 1, section A: first of each
+        self.assertEqual(targets["p1"]["label"], "Problem 1.1")
+        self.assertEqual(targets["l1"]["label"], "Lab problem L1.1")
+        # chapter 1, section B: counters persist across the section boundary
+        self.assertEqual(targets["p2"]["label"], "Problem 1.2")
+        self.assertEqual(targets["l2"]["label"], "Lab problem L1.2")
+        # chapter 2: counters reset at the chapter boundary
+        self.assertEqual(targets["p3"]["label"], "Problem 2.1")
+        self.assertEqual(targets["l3"]["label"], "Lab problem L2.1")
+
+    def test_lab_problem_multirefs_sort_and_compress(self):
+        # _num_components used to return None for "L4.1" (the "L4" component
+        # matched neither the arabic nor the appendix-letter form), so a
+        # multi-target ref to lab problems fell back to document order with no
+        # ranges. Task #499 F4: it should sort&compress exactly like every
+        # other numbered kind.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": f"l{i}", "type": "exercise", "hash": f"l{i}", "lab": True}
+                for i in range(1, 4)
+            ], "html":
+                '<p>see <span class="hashref">l3,l1,l2</span></p>'}]}]}
+        number_artifact(data)
+        html = re.sub(r'<a[^>]*>(.*?)</a>', r'\1',
+                      data["chapters"][0]["sections"][0]["html"])
+        # out-of-order refs sorted, and a run of 3 compresses to a range
+        self.assertIn("lab problems L1.1 to L1.3", html)
+
+    def test_lab_and_nonlab_numbers_never_compress_together(self):
+        # L4.1 and 4.1 collide on their digits but must stay in separate sort
+        # domains, at the _num_components/_consecutive level that
+        # _compress_refs relies on (task #499 F4).
+        lab, arabic = _num_components("L4.1"), _num_components("4.1")
+        self.assertIsNotNone(lab)
+        self.assertIsNotNone(arabic)
+        self.assertNotEqual(lab, arabic)
+        self.assertFalse(_consecutive(lab, _num_components("4.2")))
+        self.assertFalse(_consecutive(arabic, _num_components("L4.2")))
+
+    def test_problem_crossrefs_follow_reference_site_case(self):
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "p1", "type": "exercise", "hash": "p1"},
+                {"id": "l1", "type": "exercise", "hash": "l1", "lab": True},
+            ], "html": '<p><span class="hashref">p1</span> '
+                       '<span class="Hashref">l1</span></p>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('>problem 1.1</a>', html)
+        self.assertIn('>Lab problem L1.1</a>', html)
 
     def test_chapter_start_zero_offsets_numbering(self):
         # chapter_start: 0 (RTC) → first chapter is "0"; its section, figure and
@@ -688,6 +781,115 @@ class CrossRefResolutionTests(TestCase):
         html = data["chapters"][0]["sections"][0]["html"]
         self.assertIn('<a class="xref" href="/c/s/#fig:leaf">figure 1.1</a>', html)
         self.assertIn('<a class="xref" href="/c/s/#tbl:leaf">table 1.1</a>', html)
+
+    def test_lab_section_number_is_its_chapter_number(self):
+        # The book titles lab sections "Lab 0" … "Lab 8" — the lab number IS the
+        # chapter number, so its problems can read "Problem L4.1". parody-web
+        # used a running 1-based count, which is off by one for any book with
+        # chapter_start: 0 (RTC). Task #499.
+        def lab_section():
+            return {"title": "Lab", "slug": "lab", "hash": "lb", "anchors": [],
+                    "html": '<h1 data-h="lb" class="lab">Lab</h1>'}
+        data = {"chapter_start": 0, "chapters": [
+            {"title": "Zero", "slug": "zero", "hash": "c0",
+             "sections": [lab_section()]},
+            {"title": "One", "slug": "one", "hash": "c1",
+             "sections": [lab_section()]},
+        ]}
+        number_artifact(data)
+        self.assertEqual(data["chapters"][0]["sections"][0]["number"],
+                         "Lab exercise 0")
+        self.assertEqual(data["chapters"][1]["sections"][0]["number"],
+                         "Lab exercise 1")
+
+    EXERCISE_HTML = (
+        '<div id="{id}"\n'
+        'class="exercise numbered-environment rounded border border-green-400'
+        ' shadow-md my-4 bg-white scroll-mt-20{lab}"\n'
+        'data-h="{id}" data-env-type="exercise"{labattr}>\n'
+        '<section\n'
+        'class="text-lg font-semibold text-green-900 px-4 py-2 border-b'
+        ' border-green-400 bg-green-50 rounded-t">\n'
+        '<h3 class="text-lg font-semibold text-green-900">Exercise</h3>\n'
+        '</section>\n'
+        '<div class="px-4 py-3 text-sm text-gray-700">\n'
+        '<p>Body of {id}.</p>\n'
+        '</div>\n'
+        '</div>\n'
+    )
+
+    def test_problem_label_replaces_legacy_exercise_chrome(self):
+        # The filter's box is Tailwind markup for homepage-django; the book site
+        # renders a run-in "Problem N.n" heading instead, like print. Task #499.
+        html = (self.EXERCISE_HTML.format(id="p1", lab="", labattr="")
+                + self.EXERCISE_HTML.format(id="l1", lab=" lab",
+                                            labattr=' data-lab="1"'))
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "p1", "type": "exercise", "hash": "p1"},
+                {"id": "l1", "type": "exercise", "hash": "l1", "lab": True},
+            ], "html": html}]}]}
+        number_artifact(data)
+        out = data["chapters"][0]["sections"][0]["html"]
+        # dead Tailwind chrome gone, semantic classes in
+        self.assertNotIn("border-green-400", out)
+        self.assertNotIn("text-gray-700", out)
+        self.assertNotIn("<h3", out)
+        self.assertIn('<div id="p1" class="exercise" data-h="p1" '
+                      'data-env-type="exercise">'
+                      '<div class="problem-label">Problem 1.1</div>', out)
+        self.assertIn('class="exercise lab"', out)
+        self.assertIn('<div class="problem-label">Problem L1.1</div>', out)
+        self.assertEqual(out.count('class="problem-body"'), 2)
+        # the bodies survive
+        self.assertIn("<p>Body of p1.</p>", out)
+        self.assertIn("<p>Body of l1.</p>", out)
+
+    TITLED_EXERCISE_HTML = (
+        '<div id="{id}"\n'
+        'class="exercise numbered-environment rounded border border-green-400'
+        ' shadow-md my-4 bg-white scroll-mt-20"\n'
+        'data-h="{id}" data-env-type="exercise">\n'
+        '<section\n'
+        'class="text-lg font-semibold text-green-900 px-4 py-2 border-b'
+        ' border-green-400 bg-green-50 rounded-t">\n'
+        '<h3 class="text-lg font-semibold text-green-900">{title}</h3>\n'
+        '</section>\n'
+        '<div class="px-4 py-3 text-sm text-gray-700">\n'
+        '<p>Body of {id}.</p>\n'
+        '</div>\n'
+        '</div>\n'
+    )
+
+    def test_titled_exercise_keeps_its_title(self):
+        # filter.lua renders a title= attribute into the legacy <h3>; that data
+        # reaches the renderer (artifact.py records it, filter.lua emits it) but
+        # _rewrite_exercise_box used to discard the whole header unconditionally.
+        # A real title must survive, appended after the number (task #499 F2).
+        html = self.TITLED_EXERCISE_HTML.format(id="p1", title="Root locus")
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "p1", "type": "exercise", "hash": "p1"},
+            ], "html": html}]}]}
+        number_artifact(data)
+        out = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<div class="problem-label">Problem 1.1 '
+                      '<span class="problem-title">Root locus</span></div>', out)
+
+    def test_untitled_exercise_has_no_stray_title_span(self):
+        # the default <h3>Exercise</h3> filter.lua emits when no title= is given
+        # is discarded, not rendered as a literal "Exercise" title, and no empty
+        # .problem-title span is left behind.
+        html = self.EXERCISE_HTML.format(id="p1", lab="", labattr="")
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "p1", "type": "exercise", "hash": "p1"},
+            ], "html": html}]}]}
+        number_artifact(data)
+        out = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<div class="problem-label">Problem 1.1</div>', out)
+        self.assertNotIn("problem-title", out)
+        self.assertNotIn("Exercise", out)
 
 
 class FurtherReadingTests(TestCase):

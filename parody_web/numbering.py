@@ -8,13 +8,19 @@ where TARGET is a heading hash (2 chars), a chapter hash, or a ``fig:``/``tbl:``
 here and rewrite the stored html:
 
 * chapters → ``1, 2, …`` (arabic) or ``A, B, …`` (appendix)
-* sections → ``C.m`` — except "Problems" (unnumbered) and labs ("Lab Exercise N:")
+* sections → ``C.m`` — except "Problems" (unnumbered) and labs ("Lab exercise N",
+  N = the chapter number, not a running count of lab sections)
 * subsections → ``C.m.k[.j]`` within numbered sections
 * figures → ``Figure C.k`` (per chapter), captions prefixed
+* exercises → ``Problem C.n`` (own per-chapter counter) and lab problems →
+  ``Problem LC.n`` (their own separate per-chapter counter), each with a
+  run-in heading injected into the box (see ``_rewrite_exercise_box``);
+  cross-refs read "problem"/"lab problem" per the book's crefnames
 * ``hashref`` spans → links showing the target's label ("Section 3.2", "Figure 3.1", …)
 
-Conventions (Problems unnumbered, labs get an exercise prefix) match the book's
-print layout. Targets it can't resolve (tbl:/eq:/… for now) are left as-is.
+Conventions (Problems/labs numbered per-chapter on separate counters, section
+titles unnumbered) match the book's print layout. Targets it can't resolve
+(tbl:/eq:/… for now) are left as-is.
 """
 import re
 from html import escape as _esc
@@ -146,19 +152,32 @@ def _alpha_num(s):
 
 
 _NUM_COMP_RE = re.compile(r"(\d+)([a-z]*)")
+# a lab problem's chapter component ("L4" in "L4.1") — only the leading part
+# of a dotted number ever takes this form.
+_NUM_LAB_RE = re.compile(r"L(\d+)")
 
 
 def _num_components(s):
-    """Parse a reference number ("(9.7)", "3.2.1", "B.4", "8.10a") into a list of
-    comparable components, or None if it isn't a clean dotted number. Each
-    component is (kind, int, letter): kind 0 = numeric ("7"→(0,7,""), "10a"→
-    (0,10,"a")), kind 1 = an appendix letter ("B"→(1,2,"")). The tuples sort in
+    """Parse a reference number ("(9.7)", "3.2.1", "B.4", "8.10a", "L4.1") into a
+    list of comparable components, or None if it isn't a clean dotted number.
+    Each component is (kind, int, letter): kind 0 = numeric ("7"→(0,7,""),
+    "10a"→(0,10,"a")), kind 1 = an appendix letter ("B"→(1,2,"")), kind 2 = a
+    lab problem's chapter ("L4"→(2,4,""), leading component only). Kind 2's
+    distinct tag keeps lab numbers in their own sort domain — a differing kind
+    fails _consecutive's same-kind check and mismatches the shared prefix that
+    _compress_refs groups a run by, so "L4.1" and "4.1" never compress into one
+    range even though their digits collide. The tuples otherwise sort in
     reading order and let _consecutive test adjacency."""
     comps = []
-    for p in s.strip("() ").split("."):
+    parts = s.strip("() ").split(".")
+    for i, p in enumerate(parts):
         m = _NUM_COMP_RE.fullmatch(p)
         if m:
             comps.append((0, int(m.group(1)), m.group(2)))
+            continue
+        lm = _NUM_LAB_RE.fullmatch(p) if i == 0 else None
+        if lm:
+            comps.append((2, int(lm.group(1)), ""))
         elif p.isalpha() and p.isupper():
             comps.append((1, _alpha_num(p), ""))
         else:
@@ -347,9 +366,14 @@ def _clean_tables(html):
 
 
 # anchor type -> cross-reference label word (per-chapter numbered: "Table 3.1")
+# "exercise" is listed only so the loop's `t not in _TYPE_LABELS` membership
+# guard admits it; its dedicated branch above always `continue`s before this
+# map's value is ever read, so None (rather than a live-looking "Problem")
+# makes that unreachability honest — lab and non-lab problems get their label
+# ("Problem"/"Lab problem") built in that branch instead.
 _TYPE_LABELS = {
     "figure": "Figure", "table": "Table", "equation": "Equation",
-    "exercise": "Exercise", "example": "Example", "theorem": "Theorem",
+    "exercise": None, "example": "Example", "theorem": "Theorem",
     "definition": "Definition", "listing": "Listing", "algorithm": "Algorithm",
 }
 
@@ -544,6 +568,41 @@ def _gate_rights_figures(html):
     return _RIGHTS_IMG_RE.sub(_RIGHTS_PLACEHOLDER, html)
 
 
+# The exercise box comes from parody's filter.lua as Tailwind markup, because
+# homepage-django renders those class names for real. The book site wants what
+# print gives: a run-in "Problem N.n" heading over the statement. So rewrite the
+# box here — normalize the wrapper's classes, swap the <h3>Exercise</h3> header
+# block for a .problem-label, and rename the Tailwind body wrapper. pandoc wraps
+# long tags across lines, so every part below matches newlines too.
+def _rewrite_exercise_box(html, eid, label, is_lab):
+    """Rewrite one exercise div (matched by `eid`) into its web presentation.
+
+    The legacy header's <h3> carries a title when the source exercise had a
+    title= attribute (filter.lua defaults it to the literal "Exercise" when
+    absent). That default is discarded, but a real title survives, appended
+    after the number rather than dropped (task #499 F2)."""
+    pat = re.compile(
+        r'(<div\b(?=[^>]*\bdata-env-type="exercise")[^>]*\bid="'
+        + re.escape(eid) + r'"[^>]*>)'
+        r'(?:\s*<section\b[^>]*>\s*<h3\b[^>]*>(?P<h3>[^<]*)</h3>\s*</section>)?'
+        r'(?P<bodytag>\s*<div\b[^>]*\bclass="px-4 py-3 text-sm text-gray-700"[^>]*>)?')
+
+    def rep(mo):
+        cls = "exercise lab" if is_lab else "exercise"
+        open_tag = re.sub(r'\bclass="[^"]*"', f'class="{cls}"', mo.group(1),
+                          count=1)
+        # collapse the newlines pandoc wrapped into the opening tag
+        open_tag = re.sub(r'\s+', " ", open_tag)
+        body = '<div class="problem-body">' if mo.group('bodytag') else ""
+        title = (mo.group('h3') or "").strip()
+        title_html = (f' <span class="problem-title">{title}</span>'
+                      if title and title != "Exercise" else "")
+        return (open_tag + f'<div class="problem-label">{label}{title_html}'
+                '</div>' + body)
+
+    return pat.sub(rep, html, count=1)
+
+
 def _section_kind(sec):
     html = sec.get("html") or ""
     if (sec.get("title") or "").strip().lower() == "problems":
@@ -575,13 +634,13 @@ def number_artifact(data, references=None, edition_query=""):
     eq_caps = {}          # per-section: eq-id -> number (shown right of the math)
     subeq_caps = {}       # per-section: subequations parent-id -> group number N
     example_caps = {}     # per-section: example div-id -> number N.n (label inject)
+    problem_caps = {}     # per-section: exercise div-id -> (heading label, is_lab)
     # chapter_start: the number the first (non-appendix) chapter takes. The
     # artifact omits it at the default of 1; RTC sets 0 ("Chapter 0").
     # _chapter_label pre-increments "arabic", so seed it one below the start.
     # Section/figure/equation numbers all read cnum, so they inherit it (0.1,
     # Figure 0.4, …). Appendix chapters (lettered) are unaffected.
     idx_state = {"arabic": int(data.get("chapter_start", 1)) - 1, "appendix": 0}
-    lab_n = 0
 
     # ---- pass 1: assign numbers, build the target map ----
     for ch in data.get("chapters", []):
@@ -603,12 +662,14 @@ def number_artifact(data, references=None, edition_query=""):
                 secnum = f"{cnum}.{sec_m}"
                 sec["number"] = secnum
             elif kind == "lab":
-                lab_n += 1
                 secnum = None
-                # sentence case ("Lab exercise N") so a cross-ref recases only the
-                # first letter — "Lab exercise 6" / "lab exercise 6", never the
-                # mid-phrase "lab Exercise 6". (_recase_label toggles label[:1].)
-                sec["number"] = f"Lab exercise {lab_n}"
+                # The lab number is the CHAPTER number: the book titles these
+                # sections "Lab 0" … "Lab 8", and their problems are numbered
+                # L<chapter>.<n>. Sentence case ("Lab exercise N") so a cross-ref
+                # recases only the first letter — "Lab exercise 6" /
+                # "lab exercise 6", never the mid-phrase "lab Exercise 6".
+                # (_recase_label toggles label[:1].)
+                sec["number"] = f"Lab exercise {cnum}"
             elif kind == "problems":
                 secnum = None
                 sec["number"] = ""
@@ -698,6 +759,31 @@ def number_artifact(data, references=None, edition_query=""):
                         targets[a["hash"]] = entry
                     continue
                 if t == "heading" or t not in _TYPE_LABELS:
+                    continue
+                if t == "exercise":
+                    # Problems and lab problems run on separate per-chapter
+                    # counters, exactly as the book does: `exercise` is
+                    # `within = chapter` ("Problem 3.2") and `lab` counts
+                    # L\thechapter.\arabic{labexercise} ("Problem L4.1").
+                    # Headings read "Problem" for both (exercise-name = Problem);
+                    # cross-refs read "problem" / "lab problem" (the crefnames).
+                    is_lab = bool(a.get("lab"))
+                    key = "labexercise" if is_lab else "exercise"
+                    type_counters[key] = type_counters.get(key, 0) + 1
+                    num = (f"L{cnum}.{type_counters[key]}" if is_lab
+                           else f"{cnum}.{type_counters[key]}")
+                    word = "Lab problem" if is_lab else "Problem"
+                    entry = {"label": f"{word} {num}",
+                             "url": f"{url}#{a.get('id', '')}"}
+                    if a.get("id"):
+                        targets[a["id"]] = entry
+                    if a.get("hash"):
+                        targets[a["hash"]] = entry
+                    if a.get("id"):
+                        # pass 2 injects this as the box's run-in heading and
+                        # needs is_lab to set the wrapper's class
+                        problem_caps.setdefault(sec["slug"], {})[a["id"]] = \
+                            (f"Problem {num}", is_lab)
                     continue
                 if (a.get("id") in sf_subids or a.get("id") in st_subids
                         or a.get("id") in subeq_subids):
@@ -889,6 +975,11 @@ def number_artifact(data, references=None, edition_query=""):
                     r'(<div\b(?=[^>]*\bclass="(?:[^"]*\s)?example(?:\s[^"]*)?")'
                     r'[^>]*\bid="' + re.escape(eid) + r'"[^>]*>)',
                     lambda mo, lab=label: mo.group(1) + lab, html, count=1)
+
+            # exercises/lab problems: rewrite the filter's Tailwind box into the
+            # web's run-in "Problem N.n" heading (see _rewrite_exercise_box).
+            for eid, (label, is_lab) in problem_caps.get(sec["slug"], {}).items():
+                html = _rewrite_exercise_box(html, eid, label, is_lab)
 
             # subequations groups: \tag every row "N a", "N b", … then stash the
             # whole <div> behind a placeholder so the single/multi-label tagger
