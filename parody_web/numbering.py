@@ -146,19 +146,32 @@ def _alpha_num(s):
 
 
 _NUM_COMP_RE = re.compile(r"(\d+)([a-z]*)")
+# a lab problem's chapter component ("L4" in "L4.1") — only the leading part
+# of a dotted number ever takes this form.
+_NUM_LAB_RE = re.compile(r"L(\d+)")
 
 
 def _num_components(s):
-    """Parse a reference number ("(9.7)", "3.2.1", "B.4", "8.10a") into a list of
-    comparable components, or None if it isn't a clean dotted number. Each
-    component is (kind, int, letter): kind 0 = numeric ("7"→(0,7,""), "10a"→
-    (0,10,"a")), kind 1 = an appendix letter ("B"→(1,2,"")). The tuples sort in
+    """Parse a reference number ("(9.7)", "3.2.1", "B.4", "8.10a", "L4.1") into a
+    list of comparable components, or None if it isn't a clean dotted number.
+    Each component is (kind, int, letter): kind 0 = numeric ("7"→(0,7,""),
+    "10a"→(0,10,"a")), kind 1 = an appendix letter ("B"→(1,2,"")), kind 2 = a
+    lab problem's chapter ("L4"→(2,4,""), leading component only). Kind 2's
+    distinct tag keeps lab numbers in their own sort domain — a differing kind
+    fails _consecutive's same-kind check and mismatches the shared prefix that
+    _compress_refs groups a run by, so "L4.1" and "4.1" never compress into one
+    range even though their digits collide. The tuples otherwise sort in
     reading order and let _consecutive test adjacency."""
     comps = []
-    for p in s.strip("() ").split("."):
+    parts = s.strip("() ").split(".")
+    for i, p in enumerate(parts):
         m = _NUM_COMP_RE.fullmatch(p)
         if m:
             comps.append((0, int(m.group(1)), m.group(2)))
+            continue
+        lm = _NUM_LAB_RE.fullmatch(p) if i == 0 else None
+        if lm:
+            comps.append((2, int(lm.group(1)), ""))
         elif p.isalpha() and p.isupper():
             comps.append((1, _alpha_num(p), ""))
         else:

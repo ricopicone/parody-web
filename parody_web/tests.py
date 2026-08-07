@@ -13,7 +13,7 @@ from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 
 from parody_web.models import Book, Section
-from parody_web.numbering import number_artifact
+from parody_web.numbering import number_artifact, _num_components, _consecutive
 from parody_web.theme import theme_css, validate_theme
 from parody_web.templatetags.parody_web import render_book
 
@@ -291,6 +291,35 @@ class CrossRefResolutionTests(TestCase):
         self.assertEqual(targets["p2"]["label"], "Problem 1.2")
         self.assertEqual(targets["l1"]["label"], "Lab problem L1.1")
         self.assertEqual(targets["l2"]["label"], "Lab problem L1.2")
+
+    def test_lab_problem_multirefs_sort_and_compress(self):
+        # _num_components used to return None for "L4.1" (the "L4" component
+        # matched neither the arabic nor the appendix-letter form), so a
+        # multi-target ref to lab problems fell back to document order with no
+        # ranges. Task #499 F4: it should sort&compress exactly like every
+        # other numbered kind.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": f"l{i}", "type": "exercise", "hash": f"l{i}", "lab": True}
+                for i in range(1, 4)
+            ], "html":
+                '<p>see <span class="hashref">l3,l1,l2</span></p>'}]}]}
+        number_artifact(data)
+        html = re.sub(r'<a[^>]*>(.*?)</a>', r'\1',
+                      data["chapters"][0]["sections"][0]["html"])
+        # out-of-order refs sorted, and a run of 3 compresses to a range
+        self.assertIn("lab problems L1.1 to L1.3", html)
+
+    def test_lab_and_nonlab_numbers_never_compress_together(self):
+        # L4.1 and 4.1 collide on their digits but must stay in separate sort
+        # domains, at the _num_components/_consecutive level that
+        # _compress_refs relies on (task #499 F4).
+        lab, arabic = _num_components("L4.1"), _num_components("4.1")
+        self.assertIsNotNone(lab)
+        self.assertIsNotNone(arabic)
+        self.assertNotEqual(lab, arabic)
+        self.assertFalse(_consecutive(lab, _num_components("4.2")))
+        self.assertFalse(_consecutive(arabic, _num_components("L4.2")))
 
     def test_problem_crossrefs_follow_reference_site_case(self):
         data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
