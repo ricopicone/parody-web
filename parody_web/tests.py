@@ -292,6 +292,40 @@ class CrossRefResolutionTests(TestCase):
         self.assertEqual(targets["l1"]["label"], "Lab problem L1.1")
         self.assertEqual(targets["l2"]["label"], "Lab problem L1.2")
 
+    def test_problem_counters_persist_across_sections_reset_at_chapter(self):
+        # the per-chapter counters must persist across sections within a
+        # chapter (not reset per-section) and reset only at the chapter
+        # boundary — the existing counter tests only cover a single
+        # chapter/section, so this was untested (task #499 F5).
+        data = {"chapters": [
+            {"title": "One", "slug": "one", "hash": "c1", "sections": [
+                {"title": "A", "slug": "a", "anchors": [
+                    {"id": "p1", "type": "exercise", "hash": "p1"},
+                    {"id": "l1", "type": "exercise", "hash": "l1", "lab": True},
+                ], "html": ""},
+                {"title": "B", "slug": "b", "anchors": [
+                    {"id": "p2", "type": "exercise", "hash": "p2"},
+                    {"id": "l2", "type": "exercise", "hash": "l2", "lab": True},
+                ], "html": ""},
+            ]},
+            {"title": "Two", "slug": "two", "hash": "c2", "sections": [
+                {"title": "A", "slug": "a2", "anchors": [
+                    {"id": "p3", "type": "exercise", "hash": "p3"},
+                    {"id": "l3", "type": "exercise", "hash": "l3", "lab": True},
+                ], "html": ""},
+            ]},
+        ]}
+        targets = number_artifact(data)
+        # chapter 1, section A: first of each
+        self.assertEqual(targets["p1"]["label"], "Problem 1.1")
+        self.assertEqual(targets["l1"]["label"], "Lab problem L1.1")
+        # chapter 1, section B: counters persist across the section boundary
+        self.assertEqual(targets["p2"]["label"], "Problem 1.2")
+        self.assertEqual(targets["l2"]["label"], "Lab problem L1.2")
+        # chapter 2: counters reset at the chapter boundary
+        self.assertEqual(targets["p3"]["label"], "Problem 2.1")
+        self.assertEqual(targets["l3"]["label"], "Lab problem L2.1")
+
     def test_lab_problem_multirefs_sort_and_compress(self):
         # _num_components used to return None for "L4.1" (the "L4" component
         # matched neither the arabic nor the appendix-letter form), so a
