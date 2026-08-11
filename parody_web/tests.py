@@ -1005,6 +1005,18 @@ class BookHostGatingTests(TestCase):
         self.assertIn("<details>", html)
         self.assertIn("Online resources", html)  # online_resources rendered
 
+    def test_empty_host_partials_emit_nothing(self):
+        # The four host-injection partials ship empty for a host to shadow. They
+        # must render to nothing — Django strips {# #} only on a single line, so
+        # a multi-line comment in one of them prints its own documentation onto
+        # every section page for any deployment that has not shadowed it.
+        r = self.anon.get("/hardware/specific-t1/")
+        html = r.content.decode()
+        self.assertNotIn("Host injection point", html)
+        # Not a blanket "{#" check: the MathJax macro block legitimately
+        # contains {\boldsymbol{#1}} and friends.
+        self.assertNotIn("{% comment %}", html)
+
     def test_section_breadcrumb_includes_chapter_rung(self):
         # On a section page the breadcrumb shows the chapter level, linking back
         # to the chapter landing page, and marks it truncatable so a long title
