@@ -4,8 +4,8 @@ Serving a parody book from your own Django project.
 
 parody-web renders the book: chapters, sections, cross-references, numbering,
 search, the subject index. Your project owns everything about *readers* —
-accounts, courses, enrollment, assignments, due dates, annotations. Four seams
-connect the two, and parody-web never learns what a course is.
+accounts, courses, enrollment, assignments, due dates, annotations. A handful of
+seams connect the two, and parody-web never learns what a course is.
 
 The running example is a course site that serves a textbook to a class and
 opens each exercise's worked solution once its assignment is due.
@@ -217,10 +217,75 @@ then shadow `parody_web/base.html` or `parody_web/_masthead.html`. Keep the
 blocks `base.html` defines (`title`, `head_extra`, `page_class`, `side`,
 `body`, `rail`) so the book pages still render into your layout.
 
+## 7. Serving several books
+
+parody-web began as one deployment per book: `BOOK_SLUG` named it. A course site
+serves a shelf, and it has to be *one* process — enrollment, assignments and
+annotations live in the one database, and a second process could see none of
+them. So point parody-web at a callable that answers "which book is this request
+for":
+
+```python
+# settings.py
+PARODY_WEB_BOOK_RESOLVER = "config.books.resolve_book"
+```
+
+```python
+# config/books.py
+BOOK_SUBDOMAINS = {"electronics": "electronics",
+                   "mechatronics": "mechatronics"}
+
+def resolve_book(request):
+    """electronics.example.edu -> the "electronics" book."""
+    subdomain = request.get_host().split(".")[0].lower()
+    return BOOK_SUBDOMAINS.get(subdomain)
+```
+
+Returning `None` declines: selection falls through to `BOOK_SLUG`, so a host maps
+the hosts it knows about and lets everything else land on a default book. Routing
+by subdomain, path prefix, or the signed-in reader's enrollment is your business —
+parody-web only asks the question, and the callable receives the whole request.
+
+Selection runs in three steps, most specific first:
+
+1. `PARODY_WEB_BOOK_RESOLVER`, when set and it returns a slug;
+2. `BOOK_SLUG`;
+3. the only imported book.
+
+Step 3 tolerates any number of *editions* of one book, but several distinct books
+with neither setting configured raises `ImproperlyConfigured` rather than serving
+an arbitrary one. The path is validated at startup, so a typo fails on boot.
+
+Import each book the usual way — `import_artifact` already imports by slug:
+
+```
+python manage.py import_artifact electronics.json
+python manage.py import_artifact mechatronics.json
+```
+
+Books on one deployment can look different. `PARODY_WEB_THEME` accepts the same
+override dict keyed by book slug:
+
+```python
+PARODY_WEB_THEME = {
+    "electronics":  {"light": {"accent": "#b3261e"}},
+    "mechatronics": {"light": {"accent": "#1e5fb3"}},
+}
+```
+
+`light` and `dark` are the only legal mode names, so a top-level key that is
+neither means the dict is keyed by slug. A single-book deployment keeps writing
+the plain form; the two cannot be mixed.
+
+Nothing else needs to change. The join key already carries the book
+(`(book.slug, book.edition_id, section.key)`), and every access-policy hook
+already takes the request — `section.book.slug` tells the books apart.
+
 ## Settings reference
 
 | setting | default | meaning |
 |---|---|---|
 | `PARODY_WEB_ACCESS_POLICY` | `""` (uses `DefaultPolicy`) | dotted path to the access policy class |
-| `PARODY_WEB_THEME` | `{}` | per-book colour and font token overrides |
-| `BOOK_SLUG` | first imported book | which book this deployment serves |
+| `PARODY_WEB_BOOK_RESOLVER` | `""` (uses `BOOK_SLUG`) | dotted path to a `callable(request) -> slug` choosing the book per request |
+| `PARODY_WEB_THEME` | `{}` | colour and font token overrides; keyed by book slug on a multi-book deployment |
+| `BOOK_SLUG` | the only imported book | the book to serve when the resolver declines or is unset |
