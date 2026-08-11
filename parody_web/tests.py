@@ -7,11 +7,14 @@ import re
 import tempfile
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
-from django.test import Client, TestCase, override_settings
+from django.test import Client, RequestFactory, TestCase, override_settings
 
+from parody_web.access import DefaultPolicy, get_policy, validate_policy
 from parody_web.models import Book, Section
 from parody_web.numbering import number_artifact, _num_components, _consecutive
 from parody_web.theme import theme_css, validate_theme
@@ -1740,3 +1743,91 @@ class SolutionImportTests(TestCase):
         # every commercial/partial artifact today
         _import()
         self.assertFalse(Section.objects.get(slug="specific-t1").has_solutions)
+
+
+class OpenPolicy(DefaultPolicy):
+    """Test double: everyone may read every solution."""
+
+    def can_view_solution(self, request, section, exercise_id):
+        return True
+
+
+class DueDatePolicy(DefaultPolicy):
+    """Test double for the course case: solutions are refused, and the denial
+    page is told when they open."""
+
+    def can_view_solution(self, request, section, exercise_id):
+        return False
+
+    def solution_denied_context(self, request, section, exercise_id):
+        return {"available_after": "2026-09-01",
+                "message": "Solutions open after the assignment is due."}
+
+
+class AccessPolicyTests(TestCase):
+    """The default policy reproduces the gating that used to be inlined in
+    views.py; a host swaps in its own class by dotted path."""
+
+    def setUp(self):
+        _import()
+        self.user = get_user_model().objects.create_user("u", "u@e.com", "pw")
+        self.factory = RequestFactory()
+
+    def _request(self, authed):
+        r = self.factory.get("/")
+        r.user = self.user if authed else AnonymousUser()
+        return r
+
+    def test_default_owner_is_authenticated(self):
+        policy = DefaultPolicy()
+        self.assertTrue(policy.is_owner(self._request(True)))
+        self.assertFalse(policy.is_owner(self._request(False)))
+
+    def test_default_owner_tolerates_no_request(self):
+        self.assertFalse(DefaultPolicy().is_owner(None))
+
+    def test_default_can_view_section_is_open(self):
+        section = Section.objects.get(slug="licensed")
+        self.assertTrue(DefaultPolicy().can_view_section(
+            self._request(False), section))
+
+    def test_default_preview_gates_anonymous_only(self):
+        policy = DefaultPolicy()
+        licensed = Section.objects.get(slug="licensed")   # preview=True
+        public = Section.objects.get(slug="specific-t1")  # preview=False
+        self.assertTrue(policy.section_is_preview(self._request(False), licensed))
+        self.assertFalse(policy.section_is_preview(self._request(True), licensed))
+        self.assertFalse(policy.section_is_preview(self._request(False), public))
+
+    def test_default_solution_is_owner_only(self):
+        policy = DefaultPolicy()
+        section = Section.objects.get(slug="specific-t1")
+        self.assertTrue(policy.can_view_solution(
+            self._request(True), section, "exe:a"))
+        self.assertFalse(policy.can_view_solution(
+            self._request(False), section, "exe:a"))
+
+    def test_default_denied_context_shape(self):
+        section = Section.objects.get(slug="specific-t1")
+        ctx = DefaultPolicy().solution_denied_context(
+            self._request(False), section, "exe:a")
+        self.assertIsNone(ctx["available_after"])
+        self.assertIn("message", ctx)
+
+    def test_get_policy_returns_default_when_unset(self):
+        self.assertIsInstance(get_policy(), DefaultPolicy)
+
+    @override_settings(PARODY_WEB_ACCESS_POLICY="parody_web.tests.OpenPolicy")
+    def test_get_policy_loads_configured_class(self):
+        self.assertIsInstance(get_policy(), OpenPolicy)
+
+    def test_validate_policy_rejects_bad_path(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_policy("nope.NotAPolicy")
+
+    def test_validate_policy_rejects_non_class(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_policy("parody_web.access.get_policy")
+
+    def test_validate_policy_accepts_default(self):
+        validate_policy("parody_web.access.DefaultPolicy")  # no raise
