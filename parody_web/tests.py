@@ -1919,3 +1919,35 @@ class SolutionViewTests(TestCase):
         self.assertEqual(r.status_code, 403)
         self.assertContains(r, "2026-09-01", status_code=403)
         self.assertContains(r, "Solutions open after", status_code=403)
+
+
+class OverlayIncludeTests(TestCase):
+    """A host injects per-user features (annotations, data tables, an exam entry
+    point) by shadowing small empty partials — never by copying section.html."""
+
+    def setUp(self):
+        _import()
+
+    def test_empty_partials_render_nothing_by_default(self):
+        r = self.client.get("/hardware/specific-t1/")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotContains(r, "HOSTOVERLAY")
+
+    def test_host_override_is_injected(self):
+        with tempfile.TemporaryDirectory() as d:
+            pw = Path(d, "parody_web")
+            pw.mkdir()
+            (pw / "_section_overlay.html").write_text(
+                '<div id="HOSTOVERLAY" data-key="{{ section.key }}"></div>')
+            (pw / "_section_toolbar.html").write_text("<p>HOSTTOOLBAR</p>")
+            (pw / "_section_head.html").write_text('<meta name="HOSTHEAD">')
+            (pw / "_section_foot.html").write_text("<p>HOSTFOOT</p>")
+            templates = [dict(settings.TEMPLATES[0], DIRS=[d])]
+            with override_settings(TEMPLATES=templates):
+                html = self.client.get(
+                    "/hardware/specific-t1/").content.decode()
+        self.assertIn('id="HOSTOVERLAY"', html)
+        self.assertIn('data-key="ef"', html)   # Section.key, the join key
+        self.assertIn("HOSTTOOLBAR", html)
+        self.assertIn('name="HOSTHEAD"', html)
+        self.assertIn("HOSTFOOT", html)
