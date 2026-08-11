@@ -115,6 +115,32 @@ class CrossRefResolutionTests(TestCase):
         # (chapters, sections) follow the same rule as typed [@fig:x] refs.
         self.assertIn('<a class="xref" href="/two/t1/">chapter 2</a>', html)
 
+    def test_hashrefs_resolve_inside_problems_and_solutions(self):
+        # Problem and solution bodies are lifted out of section html by the
+        # build, so this pass never saw them and a cross-reference written
+        # inside an exercise printed its own label on the page.
+        data = self._book()
+        sec = data["chapters"][0]["sections"][0]
+        sec["problems"] = {"exe:a": {"title": "A", "content":
+                                     '<p>see <span class="hashref">c2</span></p>'}}
+        sec["solutions"] = {"exe:a": {"title": "A", "content":
+                                      '<p>see <span class="hashref">c2</span></p>'}}
+        number_artifact(data)
+        for bucket in ("problems", "solutions"):
+            body = sec[bucket]["exe:a"]["content"]
+            self.assertIn('<a class="xref" href="/two/t1/">chapter 2</a>', body)
+            self.assertNotIn('class="hashref"', body)
+
+    def test_bucket_resolution_tolerates_odd_shapes(self):
+        # Buckets are artifact-supplied, so a missing/blank content field or a
+        # non-dict entry must not take the whole numbering pass down.
+        data = self._book()
+        sec = data["chapters"][0]["sections"][0]
+        sec["problems"] = {"a": {"title": "no content"}, "b": "not a dict",
+                           "c": {"title": "t", "content": ""}}
+        sec["solutions"] = None
+        number_artifact(data)  # must not raise
+
     def test_hashref_case_follows_class_and_key(self):
         # .Hashref capitalizes for a sentence start; an upper-case key letter
         # ([C2], not the bare hash c2) capitalizes too.

@@ -863,6 +863,29 @@ def number_artifact(data, references=None, edition_query=""):
     # ---- pass 2: rewrite html (numbers in headings/figs, resolve hashrefs) ----
     for ch in data.get("chapters", []):
         for sec in ch.get("sections", []):
+            # Problem and solution bodies are lifted out of `html` by the build,
+            # so the rewrite below never sees them and a cross-reference written
+            # inside an exercise printed its own label on the page. Resolve them
+            # here — above the empty-html guard, because extracting the problems
+            # can leave a section with buckets and almost no prose.
+            #
+            # Hashrefs only, deliberately: resolve_cite below also appends to
+            # `cited`, which builds the per-section References list, and running
+            # it here would credit a section with citations not in its prose.
+            def _resolve_bucket_ref(mo):
+                out = _render_refs(mo.group(2), targets,
+                                   cap_class=mo.group(1) == "Hashref")
+                return out if out is not None else mo.group(0)
+
+            for bucket in ("problems", "solutions"):
+                entries = sec.get(bucket)
+                if not isinstance(entries, dict):
+                    continue
+                for entry in entries.values():
+                    if isinstance(entry, dict) and entry.get("content"):
+                        entry["content"] = _HASHREF_RE.sub(
+                            _resolve_bucket_ref, entry["content"])
+
             html = sec.get("html") or ""
             if not html:
                 continue

@@ -34,11 +34,11 @@ import as `{}` / `False`, exactly as before.
 deployment imports the artifact; who may *read* it is the access policy's
 decision, and parody-web's own answer is "the owner, nobody else".
 
-> **Known limitation.** Cross-references and citations inside solution and
-> problem content are not resolved at import. `number_artifact` rewrites only
-> `section["html"]`, so a `[@key]` or a `.hashref` span in a solution body
-> renders literally. A host that needs them resolved must run its own pass over
-> the content.
+> **Partial limitation.** Cross-references (`.hashref` spans) inside solution
+> and problem content *are* resolved, as of 0.35.0. Bibliography citations
+> (`[@key]`) still are not: resolving them also builds the per-section
+> References list, and doing that from extracted content would credit a section
+> with citations that are not in its prose.
 
 ## 2. Access control
 
