@@ -1717,3 +1717,26 @@ class SectionSolutionFieldsTests(TestCase):
         # so hash alone would key every section to "".
         self.section.hash = ""
         self.assertEqual(self.section.key, "hardware/specific-t1")
+
+
+class SolutionImportTests(TestCase):
+    def test_solutions_and_problems_land_on_section(self):
+        _import_solutions()
+        sec = Section.objects.get(book__slug="course-book", slug="problems")
+        self.assertTrue(sec.has_solutions)
+        self.assertEqual(sec.solution_for("exe:reflex")["content"],
+                         "<p>SOLUTIONBODY</p>")
+        self.assertEqual(sec.problem_for("exe:reflex")["title"],
+                         "Simple Reflex Agent")
+
+    def test_section_without_solutions_imports_empty(self):
+        _import_solutions()
+        sec = Section.objects.get(book__slug="course-book", slug="prose")
+        self.assertFalse(sec.has_solutions)
+        self.assertEqual(sec.solutions, {})
+        self.assertEqual(sec.problems, {})
+
+    def test_artifact_without_solutions_still_imports(self):
+        # every commercial/partial artifact today
+        _import()
+        self.assertFalse(Section.objects.get(slug="specific-t1").has_solutions)

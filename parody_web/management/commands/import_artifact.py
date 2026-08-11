@@ -168,6 +168,12 @@ class Command(BaseCommand):
                         or (sec.get("hash") in self.preview_hashes),
                         "number": sec.get("number", ""),
                         "anchors": sec.get("anchors", []),
+                        # Per-exercise solutions/problems ride through
+                        # untouched; who may read them is the access policy's
+                        # call, not the importer's.
+                        "has_solutions": bool(sec.get("has_solutions", False)),
+                        "solutions": sec.get("solutions") or {},
+                        "problems": sec.get("problems") or {},
                     })
                 seen_sec.add((chapter.slug, sec["slug"]))
 
