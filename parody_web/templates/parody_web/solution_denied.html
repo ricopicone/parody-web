@@ -1,0 +1,15 @@
+{% extends "parody_web/base.html" %}
+{% load parody_web %}
+{% block title %}Solution — {{ exercise_title|cut:"`" }} — {{ book.title }}{% endblock %}
+{% block head_extra %}<meta name="robots" content="noindex">{% endblock %}
+{% block body %}
+<nav class="crumbs has-chapter"><a href="{% index_url book %}">{{ book.title }}</a><span class="crumb-sep">›</span><a class="crumb-trunc" href="{% chapter_url book chapter.slug %}" title="{{ chapter.title|cut:'`' }}">{{ chapter.title|code_spans }}</a><span class="crumb-sep">›</span><a class="crumb-trunc" href="{% section_url book chapter.slug section.slug %}" title="{{ section.title|cut:'`' }}">{{ section.title|code_spans }}</a></nav>
+
+<h1>Solution: {{ exercise_title|code_spans }}</h1>
+
+<div class="signin-gate">
+  <p><strong>Not available yet.</strong> {{ message }}</p>
+  {% if available_after %}<p>Available after {{ available_after }}.</p>{% endif %}
+  <p class="note"><a href="{% section_url book chapter.slug section.slug %}">Back to {{ section.title|code_spans }}</a></p>
+</div>
+{% endblock %}

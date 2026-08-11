@@ -355,6 +355,34 @@ def section_detail(request, chapter_slug, section_slug):
     })
 
 
+def solution_detail(request, chapter_slug, section_slug, exercise_id):
+    """One exercise's worked solution, gated by the access policy.
+
+    parody-web's own answer is "the owner, and nobody else"; a course site
+    points PARODY_WEB_ACCESS_POLICY at a class that knows about enrollment and
+    due dates. A refusal still renders a page (403) so the host can say when
+    the solution opens — see DefaultPolicy.solution_denied_context.
+    """
+    book, editions = _resolve_book(request)
+    section = get_object_or_404(
+        Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
+    entry = section.solution_for(exercise_id)
+    if not entry:
+        raise Http404(f"no solution for {exercise_id!r}")
+
+    policy = get_policy()
+    base = {"book": book, "editions": editions, "section": section,
+            "chapter": section.chapter, "exercise_id": exercise_id,
+            "exercise_title": entry.get("title") or "Exercise",
+            "canonical_url": request.build_absolute_uri(request.path)}
+    if not policy.can_view_solution(request, section, exercise_id):
+        ctx = dict(base)
+        ctx.update(policy.solution_denied_context(request, section, exercise_id))
+        return render(request, "parody_web/solution_denied.html", ctx, status=403)
+    return render(request, "parody_web/solution.html",
+                  dict(base, solution_html=entry.get("content") or ""))
+
+
 def systems(request, version):
     """The specific-parts catalog for one system (ts or ds version) of the
     current edition — every component with its specs and device choices +

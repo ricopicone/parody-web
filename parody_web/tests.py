@@ -1871,3 +1871,51 @@ class PolicyDrivenViewTests(TestCase):
     def test_chapter_view_honours_policy(self):
         r = self.signed_in.get("/hardware/")
         self.assertEqual(r.status_code, 200)
+
+
+class SolutionViewTests(TestCase):
+    URL = "/agents/problems/solutions/exe:reflex/"
+
+    def setUp(self):
+        _import_solutions()
+        self.owner = get_user_model().objects.create_superuser(
+            "owner3", "owner3@example.com", "pw")
+        self.anon = Client()
+        self.signed_in = Client()
+        self.signed_in.force_login(self.owner)
+
+    def test_owner_reads_solution(self):
+        r = self.signed_in.get(self.URL)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "SOLUTIONBODY")
+        self.assertContains(r, "Simple Reflex Agent")
+
+    def test_anonymous_is_denied_with_context(self):
+        r = self.anon.get(self.URL)
+        self.assertEqual(r.status_code, 403)
+        self.assertNotContains(r, "SOLUTIONBODY", status_code=403)
+
+    def test_unknown_exercise_404s(self):
+        r = self.signed_in.get("/agents/problems/solutions/exe:nope/")
+        self.assertEqual(r.status_code, 404)
+
+    def test_section_without_solutions_404s(self):
+        r = self.signed_in.get("/agents/prose/solutions/exe:reflex/")
+        self.assertEqual(r.status_code, 404)
+
+    def test_solution_urls_stay_out_of_the_sitemap(self):
+        body = self.anon.get("/sitemap.xml").content.decode()
+        self.assertNotIn("/solutions/", body)
+
+    @override_settings(PARODY_WEB_ACCESS_POLICY="parody_web.tests.OpenPolicy")
+    def test_host_policy_can_open_a_solution(self):
+        r = self.anon.get(self.URL)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "SOLUTIONBODY")
+
+    @override_settings(PARODY_WEB_ACCESS_POLICY="parody_web.tests.DueDatePolicy")
+    def test_denial_page_shows_host_supplied_date(self):
+        r = self.signed_in.get(self.URL)
+        self.assertEqual(r.status_code, 403)
+        self.assertContains(r, "2026-09-01", status_code=403)
+        self.assertContains(r, "Solutions open after", status_code=403)

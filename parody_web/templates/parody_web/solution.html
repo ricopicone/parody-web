@@ -1,0 +1,16 @@
+{% extends "parody_web/base.html" %}
+{% load parody_web %}
+{% block title %}Solution — {{ exercise_title|cut:"`" }} — {{ book.title }}{% endblock %}
+{% block head_extra %}<meta name="robots" content="noindex">{% endblock %}
+{% block body %}
+<nav class="crumbs has-chapter"><a href="{% index_url book %}">{{ book.title }}</a><span class="crumb-sep">›</span><a class="crumb-trunc" href="{% chapter_url book chapter.slug %}" title="{{ chapter.title|cut:'`' }}">{{ chapter.title|code_spans }}</a><span class="crumb-sep">›</span><a class="crumb-trunc" href="{% section_url book chapter.slug section.slug %}" title="{{ section.title|cut:'`' }}">{{ section.title|code_spans }}</a></nav>
+
+<h1>Solution: {{ exercise_title|code_spans }}</h1>
+
+{{ solution_html|render_book }}
+
+<nav class="pager">
+  <a href="{% section_url book chapter.slug section.slug %}">← {{ section.title|code_spans }}</a>
+  <span></span>
+</nav>
+{% endblock %}

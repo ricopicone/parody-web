@@ -23,6 +23,11 @@ urlpatterns = [
     path("index/", views.book_index, name="book_index"),
     # /search/ — "search inside" (snippet results + buy CTA).
     path("search/", views.search, name="search"),
+    # One exercise's worked solution, gated by the access policy. <str:> not
+    # <slug:> because exercise ids carry a colon ("exe:z3-agent"). Listed before
+    # the bare section pattern so the reserved "solutions" segment reads first.
+    path("<slug:chapter_slug>/<slug:section_slug>/solutions/<str:exercise_id>/",
+         views.solution_detail, name="solution"),
     path("<slug:chapter_slug>/<slug:section_slug>/", views.section_detail,
          name="section"),
     # Chapter landing page (lead-in + contents). A code with a trailing slash
