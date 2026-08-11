@@ -55,6 +55,15 @@ your project), and the rendering template tags. Reads `settings.BOOK_SLUG`,
 A ready-to-copy thin project — settings, urls, Procfile, and AWS/SSM deploy glue
 — lives in [`example_site/`](example_site/); generate a new book site from it.
 
+## Serving a book from your own project
+
+A host project (a course site, say) can serve a parody book while keeping its
+own readers, gating, and per-user features. See
+**[Host integration](docs/host-integration.md)** for the four seams: imported
+per-exercise solutions/problems, the pluggable access policy
+(`PARODY_WEB_ACCESS_POLICY`), the per-user overlay include points, and the
+`Section.key` join key.
+
 ## Develop
 
 ```bash
