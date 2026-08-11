@@ -7,11 +7,14 @@ class ParodyWebConfig(AppConfig):
     verbose_name = "Parody Web"
 
     def ready(self):
-        # Fail on a malformed PARODY_WEB_THEME or PARODY_WEB_ACCESS_POLICY at
-        # startup rather than silently dropping it at first render.
+        # Fail on a malformed PARODY_WEB_THEME, PARODY_WEB_ACCESS_POLICY or
+        # PARODY_WEB_BOOK_RESOLVER at startup rather than silently dropping it
+        # at first render.
         from django.conf import settings
 
         from .access import validate_policy
+        from .books import validate_resolver
         from .theme import validate_theme
         validate_theme(getattr(settings, "PARODY_WEB_THEME", None))
         validate_policy(getattr(settings, "PARODY_WEB_ACCESS_POLICY", ""))
+        validate_resolver(getattr(settings, "PARODY_WEB_BOOK_RESOLVER", ""))

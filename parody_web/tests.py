@@ -2082,3 +2082,10 @@ class BookResolverTests(TestCase):
 
     def test_empty_resolver_path_is_fine(self):
         validate_resolver("")
+
+    def test_ready_rejects_a_bad_resolver_path(self):
+        from django.apps import apps as django_apps
+        config = django_apps.get_app_config("parody_web")
+        with override_settings(PARODY_WEB_BOOK_RESOLVER="nowhere.at.all"):
+            with self.assertRaises(ImproperlyConfigured):
+                config.ready()
