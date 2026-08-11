@@ -12,9 +12,11 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
+from django.http import Http404
 from django.test import Client, RequestFactory, TestCase, override_settings
 
 from parody_web.access import DefaultPolicy, get_policy, validate_policy
+from parody_web.books import resolve_slug, validate_resolver
 from parody_web.models import Book, Section
 from parody_web.numbering import number_artifact, _num_components, _consecutive
 from parody_web.theme import theme_css, validate_theme
@@ -1989,3 +1991,94 @@ class OverlayIncludeTests(TestCase):
         self.assertIn("HOSTTOOLBAR", html)
         self.assertIn('name="HOSTHEAD"', html)
         self.assertIn("HOSTFOOT", html)
+
+
+# A dotted path has to name something importable, so the resolvers the tests
+# point PARODY_WEB_BOOK_RESOLVER at are module-level functions, not closures.
+
+def resolve_to_book_a(request):
+    return "book-a"
+
+
+def resolve_to_nothing(request):
+    return None
+
+
+def resolve_by_host(request):
+    return request.get_host().split(".")[0]
+
+
+NOT_CALLABLE = "a string, not a callable"
+
+
+class BookResolverTests(TestCase):
+    """Which book a request is for: resolver, then BOOK_SLUG, then the only
+    imported book."""
+
+    def test_single_book_fallback_unchanged(self):
+        _import("book-a")
+        self.assertEqual(resolve_slug(None), "book-a")
+
+    def test_book_slug_setting_wins_over_fallback(self):
+        _import("book-a")
+        _import("book-b")
+        with override_settings(BOOK_SLUG="book-b"):
+            self.assertEqual(resolve_slug(None), "book-b")
+
+    def test_resolver_wins_over_book_slug(self):
+        _import("book-a")
+        _import("book-b")
+        with override_settings(
+                BOOK_SLUG="book-b",
+                PARODY_WEB_BOOK_RESOLVER="parody_web.tests.resolve_to_book_a"):
+            self.assertEqual(resolve_slug(None), "book-a")
+
+    def test_resolver_returning_none_falls_through_to_book_slug(self):
+        _import("book-a")
+        _import("book-b")
+        with override_settings(
+                BOOK_SLUG="book-b",
+                PARODY_WEB_BOOK_RESOLVER="parody_web.tests.resolve_to_nothing"):
+            self.assertEqual(resolve_slug(None), "book-b")
+
+    def test_resolver_reads_the_request(self):
+        _import("book-a")
+        _import("book-b")
+        request = RequestFactory().get("/", HTTP_HOST="book-b.example.com")
+        with override_settings(
+                PARODY_WEB_BOOK_RESOLVER="parody_web.tests.resolve_by_host"):
+            self.assertEqual(resolve_slug(request), "book-b")
+
+    def test_several_books_and_nothing_configured_raises(self):
+        _import("book-a")
+        _import("book-b")
+        with self.assertRaises(ImproperlyConfigured) as cm:
+            resolve_slug(None)
+        message = str(cm.exception)
+        self.assertIn("book-a", message)
+        self.assertIn("book-b", message)
+
+    def test_no_book_imported_is_404(self):
+        with self.assertRaises(Http404):
+            resolve_slug(None)
+
+    def test_editions_of_one_book_are_not_ambiguous(self):
+        _import("book-a")
+        Book.objects.create(slug="book-a", title="Book A", edition_id="2",
+                            edition_order=2)
+        self.assertEqual(resolve_slug(None), "book-a")
+
+    def test_bad_resolver_path_rejected(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_resolver("parody_web.tests.no_such_resolver")
+
+    def test_non_callable_resolver_rejected(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_resolver("parody_web.tests.NOT_CALLABLE")
+
+    def test_non_string_resolver_rejected(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_resolver(resolve_to_book_a)
+
+    def test_empty_resolver_path_is_fine(self):
+        validate_resolver("")
