@@ -2089,3 +2089,52 @@ class BookResolverTests(TestCase):
         with override_settings(PARODY_WEB_BOOK_RESOLVER="nowhere.at.all"):
             with self.assertRaises(ImproperlyConfigured):
                 config.ready()
+
+
+@override_settings(PARODY_WEB_BOOK_RESOLVER="parody_web.tests.resolve_by_host")
+class MultiBookTests(TestCase):
+    """Two books on one deployment, chosen by the request's host. Every page
+    that reaches for a book has to follow the request, not the process."""
+
+    def setUp(self):
+        _import("book-a")
+        _import("book-b")
+        Book.objects.filter(slug="book-a").update(title="Book A")
+        Book.objects.filter(slug="book-b").update(title="Book B")
+
+    def test_index_serves_the_requested_book(self):
+        a = self.client.get("/", HTTP_HOST="book-a.example.com")
+        b = self.client.get("/", HTTP_HOST="book-b.example.com")
+        self.assertContains(a, "Book A")
+        self.assertNotContains(a, "Book B")
+        self.assertContains(b, "Book B")
+        self.assertNotContains(b, "Book A")
+
+    def test_section_belongs_to_the_requested_book(self):
+        r = self.client.get("/hardware/specific-t1/",
+                            HTTP_HOST="book-b.example.com")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context["book"].slug, "book-b")
+
+    def test_sitemap_covers_only_the_requested_book(self):
+        r = self.client.get("/sitemap.xml", HTTP_HOST="book-a.example.com")
+        self.assertEqual(r.status_code, 200)
+        body = r.content.decode()
+        self.assertIn("book-a.example.com/hardware/specific-t1/", body)
+        self.assertNotIn("book-b", body)
+
+    def test_short_code_resolves_within_the_requested_book(self):
+        # 'ef' is the specific-t1 section hash in both books; the redirect must
+        # come from the book the host asked for.
+        r = self.client.get("/ef", HTTP_HOST="book-b.example.com")
+        self.assertEqual(r.status_code, 302)
+        target = r["Location"]
+        self.assertIn("/hardware/specific-t1/", target)
+        page = self.client.get(target, HTTP_HOST="book-b.example.com")
+        self.assertEqual(page.context["book"].slug, "book-b")
+
+    def test_unmapped_host_has_no_book_to_serve(self):
+        # resolve_by_host returns "unknown"; no such book is imported, so there
+        # is nothing to serve.
+        r = self.client.get("/", HTTP_HOST="unknown.example.com")
+        self.assertEqual(r.status_code, 404)

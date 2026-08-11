@@ -9,7 +9,6 @@ permitted subset publicly.
 import re
 from html import unescape as _unescape
 
-from django.conf import settings
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -17,6 +16,7 @@ from django.utils.html import escape, strip_tags
 from django.utils.safestring import mark_safe
 
 from .access import get_policy
+from .books import resolve_slug
 from .models import Book, Chapter, Section
 
 # Django-template tags embedded in stored html ({% media %}, {{ x }}); strip
@@ -31,16 +31,10 @@ def _excerpt(html, n=155):
     return text[:n].rsplit(" ", 1)[0] + "…" if len(text) > n else text
 
 
-def _book_slug():
-    """The slug of the book this deployment serves (BOOK_SLUG, else the only
-    imported book's slug)."""
-    s = getattr(settings, "BOOK_SLUG", "")
-    if s:
-        return s
-    book = Book.objects.first()
-    if book is None:
-        raise Http404("no book imported")
-    return book.slug
+def _book_slug(request=None):
+    """The slug of the book this *request* is for — the host's resolver, else
+    BOOK_SLUG, else the only imported book (see books.resolve_slug)."""
+    return resolve_slug(request)
 
 
 def _editions(slug):
@@ -60,7 +54,7 @@ def _resolve_book(request):
     Draft editions are owner-only: hidden from the public switcher, skipped for
     the public default, and 404 for anonymous visitors. With no ?ed=, serve the
     default edition (flagged, else the latest by order) among the visible ones."""
-    everything = _editions(_book_slug())
+    everything = _editions(_book_slug(request))
     if not everything:
         raise Http404("no book imported")
     owner = _is_owner(request)
@@ -139,7 +133,7 @@ def _resolve_code(request, code):
     if not code:
         return None
     owner = _is_owner(request)
-    editions = [b for b in _editions(_book_slug()) if owner or not b.draft]
+    editions = [b for b in _editions(_book_slug(request)) if owner or not b.draft]
     # newest edition first ("latest that still has it")
     for book in sorted(editions, key=lambda b: b.edition_order, reverse=True):
         ed_q = _ed_query(book)
@@ -425,7 +419,7 @@ def sitemap_xml(request):
     editions); no contrib.sitemaps/sites dep. The default edition sits at the
     bare URLs; other editions carry a ?ed=<id> query."""
     # public sitemap: skip draft (unreleased) editions
-    editions = [b for b in _editions(_book_slug()) if not b.draft]
+    editions = [b for b in _editions(_book_slug(request)) if not b.draft]
     urls = [request.build_absolute_uri("/")]
     for book in editions:
         q = _ed_query(book)
