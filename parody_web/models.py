@@ -78,7 +78,9 @@ class Section(models.Model):
     slug = models.SlugField(max_length=120)
     title = models.CharField(max_length=300)
     order = models.PositiveIntegerField(default=0)
-    hash = models.CharField(max_length=100, blank=True, default="")
+    # indexed: a host project looks sections up by this to attach its own
+    # per-section records (see the `key` property and docs/host-integration.md)
+    hash = models.CharField(max_length=100, blank=True, default="", db_index=True)
     html = models.TextField(blank=True)
     # plain-text rendering of `html`, for the "search inside" feature (icontains)
     plain = models.TextField(blank=True, default="")
@@ -90,9 +92,39 @@ class Section(models.Model):
     # display number/label, e.g. "3.2", "Lab exercise 4", or "" (Problems/lead-in)
     number = models.CharField(max_length=32, blank=True, default="")
     anchors = models.JSONField(default=list, blank=True)
+    # Per-exercise solutions/problems from the artifact, each
+    # {exercise_id: {"title", "content"}}. Commercial/partial artifacts carry
+    # none and import as {}; course books carry both. Storing them is not
+    # exposing them — the access policy decides who may read a solution (see
+    # parody_web/access.py).
+    has_solutions = models.BooleanField(default=False)
+    solutions = models.JSONField(default=dict, blank=True)
+    problems = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["order"]
 
     def __str__(self):
         return f"{self.book.slug} – {self.title}"
+
+    def solution_for(self, exercise_id):
+        """The stored solution entry for one exercise, or None."""
+        return (self.solutions or {}).get(exercise_id)
+
+    def problem_for(self, exercise_id):
+        """The stored problem statement for one exercise, or None."""
+        return (self.problems or {}).get(exercise_id)
+
+    @property
+    def key(self):
+        """The stable identity a host keys its own per-section records to.
+
+        The authored short hash when there is one — it survives renames and
+        reorganization, and parody build-checks it for uniqueness within a book.
+        But parody emits a hash only when the source authors one in front
+        matter, and course books generally do not (0 of 43 sections in the
+        engineering-artificial-intelligence golden artifact), so fall back to
+        the always-present chapter/section slug pair rather than keying every
+        section to "".
+        """
+        return self.hash or f"{self.chapter.slug}/{self.slug}"

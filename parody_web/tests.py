@@ -1651,3 +1651,69 @@ class ClozeAssetsTests(TestCase):
         css = self.STATIC.joinpath("content.css").read_text(encoding="utf-8")
         lines = css.split(".cloze-lines {")[1].split("}")[0]
         self.assertIn("var(--cloze-lines", lines)
+
+
+# ---------------------------------------------------------------------------
+# Host-integration seams (task #549): imported solutions/problems, a pluggable
+# access policy, overlay include points, and a stable per-section join key.
+# ---------------------------------------------------------------------------
+
+SOLUTIONS_ARTIFACT = {
+    "schema_version": 2,
+    "slug": "course-book",
+    "title": "Course Book",
+    "chapters": [{
+        "title": "Agents", "slug": "agents",
+        "sections": [
+            {"title": "Problems", "slug": "problems",
+             "html": '<div id="exe:reflex" class="exercise">Do the thing.</div>',
+             "has_solutions": True,
+             "solutions": {"exe:reflex": {"title": "Simple Reflex Agent",
+                                          "content": "<p>SOLUTIONBODY</p>"}},
+             "problems": {"exe:reflex": {"title": "Simple Reflex Agent",
+                                         "content": "<p>PROBLEMBODY</p>"}}},
+            {"title": "Prose", "slug": "prose", "html": "<p>Words.</p>"},
+        ],
+    }],
+}
+
+
+def _import_solutions(slug="course-book"):
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d, "a.json")
+        p.write_text(json.dumps(SOLUTIONS_ARTIFACT))
+        call_command("import_artifact", str(p), "--slug", slug)
+
+
+class SectionSolutionFieldsTests(TestCase):
+    """Section carries the artifact's per-exercise solutions/problems and
+    offers one stable identity for host-side records to key on."""
+
+    def setUp(self):
+        _import()
+        self.section = Section.objects.get(slug="specific-t1")
+
+    def test_solutions_default_empty(self):
+        self.assertFalse(self.section.has_solutions)
+        self.assertEqual(self.section.solutions, {})
+        self.assertEqual(self.section.problems, {})
+
+    def test_solution_for_returns_entry_or_none(self):
+        self.section.solutions = {"exe:a": {"title": "A", "content": "<p>x</p>"}}
+        self.assertEqual(self.section.solution_for("exe:a")["title"], "A")
+        self.assertIsNone(self.section.solution_for("exe:missing"))
+
+    def test_problem_for_returns_entry_or_none(self):
+        self.section.problems = {"exe:a": {"title": "A", "content": "<p>p</p>"}}
+        self.assertEqual(self.section.problem_for("exe:a")["content"], "<p>p</p>")
+        self.assertIsNone(self.section.problem_for("exe:missing"))
+
+    def test_key_prefers_authored_hash(self):
+        # ARTIFACT authors hash "ef" for this section
+        self.assertEqual(self.section.key, "ef")
+
+    def test_key_falls_back_to_slug_pair(self):
+        # Course books (e.g. the EAI golden artifact) author no hashes at all,
+        # so hash alone would key every section to "".
+        self.section.hash = ""
+        self.assertEqual(self.section.key, "hardware/specific-t1")
