@@ -268,15 +268,21 @@ pre.sourceCode a { text-decoration: none; color: inherit; }
 /* LaTeX-baked images carry their own white/transparent background, so in dark
    mode they sit on a light panel rather than being inverted — an invert filter
    would wreck the colour figures, photos and screenshots this book contains. */
-figure img, img.cover, figure[id^="tbl:"] img,
+/* img.figure-img is listed alongside `figure img` because a caption-less
+   image never becomes a <figure> — pandoc leaves it bare in a <p> — so it
+   would otherwise miss the panel entirely and be unreadable in dark mode.
+   Exercise diagrams are usually caption-less. */
+figure img, img.figure-img, img.cover, figure[id^="tbl:"] img,
 figure[id^="al:"] img, figure[id^="alg:"] img {
     background: var(--paper-panel); border-radius: 3px; }
 :root[data-theme="dark"] figure img,
+:root[data-theme="dark"] img.figure-img,
 :root[data-theme="dark"] figure[id^="tbl:"] img,
 :root[data-theme="dark"] figure[id^="al:"] img,
 :root[data-theme="dark"] figure[id^="alg:"] img { padding: var(--s2); }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) figure img,
+  :root:not([data-theme="light"]) img.figure-img,
   :root:not([data-theme="light"]) figure[id^="tbl:"] img { padding: var(--s2); }
 }
 
