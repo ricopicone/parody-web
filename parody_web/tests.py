@@ -1831,3 +1831,43 @@ class AccessPolicyTests(TestCase):
 
     def test_validate_policy_accepts_default(self):
         validate_policy("parody_web.access.DefaultPolicy")  # no raise
+
+
+class ClosedSectionPolicy(DefaultPolicy):
+    """Test double: the licensed section is teased even from the owner, proving
+    the view asks the policy rather than checking section.preview itself."""
+
+    def section_is_preview(self, request, section):
+        return section.slug == "licensed"
+
+
+@override_settings(PARODY_WEB_ACCESS_POLICY="parody_web.tests.ClosedSectionPolicy")
+class PolicyDrivenViewTests(TestCase):
+    def setUp(self):
+        _import()
+        self.owner = get_user_model().objects.create_superuser(
+            "owner2", "owner2@example.com", "pw")
+        self.signed_in = Client()
+        self.signed_in.force_login(self.owner)
+
+    def test_section_view_honours_policy_over_preview_flag(self):
+        # The owner would get the full rendering under the default policy; this
+        # policy says preview, so the view must take the teaser path instead.
+        # (The teaser still opens with the prose — it is a truncated excerpt,
+        # not a redaction — so the markers, not the text, are the assertion.)
+        r = self.signed_in.get("/hardware/licensed/")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'class="preview"')
+        self.assertContains(r, "This is a preview")
+        self.assertContains(r, "signin-gate")
+
+    def test_full_path_has_no_preview_markers(self):
+        # The complement: a section the policy calls full renders without the
+        # teaser wrapper, so the assertion above really distinguishes the paths.
+        r = self.signed_in.get("/hardware/specific-t1/")
+        self.assertNotContains(r, 'class="preview"')
+        self.assertNotContains(r, "signin-gate")
+
+    def test_chapter_view_honours_policy(self):
+        r = self.signed_in.get("/hardware/")
+        self.assertEqual(r.status_code, 200)

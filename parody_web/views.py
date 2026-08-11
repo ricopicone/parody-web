@@ -16,6 +16,7 @@ from django.urls import reverse
 from django.utils.html import escape, strip_tags
 from django.utils.safestring import mark_safe
 
+from .access import get_policy
 from .models import Book, Chapter, Section
 
 # Django-template tags embedded in stored html ({% media %}, {{ x }}); strip
@@ -48,7 +49,9 @@ def _editions(slug):
 
 
 def _is_owner(request):
-    return bool(request and request.user.is_authenticated)
+    """Whether this request is the book's owner — the access policy's call
+    (PARODY_WEB_ACCESS_POLICY), so a host project can redefine it."""
+    return bool(get_policy().is_owner(request))
 
 
 def _resolve_book(request):
@@ -158,7 +161,7 @@ def _resolve_code(request, code):
 
 def index(request):
     book, editions = _resolve_book(request)
-    public = not request.user.is_authenticated
+    public = not _is_owner(request)
     chapters = []
     for ch in book.chapters.all():
         sections = list(ch.sections.all())
@@ -279,7 +282,7 @@ def search(request):
         results.sort(key=lambda r: -r["count"])
     return render(request, "parody_web/search.html", {
         "book": book, "editions": editions, "q": q, "results": results,
-        "ed_query": edq, "public": not request.user.is_authenticated,
+        "ed_query": edq, "public": not _is_owner(request),
         "meta_description": f"Search inside {book.title}.",
         "canonical_url": request.build_absolute_uri(request.path)})
 
@@ -297,7 +300,8 @@ def chapter_detail(request, chapter_slug):
         if target:
             return redirect(target)
         raise Http404(f"no chapter {chapter_slug!r}")
-    public = not request.user.is_authenticated
+    policy = get_policy()
+    public = not policy.is_owner(request)
 
     sections = list(chapter.sections.all())
     # The lead-in section (slug "lead-in") is intro prose shown above the
@@ -307,7 +311,7 @@ def chapter_detail(request, chapter_slug):
     # "Continue" enters at the first content section.
     first = contents[0] if contents else None
     # A preview lead-in teases the public exactly like a preview section.
-    preview = bool(leadin and leadin.preview and public)
+    preview = bool(leadin and policy.section_is_preview(request, leadin))
     return render(request, "parody_web/chapter.html", {
         "book": book, "editions": editions,
         "chapter": chapter, "leadin": leadin, "contents": contents,
@@ -324,9 +328,12 @@ def section_detail(request, chapter_slug, section_slug):
     book, editions = _resolve_book(request)
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
-    # Sections flagged `preview` (in-print but not fully online) show a preview
-    # + sign-in to the public; everything else is full. The owner sees all full.
-    preview = section.preview and not request.user.is_authenticated
+    policy = get_policy()
+    if not policy.can_view_section(request, section):
+        raise Http404("section not available")
+    # Sections the policy calls preview (in-print but not fully online) show a
+    # teaser + sign-in; everything else is full. The owner sees all full.
+    preview = policy.section_is_preview(request, section)
 
     flat = _all_sections_ordered(book)
     idx = next((i for i, s in enumerate(flat) if s.pk == section.pk), None)
