@@ -176,11 +176,14 @@ def render_book(html):
         )
 
 
-@register.simple_tag
-def theme_css():
-    """Per-deployment token overrides (settings.PARODY_WEB_THEME) as CSS.
+@register.simple_tag(takes_context=True)
+def theme_css(context):
+    """Token overrides (settings.PARODY_WEB_THEME) as CSS, for the book on the
+    page — a deployment serving several books tints each one separately.
 
     A tag rather than a context processor: parody-web is an installable app and
     must not require every consuming project to edit its TEMPLATES setting."""
     from ..theme import theme_css as _css
-    return mark_safe(_css(getattr(settings, "PARODY_WEB_THEME", None)))
+    book = context.get("book")
+    return mark_safe(_css(getattr(settings, "PARODY_WEB_THEME", None),
+                          getattr(book, "slug", None)))

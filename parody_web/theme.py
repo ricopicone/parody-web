@@ -11,6 +11,15 @@ is rendered into a ``:root`` block. Only whitelisted token names are accepted,
 and only colour- or font-stack-shaped values: a settings dict must never become
 a route for arbitrary CSS. Validation runs at startup (see apps.py) so a
 malformed theme fails loudly on boot rather than silently at first render.
+
+A deployment serving several books (see books.py) keys the same dict by book
+slug instead, so the shelf isn't all one colour:
+
+    PARODY_WEB_THEME = {"electronics":  {"light": {"accent": "#b3261e"}},
+                        "mechatronics": {"light": {"accent": "#1e5fb3"}}}
+
+``light`` and ``dark`` are the only legal mode names, so a top-level key that is
+neither means the dict is keyed by slug. The two forms cannot be mixed.
 """
 import re
 
@@ -43,18 +52,22 @@ def _check_value(token, value):
             f"(expected {'a font stack' if token.startswith('font-') else 'a hex colour'})")
 
 
-def validate_theme(theme):
-    """Raise ImproperlyConfigured unless `theme` is a well-formed override dict."""
-    if not theme:
-        return
-    if not isinstance(theme, dict):
-        raise ImproperlyConfigured("PARODY_WEB_THEME must be a dict")
+def is_keyed(theme):
+    """Whether `theme` is keyed by book slug rather than by light/dark mode."""
+    return (bool(theme) and isinstance(theme, dict)
+            and not (set(theme) & set(_MODES)))
+
+
+def _validate_modes(theme, where):
+    """Validate one book's worth of overrides: light/dark → tokens."""
     for mode, tokens in theme.items():
         if mode not in _MODES:
             raise ImproperlyConfigured(
-                f"PARODY_WEB_THEME: unknown mode {mode!r} (expected light/dark)")
+                f"PARODY_WEB_THEME{where}: unknown mode {mode!r} "
+                f"(expected light/dark)")
         if not isinstance(tokens, dict):
-            raise ImproperlyConfigured(f"PARODY_WEB_THEME[{mode!r}] must be a dict")
+            raise ImproperlyConfigured(
+                f"PARODY_WEB_THEME{where}[{mode!r}] must be a dict")
         for token, value in tokens.items():
             if token not in ALLOWED_THEME_TOKENS:
                 raise ImproperlyConfigured(
@@ -63,9 +76,44 @@ def validate_theme(theme):
             _check_value(token, value)
 
 
-def theme_css(theme):
+def validate_theme(theme):
+    """Raise ImproperlyConfigured unless `theme` is a well-formed override dict,
+    in either the single-book or the slug-keyed form."""
+    if not theme:
+        return
+    if not isinstance(theme, dict):
+        raise ImproperlyConfigured("PARODY_WEB_THEME must be a dict")
+    if not is_keyed(theme):
+        # A mode key is present, so this is the single-book form — and then
+        # every key has to be a mode: a stray slug alongside them is the mixed
+        # form, which has no sensible reading.
+        _validate_modes(theme, "")
+        return
+    for slug, book_theme in theme.items():
+        if not isinstance(book_theme, dict):
+            raise ImproperlyConfigured(
+                f"PARODY_WEB_THEME[{slug!r}] must be a dict")
+        if is_keyed(book_theme):
+            raise ImproperlyConfigured(
+                f"PARODY_WEB_THEME[{slug!r}] has no light/dark modes — the "
+                f"per-book and single-book forms cannot be mixed")
+        _validate_modes(book_theme, f"[{slug!r}]")
+
+
+def theme_for(theme, slug):
+    """One book's overrides: `theme` itself in the single-book form, else the
+    entry for `slug` (empty when the setting names no theme for it)."""
+    if not theme:
+        return {}
+    if not is_keyed(theme):
+        return theme
+    return theme.get(slug) or {}
+
+
+def theme_css(theme, slug=None):
     """CSS overriding the default tokens, or "" when nothing is configured."""
     validate_theme(theme)
+    theme = theme_for(theme, slug)
     if not theme:
         return ""
     out = []

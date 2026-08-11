@@ -2138,3 +2138,52 @@ class MultiBookTests(TestCase):
         # is nothing to serve.
         r = self.client.get("/", HTTP_HOST="unknown.example.com")
         self.assertEqual(r.status_code, 404)
+
+
+class PerBookThemeTests(TestCase):
+    """One deployment, several books, one tint each. Today's plain form — a
+    dict of light/dark — keeps working untouched."""
+
+    def setUp(self):
+        _import("book-a")
+        _import("book-b")
+
+    def test_plain_form_still_applies(self):
+        css = theme_css({"light": {"accent": "#b3261e"}}, "book-a")
+        self.assertIn(":root{--accent:#b3261e;}", css)
+
+    def test_keyed_form_selects_by_slug(self):
+        theme = {"book-a": {"light": {"accent": "#b3261e"}},
+                 "book-b": {"light": {"accent": "#1e5fb3"}}}
+        self.assertIn("--accent:#b3261e", theme_css(theme, "book-a"))
+        self.assertIn("--accent:#1e5fb3", theme_css(theme, "book-b"))
+
+    def test_keyed_form_with_no_entry_emits_nothing(self):
+        theme = {"book-a": {"light": {"accent": "#b3261e"}}}
+        self.assertEqual(theme_css(theme, "book-b"), "")
+
+    def test_keyed_form_with_no_slug_emits_nothing(self):
+        theme = {"book-a": {"light": {"accent": "#b3261e"}}}
+        self.assertEqual(theme_css(theme, None), "")
+
+    def test_keyed_form_validates_each_book(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_theme({"book-a": {"light": {"accent": "#b3261e"}},
+                            "book-b": {"light": {"background-image": "url(x)"}}})
+
+    def test_mixed_form_rejected(self):
+        with self.assertRaises(ImproperlyConfigured):
+            validate_theme({"light": {"accent": "#b3261e"},
+                            "book-b": {"light": {"accent": "#1e5fb3"}}})
+
+    @override_settings(
+        PARODY_WEB_BOOK_RESOLVER="parody_web.tests.resolve_by_host",
+        PARODY_WEB_THEME={"book-a": {"light": {"accent": "#b3261e"}},
+                          "book-b": {"light": {"accent": "#1e5fb3"}}})
+    def test_each_book_gets_its_own_tint_on_the_page(self):
+        a = self.client.get("/", HTTP_HOST="book-a.example.com").content.decode()
+        b = self.client.get("/", HTTP_HOST="book-b.example.com").content.decode()
+        self.assertIn("--accent:#b3261e", a)
+        self.assertNotIn("--accent:#1e5fb3", a)
+        self.assertIn("--accent:#1e5fb3", b)
+        self.assertNotIn("--accent:#b3261e", b)
