@@ -278,6 +278,37 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<span class="fignum">Figure 1.2:</span>', html)
         self.assertIn('<span class="subfignum">(a)</span> First.', html)
 
+    def test_synthesized_section_anchor_is_not_a_subsection(self):
+        # The artifact writer synthesizes the section's own cross-reference
+        # anchor when no heading carries the frontmatter id, marking it
+        # is_section but declaring level 2 (the ## it stands in for). Reading
+        # the level alone made it the *first subsection*: it took C.m.1 and
+        # pushed every real ## down one, so no section had a .1 (#573).
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [
+                # a preceding numbered section, so the one under test is 1.2 and
+                # a stray trailing ".1" cannot be mistaken for a correct "1.1"
+                {"title": "One", "slug": "one", "hash": "s1", "anchors": [
+                    {"id": "one", "type": "heading", "level": 1, "title": "One",
+                     "hash": "s1"},
+                ], "html": ""},
+                {"title": "Two", "slug": "two", "hash": "s2", "anchors": [
+                    {"id": "two", "type": "heading", "level": 2, "title": "Two",
+                     "is_section": True, "hash": "s2"},
+                    {"id": "alpha", "type": "heading", "level": 2, "title": "Alpha",
+                     "hash": "a1"},
+                    {"id": "beta", "type": "heading", "level": 2, "title": "Beta",
+                     "hash": "b1"},
+                ], "html": ""},
+            ]}]}
+        targets = number_artifact(data)
+        # the section is the section — two parts, no trailing .1
+        self.assertEqual(targets["s2"]["label"], "Section 1.2")
+        self.assertEqual(targets["s2"]["url"], "/c/two/")
+        # and it consumes no subsection number: the first ## is .1
+        self.assertEqual(targets["a1"]["label"], "Section 1.2.1")
+        self.assertEqual(targets["b1"]["label"], "Section 1.2.2")
+
     def test_example_gets_numbered_label_injected(self):
         # ::: {.example} → numbered per chapter; pass 2 injects an "Example N.n"
         # label at the top of the box (CSS draws the corner-bracket frame). The

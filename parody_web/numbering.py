@@ -779,6 +779,15 @@ def number_artifact(data, references=None, edition_query=""):
                 if a.get("type") != "heading":
                     continue
                 lvl = a.get("level", 1)
+                # The writer synthesizes the section's own cross-reference anchor
+                # when no heading already carries the frontmatter id, and marks it
+                # is_section — "a section-level anchor, not an internal heading".
+                # It declares level 2 to match the ## it stands in for, so reading
+                # the level alone counted it as the first subsection: it took
+                # C.m.1 and pushed every real ## down one (#573). Honour the flag,
+                # and the section is the section.
+                if a.get("is_section"):
+                    lvl = 1
                 h = a.get("hash")
                 anchor_id = a.get("id", "")
 
