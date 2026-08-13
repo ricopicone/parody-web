@@ -1040,6 +1040,38 @@ class HeadingNumberTests(TestCase):
         self.assertEqual(targets["ws"]["label"], "Section 1.1.2")
         self.assertIn("section 1.1.2</a>", html)
 
+    def test_a_section_written_as_h2_is_the_section_not_its_first_subsection(self):
+        # rtc's "The Eclipse workspace and hello-world" is authored as a ##
+        # carrying the section's own id, so its title heading reaches the html
+        # as an <h2> — one whose short hash IS the section's. Read by level
+        # alone it looked like the first subsection and took C.m.1, while the
+        # template printed the same title again above it, bare.
+        html, targets = self._one_section(
+            '<h2 data-h="s1" id="workspace">Eclipse workspace</h2>'
+            '<h2 data-h="q4" id="first">First real subsection</h2>'
+            '<h3 data-h="q5" id="deeper">Deeper</h3>',
+            [{"id": "first", "type": "heading", "level": 2, "hash": "q4"}])
+        self.assertIn('<h2 data-h="s1" id="workspace">'
+                      '<span class="secnum">1.1</span> Eclipse workspace</h2>', html)
+        # its siblings are measured from it, so the next h2 is the FIRST
+        # subsection — not the second
+        self.assertIn('<span class="secnum">1.1.1</span> First real subsection', html)
+        self.assertIn('<span class="secnum">1.1.1.1</span> Deeper', html)
+        self.assertEqual(targets["q4"]["label"], "Section 1.1.1")
+
+    def test_an_h2_section_title_suppresses_the_template_title(self):
+        # …and because the title is in the html, the template must not print it
+        # a second time.
+        book = Book.objects.create(slug="b", title="B")
+        ch = book.chapters.create(slug="c", title="C", order=1, number="1")
+        ch.sections.create(book=book, slug="s", title="Eclipse workspace",
+                           order=1, number="1.3", hash="xa",
+                           html='<h2 data-h="xa" id="workspace">'
+                                '<span class="secnum">1.3</span> Eclipse workspace</h2>')
+        body = Client().get("/c/s/").content.decode()
+        self.assertEqual(body.count("Eclipse workspace</h"), 1)
+        self.assertNotIn("<h1>Eclipse workspace</h1>", body)
+
     def test_same_section_slug_in_two_chapters_keeps_its_own_numbers(self):
         # Books repeat section slugs ("summary", "problems") chapter to chapter,
         # and a pandoc auto-id is only unique within its own file — so the

@@ -18,6 +18,7 @@ from django.utils.safestring import mark_safe
 from .access import get_policy
 from .books import resolve_slug
 from .models import Book, Chapter, Section
+from .numbering import section_own_heading
 
 # Django-template tags embedded in stored html ({% media %}, {{ x }}); strip
 # them from meta-description snippets so raw tags never leak into <meta>.
@@ -340,8 +341,12 @@ def section_detail(request, chapter_slug, section_slug):
         "page_anchors": [] if preview else _page_anchors(section.html),
         "prev": prev_s, "next": next_s,
         # The artifact html usually carries its own <h1>; only render the
-        # template title when it doesn't (e.g. chapter "lead-in" intros).
-        "title_in_html": "<h1" in (section.html or ""),
+        # template title when it doesn't (e.g. chapter "lead-in" intros). A
+        # section written as a ## carrying its own id has its title heading at
+        # h2 instead, and looking only for "<h1" printed the title twice — once
+        # bare from the template, once numbered from the html (#576).
+        "title_in_html": bool(
+            section_own_heading(section.html or "", section.hash)),
         "preview": preview,
         "next_path": request.get_full_path(),
         "meta_description": _excerpt(section.html),

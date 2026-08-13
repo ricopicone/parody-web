@@ -795,11 +795,35 @@ def _find_list_item_anchors(html):
     return p.found
 
 
-def _heading_sequence(html):
+def section_own_heading(html, sec_hash):
+    """The section's own title heading in `html`, as a match, or None.
+
+    Usually that is an <h1> the markdown opened with. But a section may instead
+    be written as a ``##`` carrying the section's own id — rtc's "The Eclipse
+    workspace and hello-world" is one — and then the heading is an <h2> whose
+    short hash IS the section's. The hash is what identifies it: a subsection
+    has its own, so an equal hash can only be the section itself.
+    """
+    for mo in _HEADING_RE.finditer(html or ""):
+        attrs = mo.group("attrs")
+        if not _ATTR_ID_RE.search(attrs) and not _ATTR_HASH_RE.search(attrs):
+            continue
+        if mo.group("level") == "1":
+            return mo
+        h = _ATTR_HASH_RE.search(attrs)
+        if sec_hash and h and h.group(1) == sec_hash:
+            return mo
+    return None
+
+
+def _heading_sequence(html, sec_hash=""):
     """(depth, hash, id) per content heading in `html`, in document order.
 
-    Depth 0 is the section's own title — an <h1> the markdown opened with;
-    depth 1 is a subsection, depth 2 a subsubsection.
+    Depth 0 is the section's own title (see `section_own_heading`); depth 1 is
+    a subsection, depth 2 a subsubsection. Depth is the tag level less one,
+    except that the section's own heading is depth 0 whatever level it was
+    written at — so a section authored as a ## takes C.m, and the ## and ###
+    under it still read as C.m.k and C.m.k.j.
 
     A *content* heading is one the reader can address: it carries an id, a
     data-h, or both. That is what separates it from the class-only <h3>
@@ -810,6 +834,7 @@ def _heading_sequence(html):
     alone left such headings unnumbered *and* mis-numbered their siblings,
     because they never advanced the counters (#576).
     """
+    own = section_own_heading(html, sec_hash)
     seq = []
     for mo in _HEADING_RE.finditer(html or ""):
         attrs = mo.group("attrs")
@@ -817,8 +842,9 @@ def _heading_sequence(html):
         h = _ATTR_HASH_RE.search(attrs)
         if not hid and not h:
             continue
-        seq.append((int(mo.group("level")) - 1,
-                    h.group(1) if h else None,
+        depth = 0 if own and mo.start() == own.start() \
+            else max(1, int(mo.group("level")) - 1)
+        seq.append((depth, h.group(1) if h else None,
                     hid.group(1) if hid else None))
     return seq
 
@@ -928,7 +954,7 @@ def number_artifact(data, references=None, edition_query=""):
                 sec["number"] = ""
 
             # Number every heading the reader actually sees, off the html.
-            hseq = _heading_sequence(sec.get("html") or "")
+            hseq = _heading_sequence(sec.get("html") or "", sec.get("hash") or "")
             if not hseq:
                 # Nothing to read — a stub section, or a consumer that stores
                 # the anchors without the html. The anchor list is in document
