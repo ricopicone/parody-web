@@ -2717,3 +2717,29 @@ class PerBookThemeTests(TestCase):
         self.assertNotIn("--accent:#1e5fb3", a)
         self.assertIn("--accent:#1e5fb3", b)
         self.assertNotIn("--accent:#b3261e", b)
+
+
+class TemplateCommentSyntaxTests(SimpleTestCase):
+    """Django's {# … #} is single-line only; a multi-line one renders verbatim.
+
+    This has now shipped to readers three times — the four empty host-injection
+    partials (#554), and the section-title note (#576) that put a paragraph of
+    internal commentary at the top of every section page. Asserting it on a
+    rendered page only covers templates some test happens to render, and the
+    #554 partials ship empty by design, so nothing renders them. Scan the
+    source instead: every template, no fixtures, no URLconf.
+    """
+
+    def test_no_multiline_hash_comments_in_templates(self):
+        root = Path(__file__).resolve().parent / "templates"
+        offenders = []
+        for path in sorted(root.rglob("*.html")):
+            text = path.read_text(encoding="utf-8")
+            for m in re.finditer(r"\{#(.*?)#\}", text, re.S):
+                if "\n" in m.group(1):
+                    line = text[:m.start()].count("\n") + 1
+                    offenders.append(f"{path.relative_to(root)}:{line}")
+        self.assertEqual(offenders, [], (
+            "multi-line {# #} comments render as page text; use "
+            "{% comment %}…{% endcomment %} or collapse to one line: "
+            + ", ".join(offenders)))

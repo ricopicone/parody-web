@@ -14,10 +14,12 @@
 {% block body %}
 <nav class="crumbs has-chapter"><a href="{% index_url book %}">{{ book.title }}</a><span class="crumb-sep">›</span><a class="crumb-trunc" href="{% chapter_url book chapter.slug %}" title="{{ chapter.title|cut:'`' }}">{{ chapter.title|code_spans }}</a></nav>
 
-{# A section whose markdown doesn't open with its own heading gets its title
-   rendered here, outside the numbering pass — so carry the number across, or
-   the page reads "Voltage dividers" while the contents beside it read
-   "1.2 Voltage dividers" (#576). #}
+{% comment %}
+A section whose markdown doesn't open with its own heading gets its title
+rendered here, outside the numbering pass — so carry the number across, or
+the page reads "Voltage dividers" while the contents beside it read
+"1.2 Voltage dividers" (#576).
+{% endcomment %}
 {% if not title_in_html %}<h1>{% if section.number %}<span class="secnum">{{ section.number }}</span> {% endif %}{{ section.title|code_spans }}</h1>{% endif %}
 
 {% include "parody_web/_section_toolbar.html" %}
