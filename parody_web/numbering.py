@@ -24,6 +24,7 @@ titles unnumbered) match the book's print layout. Targets it can't resolve
 """
 import re
 from html import escape as _esc
+from html.parser import HTMLParser
 
 _HEADING_RE = re.compile(r'(<(h[1-6])\b[^>]*\bdata-h="(?P<hash>[^"]+)"[^>]*>)')
 _FIG_RE = re.compile(r'<figure\b[^>]*\bid="(?P<id>[^"]+)"[^>]*>(?P<rest>.*?)</figure>',
@@ -698,6 +699,96 @@ def _label_example_box(html, eid, label):
     return pat.sub(rep, html, count=1)
 
 
+def _roman(n):
+    """1 -> i, 4 -> iv, … (lower case; the caller upper-cases for <ol type="I">)."""
+    out, rest = "", n
+    for value, sym in ((1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
+                       (100, "c"), (90, "xc"), (50, "l"), (40, "xl"),
+                       (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")):
+        while rest >= value:
+            out, rest = out + sym, rest - value
+    return out
+
+
+def _alpha_marker(n):
+    """1 -> a, 26 -> z, 27 -> aa (how browsers continue <ol type="a"> past z)."""
+    out = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        out = chr(97 + rem) + out
+    return out
+
+
+def _list_marker(n, list_type):
+    """The marker a browser draws for the nth item of an <ol type=list_type>."""
+    if n < 1:
+        return str(n)
+    if list_type == "a":
+        return _alpha_marker(n)
+    if list_type == "A":
+        return _alpha_marker(n).upper()
+    if list_type == "i":
+        return _roman(n)
+    if list_type == "I":
+        return _roman(n).upper()
+    return str(n)          # "1", and anything unrecognised
+
+
+class _ListItemAnchorFinder(HTMLParser):
+    """Collect `it:`-prefixed anchor ids and the list marker each one sits under.
+
+    The number a reference must name is the one the reader sees, so it comes off
+    the rendered list rather than the source: `<ol start="3">` (pandoc splits a
+    list wherever a paragraph interrupts it) and `<ol type>` both count. A
+    regex can't do this — an `<li>` may contain a whole nested list, whose items
+    must not be counted against the outer one — hence a real parser.
+
+    Anchors outside any list, and anchors in a `<ul>` (no marker to name), are
+    left out: no target is registered and the reference stays unresolved, which
+    is honest about there being no number rather than inventing one.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.found = {}   # id -> marker string
+        self._lists = []  # stack of [ordered, type, next_number, current_marker]
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag in ("ol", "ul"):
+            try:
+                start = int(a.get("start", 1))
+            except ValueError:
+                start = 1
+            self._lists.append([tag == "ol", a.get("type", "1"), start, None])
+        elif tag == "li" and self._lists:
+            cur = self._lists[-1]
+            cur[3] = _list_marker(cur[2], cur[1]) if cur[0] else None
+            cur[2] += 1
+        if (a.get("id", "").startswith("it:") and self._lists
+                and self._lists[-1][3] is not None):
+            self.found.setdefault(a["id"], self._lists[-1][3])
+
+    def handle_endtag(self, tag):
+        if tag in ("ol", "ul") and self._lists:
+            self._lists.pop()
+
+
+def _find_list_item_anchors(html):
+    """id -> marker for every `it:` anchor in a numbered list item (task #574)."""
+    if "it:" not in html:
+        return {}
+    p = _ListItemAnchorFinder()
+    try:
+        p.feed(html)
+        p.close()
+    except Exception:
+        # Artifact html is pandoc's, but a malformed fragment must not take the
+        # whole numbering pass down — the refs just stay unresolved.
+        return p.found
+    return p.found
+
+
 def _section_kind(sec):
     html = sec.get("html") or ""
     if (sec.get("title") or "").strip().lower() == "problems":
@@ -968,6 +1059,15 @@ def number_artifact(data, references=None, edition_query=""):
                 targets[lm.group(1)] = {"label": f"Listing {num}",
                                         "url": f"{url}#{lm.group(1)}"}
                 listing_caps.setdefault(sec["slug"], {})[lm.group(1)] = (num, lm.group(2))
+            # numbered-list items ([]{#it:..} inside an enumerate) are likewise
+            # absent from `anchors`: the number is a property of the rendered
+            # list, so read it back off the html. "item N" and the number itself
+            # both match the print build, where cleveref types these `enumi`.
+            # Nothing is injected into the page — the anchor is already there,
+            # and the list draws its own markers.
+            for anchor_id, marker in _find_list_item_anchors(sh).items():
+                targets[anchor_id] = {"label": f"Item {marker}",
+                                      "url": f"{url}#{anchor_id}"}
 
     # ---- pass 2: rewrite html (numbers in headings/figs, resolve hashrefs) ----
     for ch in data.get("chapters", []):

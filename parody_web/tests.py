@@ -955,6 +955,137 @@ class CrossRefResolutionTests(TestCase):
         self.assertNotIn("Exercise", out)
 
 
+class ListItemRefTests(TestCase):
+    """Cross-references to a numbered list item ([it:foo]{.hashref}, task #574).
+
+    The meta-era `\\label` inside an `enumerate` migrates to an empty anchor span
+    in the item ([]{#it:foo}). The anchor always reached the DOM, but nothing
+    registered a target for it, so every such reference rendered as the literal
+    key. Like algorithms and listings, these aren't in `anchors` — the number is
+    a property of the rendered list, so it is read back off the html.
+
+    The label matches what the print build already prints: cleveref types these
+    `enumi`, whose default name is "item", and numbers them off the rendered
+    list, not off the legacy letter in the label name."""
+
+    def _book(self, html, **sec):
+        sec = {"title": "S", "slug": "s", "anchors": [], "html": html, **sec}
+        return {"chapters": [
+            {"title": "C", "slug": "c", "hash": "c1", "sections": [sec]}]}
+
+    def test_list_item_ref_resolves_to_its_marker(self):
+        data = self._book(
+            '<ol type="1">\n'
+            '<li><p>First. <span id="it:a"></span></p></li>\n'
+            '<li><p>Second.</p></li>\n'
+            '</ol>\n'
+            '<p>see <span class="hashref">it:a</span></p>')
+        targets = number_artifact(data)
+        self.assertEqual(targets["it:a"]["label"], "Item 1")
+        self.assertEqual(targets["it:a"]["url"], "/c/s/#it:a")
+        self.assertIn('<a class="xref" href="/c/s/#it:a">item 1</a>',
+                      data["chapters"][0]["sections"][0]["html"])
+
+    def test_start_attribute_offsets_the_number(self):
+        # Pandoc splits a list at an intervening paragraph, so the continuation
+        # is a fresh <ol start="3">. Counting position-within-the-<ol> would
+        # call this "item 1" — it is the third item of the list the reader sees.
+        data = self._book(
+            '<ol type="1">\n<li><p>One.</p></li>\n<li><p>Two.</p></li>\n</ol>\n'
+            '<p>An aside.</p>\n'
+            '<ol start="3" type="1">\n'
+            '<li><p>Three. <span id="it:c"></span></p></li>\n</ol>\n'
+            '<p>see <span class="hashref">it:c</span></p>')
+        targets = number_artifact(data)
+        self.assertEqual(targets["it:c"]["label"], "Item 3")
+
+    def test_marker_follows_the_rendered_ol_type(self):
+        # The number the reader sees is the one the reference must name, so the
+        # numeral style comes from <ol type>, whatever the label happens to be
+        # called (these ids are named for the letters the meta-era book used).
+        data = self._book(
+            '<ol type="a">\n<li><p>a</p></li>\n'
+            '<li><p>b <span id="it:alpha"></span></p></li>\n</ol>\n'
+            '<ol start="4" type="I">\n'
+            '<li><p>iv <span id="it:roman"></span></p></li>\n</ol>\n'
+            '<ol type="A">\n<li><p>A <span id="it:upper"></span></p></li>\n</ol>')
+        targets = number_artifact(data)
+        self.assertEqual(targets["it:alpha"]["label"], "Item b")
+        self.assertEqual(targets["it:roman"]["label"], "Item IV")
+        self.assertEqual(targets["it:upper"]["label"], "Item A")
+
+    def test_untyped_ol_numbers_arabic(self):
+        data = self._book(
+            '<ol>\n<li><p>one</p></li>\n'
+            '<li><p>two <span id="it:x"></span></p></li>\n</ol>')
+        self.assertEqual(number_artifact(data)["it:x"]["label"], "Item 2")
+
+    def test_nesting_does_not_corrupt_the_outer_count(self):
+        # A nested list's <li>s must not be counted against the outer list, and
+        # an anchor inside one takes the innermost marker.
+        data = self._book(
+            '<ol type="1">\n'
+            '<li><p>One.</p></li>\n'
+            '<li><p>Two.</p>\n<ol type="a">\n'
+            '<li><p>inner a</p></li>\n'
+            '<li><p>inner b <span id="it:inner"></span></p></li>\n'
+            '</ol>\n</li>\n'
+            '<li><p>Three. <span id="it:outer"></span></p></li>\n'
+            '</ol>')
+        targets = number_artifact(data)
+        self.assertEqual(targets["it:inner"]["label"], "Item b")
+        self.assertEqual(targets["it:outer"]["label"], "Item 3")
+
+    def test_bullet_list_item_registers_nothing(self):
+        # An unnumbered item has no marker to name. Leave the reference
+        # unresolved rather than invent a number for it.
+        data = self._book(
+            '<ul>\n<li><p>a <span id="it:u"></span></p></li>\n</ul>\n'
+            '<p>see <span class="hashref">it:u</span></p>')
+        targets = number_artifact(data)
+        self.assertNotIn("it:u", targets)
+        self.assertIn('<span class="hashref">it:u</span>',
+                      data["chapters"][0]["sections"][0]["html"])
+
+    def test_anchor_outside_any_list_registers_nothing(self):
+        data = self._book('<p>loose <span id="it:loose"></span></p>')
+        self.assertNotIn("it:loose", number_artifact(data))
+
+    def test_several_item_refs_group_and_compress(self):
+        # The shared label word is factored out and pluralized like any other
+        # multi-target ref ("items 3 and 4").
+        data = self._book(
+            '<ol type="1">\n<li><p>1</p></li>\n<li><p>2</p></li>\n'
+            '<li><p>3 <span id="it:fo"></span></p></li>\n'
+            '<li><p>4 <span id="it:fr"></span></p></li>\n</ol>\n'
+            '<p>see <span class="hashref">it:fo,it:fr</span></p>')
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn("items ", html)
+        self.assertIn('href="/c/s/#it:fo">3</a>', html)
+        self.assertIn('href="/c/s/#it:fr">4</a>', html)
+
+    def test_item_ref_resolves_inside_a_problem_bucket(self):
+        # The real shape: the list and the reference both live in a problem
+        # body, which the build lifts out of section html into a bucket. The
+        # numbers still come off `html`, which retains the full list structure.
+        html = ('<ol type="1">\n'
+                '<li><p>Bode plot. <span id="it:a"></span></p></li>\n</ol>')
+        data = self._book(html, problems={"exe:t": {"title": "T", "content":
+                          html + '<p>from <span class="hashref">it:a</span></p>'}})
+        number_artifact(data)
+        body = data["chapters"][0]["sections"][0]["problems"]["exe:t"]["content"]
+        self.assertIn('<a class="xref" href="/c/s/#it:a">item 1</a>', body)
+        self.assertNotIn('class="hashref"', body)
+
+    def test_capitalized_reference_site_capitalizes_the_label(self):
+        data = self._book(
+            '<ol type="1">\n<li><p>1 <span id="it:a"></span></p></li>\n</ol>\n'
+            '<p><span class="Hashref">it:a</span> shows it.</p>')
+        number_artifact(data)
+        self.assertIn('>Item 1</a>', data["chapters"][0]["sections"][0]["html"])
+
+
 class BoxedEnvironmentTests(TestCase):
     """Definitions, theorems, comments and infoboxes are drawn as boxes.
 
