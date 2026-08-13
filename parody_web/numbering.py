@@ -26,7 +26,13 @@ import re
 from html import escape as _esc
 from html.parser import HTMLParser
 
-_HEADING_RE = re.compile(r'(<(h[1-6])\b[^>]*\bdata-h="(?P<hash>[^"]+)"[^>]*>)')
+_HEADING_RE = re.compile(r'<h(?P<level>[1-6])\b(?P<attrs>[^>]*)>')
+_ATTR_ID_RE = re.compile(r'\bid="([^"]*)"')
+_ATTR_HASH_RE = re.compile(r'\bdata-h="([^"]*)"')
+# How deep a heading number goes, counting from the section: 1 = subsection
+# (C.m.k), 2 = subsubsection (C.m.k.j). Below that headings go unnumbered,
+# matching the print class's \setsecnumdepth{subsubsection} (#576).
+_MAX_HEADING_DEPTH = 2
 _FIG_RE = re.compile(r'<figure\b[^>]*\bid="(?P<id>[^"]+)"[^>]*>(?P<rest>.*?)</figure>',
                      re.S)
 _FIGCAP_RE = re.compile(r'(<figcaption[^>]*>)', re.S)
@@ -789,6 +795,63 @@ def _find_list_item_anchors(html):
     return p.found
 
 
+def _heading_sequence(html):
+    """(depth, hash, id) per content heading in `html`, in document order.
+
+    Depth 0 is the section's own title — an <h1> the markdown opened with;
+    depth 1 is a subsection, depth 2 a subsubsection.
+
+    A *content* heading is one the reader can address: it carries an id, a
+    data-h, or both. That is what separates it from the class-only <h3>
+    filter.lua builds as a boxed environment's title band (see filter.lua's
+    definition/example/exercise handlers, whose markup is frozen). Reading the
+    html rather than the ``anchors`` list is the point: an author who writes a
+    plain ``### Determining $R_e$`` gets no anchor, and numbering off anchors
+    alone left such headings unnumbered *and* mis-numbered their siblings,
+    because they never advanced the counters (#576).
+    """
+    seq = []
+    for mo in _HEADING_RE.finditer(html or ""):
+        attrs = mo.group("attrs")
+        hid = _ATTR_ID_RE.search(attrs)
+        h = _ATTR_HASH_RE.search(attrs)
+        if not hid and not h:
+            continue
+        seq.append((int(mo.group("level")) - 1,
+                    h.group(1) if h else None,
+                    hid.group(1) if hid else None))
+    return seq
+
+
+def _number_headings(seq, secnum):
+    """Running heading numbers for one section: {hash-or-id -> "C.m.k"}.
+
+    Every handle a heading answers to is keyed to the same string, so the
+    number it displays and the number a cross-reference to it quotes are the
+    one value, computed once.
+    """
+    numbers = {}
+    counters = {}
+    for depth, h, hid in seq:
+        if depth == 0:
+            num = secnum          # the section's own title
+        elif not secnum or depth > _MAX_HEADING_DEPTH:
+            # Subsections of an unnumbered section (a lab, "Problems") have no
+            # C.m to hang off; deeper than subsubsection we stop by choice.
+            continue
+        else:
+            counters[depth] = counters.get(depth, 0) + 1
+            for deeper in [d for d in counters if d > depth]:
+                counters[deeper] = 0
+            num = ".".join([secnum] + [str(counters[d]) for d in sorted(counters)
+                                       if d <= depth])
+        if num:
+            for key in (h, hid):
+                if key:
+                    numbers[key] = num
+    return numbers
+
+
 def _section_kind(sec):
     html = sec.get("html") or ""
     if (sec.get("title") or "").strip().lower() == "problems":
@@ -864,8 +927,26 @@ def number_artifact(data, references=None, edition_query=""):
                 secnum = None
                 sec["number"] = ""
 
+            # Number every heading the reader actually sees, off the html.
+            hseq = _heading_sequence(sec.get("html") or "")
+            if not hseq:
+                # Nothing to read — a stub section, or a consumer that stores
+                # the anchors without the html. The anchor list is in document
+                # order and carries the markdown's own levels, so it serves.
+                hseq = [(0 if a.get("is_section") or a.get("level", 1) == 1
+                         else a.get("level", 1) - 1,
+                         a.get("hash"), a.get("id"))
+                        for a in sec.get("anchors", [])
+                        if a.get("type") == "heading"]
+            hnums = _number_headings(hseq, secnum)
+            if hnums:
+                # Keyed by chapter AND section: section slugs repeat across
+                # chapters ("summary", "problems"), and unlike a float id a
+                # pandoc auto-id is only unique within its own file, so a
+                # section-slug key would hand one chapter's numbers to another.
+                heading_numbers[(ch["slug"], sec["slug"])] = hnums
+
             # headings (anchors are in document order): h1 = the section itself
-            counters = {}
             for a in sec.get("anchors", []):
                 if a.get("type") != "heading":
                     continue
@@ -894,31 +975,22 @@ def number_artifact(data, references=None, edition_query=""):
                         targets[anchor_id] = entry
 
                 if lvl == 1:
-                    label_num = secnum  # may be None (lab/problems/leadin)
                     if secnum:
                         register({"label": f"Section {secnum}", "url": url})
                     elif sec["number"]:  # lab
                         register({"label": sec["number"], "url": url})
                     else:
                         register({"label": sec.get("title", ""), "url": url})
-                    if label_num:
-                        heading_numbers.setdefault(sec["slug"], {})[h] = label_num
-                elif secnum:  # number subsections only inside numbered sections
-                    counters[lvl] = counters.get(lvl, 0) + 1
-                    for deeper in [x for x in counters if x > lvl]:
-                        counters[deeper] = 0
-                    parts = [secnum] + [str(counters[x]) for x in
-                                        sorted(k for k in counters if k >= 2 and k <= lvl)]
-                    sub = ".".join(parts)
+                elif hnums.get(h) or hnums.get(anchor_id):
+                    sub = hnums.get(h) or hnums.get(anchor_id)
                     register({"label": f"Section {sub}",
                               "url": f"{url}#{anchor_id}"})
-                    if h:
-                        heading_numbers.setdefault(sec["slug"], {})[h] = sub
                 else:
-                    # subsection inside an unnumbered section (a lab/problems
+                    # A subsection inside an unnumbered section (a lab/problems
                     # section has no C.m number, so its subsections get none
-                    # either). Still register the heading so refs to it land —
-                    # labelled by its title (backticks are markdown, drop them).
+                    # either), or one below the numbered depth. Still register
+                    # the heading so refs to it land — labelled by its title
+                    # (backticks are markdown, drop them).
                     title = (a.get("title") or "").replace("`", "")
                     register({"label": title, "url": f"{url}#{anchor_id}"})
 
@@ -1102,15 +1174,20 @@ def number_artifact(data, references=None, edition_query=""):
             html = _clean_tables(html)
             html = _fix_dollar_math(html)
             html = _style_menus(html)
-            hn = heading_numbers.get(sec["slug"], {})
+            hn = heading_numbers.get((ch["slug"], sec["slug"]), {})
             labels = {"lab": sec["number"] if _section_kind(sec) == "lab" else None}
 
             def num_heading(mo):
-                full, tag, h = mo.group(1), mo.group(2), mo.group("hash")
-                if tag == "h1" and labels["lab"]:
+                full, attrs = mo.group(0), mo.group("attrs")
+                hid = _ATTR_ID_RE.search(attrs)
+                h = _ATTR_HASH_RE.search(attrs)
+                if not hid and not h:
+                    return full  # an environment box's title band
+                if mo.group("level") == "1" and labels["lab"]:
                     return full + f'<span class="secnum">{labels["lab"]}:</span> '
-                if h in hn:
-                    return full + f'<span class="secnum">{hn[h]}</span> '
+                num = (h and hn.get(h.group(1))) or (hid and hn.get(hid.group(1)))
+                if num:
+                    return full + f'<span class="secnum">{num}</span> '
                 return full
             html = _HEADING_RE.sub(num_heading, html)
 

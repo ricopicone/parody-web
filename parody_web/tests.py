@@ -955,6 +955,135 @@ class CrossRefResolutionTests(TestCase):
         self.assertNotIn("Exercise", out)
 
 
+class HeadingNumberTests(TestCase):
+    """Section/subsection/subsubsection numbers in the rendered headings (#576).
+
+    Numbering used to be driven entirely by the ``anchors`` list and keyed on
+    ``data-h``, so a heading the author left unlabelled — ``### Determining
+    $R_e$``, no ``{#id h=..}`` — was invisible to it: no number, and, worse, it
+    never advanced the counters, so the numbers around it were wrong too. The
+    rendered html is the honest record of what the reader sees, so number off
+    that, and let the anchors carry the cross-reference targets.
+    """
+
+    def _one_section(self, html, anchors=None):
+        # Every fixture opens with the section's own anchor, as the writer
+        # synthesizes it: a section carrying no anchors at all reads to
+        # _section_kind as a chapter lead-in, and lead-ins are unnumbered.
+        anchors = [{"id": "s", "type": "heading", "level": 2, "hash": "s1",
+                    "title": "S", "is_section": True}] + (anchors or [])
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "hash": "s1",
+                          "anchors": anchors, "html": html}]}]}
+        targets = number_artifact(data)
+        return data["chapters"][0]["sections"][0]["html"], targets
+
+    def test_unlabelled_headings_are_numbered_and_counted(self):
+        # h2 = subsection (C.m.k), h3 = subsubsection (C.m.k.j). Neither h3 here
+        # carries an id the author wrote; both are still the reader's headings.
+        html, _ = self._one_section(
+            '<h2 data-h="qc" id="thevenin">Thévenin</h2>'
+            '<h3 id="determining-r_e">Determining R_e</h3>'
+            '<h3 id="determining-v_e">Determining V_e</h3>'
+            '<h2 data-h="ws" id="norton">Norton</h2>',
+            [{"id": "thevenin", "type": "heading", "level": 2, "hash": "qc"},
+             {"id": "norton", "type": "heading", "level": 2, "hash": "ws"}])
+        self.assertIn('<h2 data-h="qc" id="thevenin">'
+                      '<span class="secnum">1.1.1</span> Thévenin</h2>', html)
+        self.assertIn('<h3 id="determining-r_e">'
+                      '<span class="secnum">1.1.1.1</span> Determining R_e</h3>', html)
+        self.assertIn('<h3 id="determining-v_e">'
+                      '<span class="secnum">1.1.1.2</span> Determining V_e</h3>', html)
+        # the counter kept running past the h3s, and past the *anchorless* one
+        self.assertIn('<span class="secnum">1.1.2</span> Norton', html)
+
+    def test_a_heading_with_no_anchor_still_shifts_its_siblings(self):
+        # the bug in miniature: drop the first h2's anchor (a non-ASCII id used
+        # to do exactly this on the build side) and the second h2 took its
+        # number. The heading is in the html, so it counts.
+        html, _ = self._one_section(
+            '<h2 id="thévenin">Thévenin</h2>'
+            '<h2 data-h="ws" id="norton">Norton</h2>',
+            [{"id": "norton", "type": "heading", "level": 2, "hash": "ws"}])
+        self.assertIn('<span class="secnum">1.1.1</span> Thévenin', html)
+        self.assertIn('<span class="secnum">1.1.2</span> Norton', html)
+
+    def test_numbering_stops_below_subsubsection(self):
+        html, _ = self._one_section(
+            '<h2 id="a">A</h2><h3 id="b">B</h3><h4 id="c">C</h4>')
+        self.assertIn('<span class="secnum">1.1.1</span> A', html)
+        self.assertIn('<span class="secnum">1.1.1.1</span> B', html)
+        self.assertIn('<h4 id="c">C</h4>', html)
+
+    def test_environment_box_headers_are_not_headings(self):
+        # filter.lua builds each boxed environment's title as a class-only
+        # <h3> (no id, no data-h). Those are furniture, not sections.
+        html, _ = self._one_section(
+            '<h2 id="a">A</h2>'
+            '<h3 class="text-lg font-semibold text-cyan-900">Charge</h3>'
+            '<h2 id="b">B</h2>')
+        self.assertIn('<span class="secnum">1.1.1</span> A', html)
+        self.assertIn('<h3 class="text-lg font-semibold text-cyan-900">Charge</h3>',
+                      html)
+        self.assertIn('<span class="secnum">1.1.2</span> B', html)
+
+    def test_cross_refs_use_the_numbers_the_headings_show(self):
+        # one number per heading: what the reader sees at the heading and what a
+        # reference to it says must not be computed twice.
+        html, targets = self._one_section(
+            '<h2 id="thévenin">Thévenin</h2>'
+            '<h2 data-h="ws" id="norton">Norton</h2>'
+            '<p>see <span class="hashref">norton</span>.</p>',
+            [{"id": "norton", "type": "heading", "level": 2, "hash": "ws",
+              "title": "Norton"}])
+        self.assertEqual(targets["norton"]["label"], "Section 1.1.2")
+        self.assertEqual(targets["ws"]["label"], "Section 1.1.2")
+        self.assertIn("section 1.1.2</a>", html)
+
+    def test_same_section_slug_in_two_chapters_keeps_its_own_numbers(self):
+        # Books repeat section slugs ("summary", "problems") chapter to chapter,
+        # and a pandoc auto-id is only unique within its own file — so the
+        # per-section number map has to be keyed by chapter as well, or one
+        # chapter's summary renders the other's numbers.
+        def chapter(slug, hid):
+            return {"title": slug, "slug": slug, "hash": slug[:2],
+                    "sections": [{"title": "Summary", "slug": "summary",
+                                  "hash": slug[:2] + "s",
+                                  "anchors": [{"id": "summary", "type": "heading",
+                                               "level": 2, "is_section": True,
+                                               "hash": slug[:2] + "s"}],
+                                  "html": f'<h2 id="{hid}">Recap</h2>'}]}
+        data = {"chapters": [chapter("one", "recap"), chapter("two", "recap")]}
+        number_artifact(data)
+        self.assertIn('<span class="secnum">1.1.1</span> Recap',
+                      data["chapters"][0]["sections"][0]["html"])
+        self.assertIn('<span class="secnum">2.1.1</span> Recap',
+                      data["chapters"][1]["sections"][0]["html"])
+
+    def test_section_title_rendered_by_the_template_carries_its_number(self):
+        # A section whose markdown does not open with its own heading has its
+        # title rendered by section.html instead. That h1 never went through the
+        # numbering pass, so every such page read "Voltage dividers" while the
+        # contents beside it read "1.2 Voltage dividers".
+        book = Book.objects.create(slug="b", title="B")
+        ch = book.chapters.create(slug="c", title="C", order=1, number="1")
+        ch.sections.create(book=book, slug="s", title="Voltage dividers",
+                           order=1, number="1.2", html="<p>body</p>")
+        resp = Client().get("/c/s/")
+        self.assertContains(
+            resp, '<h1><span class="secnum">1.2</span> Voltage dividers</h1>')
+
+    def test_template_title_of_an_unnumbered_section_gets_no_number(self):
+        # "Problems" and chapter lead-ins carry number "" — no stray empty span.
+        book = Book.objects.create(slug="b", title="B")
+        ch = book.chapters.create(slug="c", title="C", order=1, number="1")
+        ch.sections.create(book=book, slug="p", title="Problems", order=1,
+                           number="", html="<p>body</p>")
+        resp = Client().get("/c/p/")
+        self.assertContains(resp, "<h1>Problems</h1>")
+        self.assertNotContains(resp, '<h1><span class="secnum">')
+
+
 class ListItemRefTests(TestCase):
     """Cross-references to a numbered list item ([it:foo]{.hashref}, task #574).
 
