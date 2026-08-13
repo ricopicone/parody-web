@@ -13,7 +13,8 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.http import Http404
-from django.test import Client, RequestFactory, TestCase, override_settings
+from django.test import (Client, RequestFactory, SimpleTestCase, TestCase,
+                         override_settings)
 
 from parody_web.access import DefaultPolicy, get_policy, validate_policy
 from parody_web.books import resolve_slug, validate_resolver
@@ -921,6 +922,212 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<div class="problem-label">Problem 1.1</div>', out)
         self.assertNotIn("problem-title", out)
         self.assertNotIn("Exercise", out)
+
+
+class BoxedEnvironmentTests(TestCase):
+    """Definitions, theorems, comments and infoboxes are drawn as boxes.
+
+    filter.lua emits each as a Tailwind-styled wrapper/header/body for
+    homepage-django's sake; nothing here ships Tailwind, so every one of them
+    rendered as undecorated prose until task #565. numbering.py rewrites the
+    header into a semantic .env-head and content.css draws the box.
+    """
+
+    ENV_HTML = (
+        '<div id="{id}"\n'
+        'class="{env} numbered-environment rounded border border-cyan-400'
+        ' shadow-md my-4 bg-white scroll-mt-20"\n'
+        'data-env-type="{env}">\n'
+        '<section\n'
+        'class="text-lg font-semibold text-cyan-900 px-4 py-2 border-b'
+        ' border-cyan-400 bg-cyan-50 rounded-t">\n'
+        '<h3 class="text-lg font-semibold text-cyan-900">{title}</h3>\n'
+        '</section>\n'
+        '<div class="px-4 py-3 text-sm text-gray-700">\n'
+        '<p>Body of {id}.</p>\n'
+        '</div>\n'
+        '</div>\n'
+    )
+    INFOBOX_HTML = (
+        '<div id="{id}"\n'
+        'class="infobox rounded border border-gray-300 shadow-md my-4 bg-white">\n'
+        '<section\n'
+        'class="text-lg font-semibold text-gray-800 px-4 py-2 border-b'
+        ' border-gray-300 bg-gray-100 rounded-t">\n'
+        '<h3 class="text-lg font-semibold text-gray-800">{title}</h3>\n'
+        '</section>\n'
+        '<div class="px-4 py-3 text-sm text-gray-700">\n'
+        '<p>Body of {id}.</p>\n'
+        '</div>\n'
+        '</div>\n'
+    )
+
+    def render(self, html, anchors):
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": anchors,
+                          "html": html}]}]}
+        targets = number_artifact(data)
+        return data["chapters"][0]["sections"][0]["html"], targets
+
+    def test_header_carries_the_number_the_crossrefs_promise(self):
+        # The box header read a bare "Theorem" while the reference that brought
+        # the reader there said "Theorem 1.1". Fold the number into the header.
+        html = (self.ENV_HTML.format(id="thm:a", env="theorem", title="Theorem")
+                + self.ENV_HTML.format(id="def:a", env="definition",
+                                       title="Definition"))
+        out, targets = self.render(html, [
+            {"id": "thm:a", "type": "theorem"},
+            {"id": "def:a", "type": "definition"}])
+        self.assertIn('<div class="env-head">'
+                      '<span class="env-num">Theorem 1.1</span></div>', out)
+        self.assertIn('<div class="env-head">'
+                      '<span class="env-num">Definition 1.1</span></div>', out)
+        # the header agrees with the cross-ref label, which is the whole point
+        self.assertEqual(targets["thm:a"]["label"], "Theorem 1.1")
+        # the dead Tailwind header is gone; the body survives untouched
+        self.assertNotIn("<h3", out)
+        self.assertNotIn("<section", out)
+        self.assertIn("<p>Body of thm:a.</p>", out)
+
+    def test_author_title_survives_beside_the_number(self):
+        html = self.ENV_HTML.format(id="cmt:a", env="comment",
+                                    title="Designing Cost Functions")
+        out, _ = self.render(html, [{"id": "cmt:a", "type": "comment"}])
+        self.assertIn('<div class="env-head">'
+                      '<span class="env-num">Comment 1.1</span>'
+                      '<span class="env-title">Designing Cost Functions</span>'
+                      '</div>', out)
+
+    def test_unnumbered_environment_keeps_the_type_word_as_its_label(self):
+        # A definition written without an #id is never referenced and so never
+        # numbered. filter.lua's default <h3>Definition</h3> is then the only
+        # label the box has: promote it rather than drop it, or the box draws
+        # with no header at all.
+        html = self.ENV_HTML.format(id="", env="definition", title="Definition")
+        out, _ = self.render(html, [])
+        self.assertIn('<div class="env-head">'
+                      '<span class="env-num">Definition</span></div>', out)
+
+    def test_infobox_shows_its_title_and_is_never_numbered(self):
+        # infoboxes are cross-referenced by title, not by number (numbering.py's
+        # infobox branch), so the header is the title alone.
+        html = self.INFOBOX_HTML.format(id="box:d", title="Terminological Note")
+        out, targets = self.render(html, [
+            {"id": "box:d", "type": "infobox", "title": "Terminological Note"}])
+        self.assertIn('<div class="env-head">'
+                      '<span class="env-title">Terminological Note</span></div>',
+                      out)
+        self.assertNotIn("env-num", out)
+        self.assertEqual(targets["box:d"]["label"], "Terminological Note")
+
+    def test_untitled_infobox_drops_the_header_rather_than_draw_it_empty(self):
+        # The raw-LaTeX \begin{infobox}{name}{contents} form migrates with an
+        # EMPTY <h3> and its title inside the body. An empty .env-head would
+        # draw as a blank header band.
+        html = self.INFOBOX_HTML.format(id="box:e", title="")
+        out, _ = self.render(html, [])
+        self.assertNotIn("env-head", out)
+        self.assertNotIn("<h3", out)
+        self.assertIn("<p>Body of box:e.</p>", out)
+
+    def test_comments_are_numbered_and_referenceable(self):
+        # _lookup_target has always stripped a "cmt:" prefix, but "comment" was
+        # missing from _TYPE_LABELS, so comments were never numbered and every
+        # [cmt:…]{.hashref} fell through unresolved.
+        html = (self.ENV_HTML.format(id="cost", env="comment", title="Comment")
+                + '<p>see <span class="hashref">cmt:cost</span></p>')
+        out, targets = self.render(html, [{"id": "cost", "type": "comment"}])
+        self.assertEqual(targets["cost"]["label"], "Comment 1.1")
+        self.assertIn('<a class="xref" href="/c/s/#cost">comment 1.1</a>', out)
+
+    def test_example_box_states_its_type_once(self):
+        # Task #318 injected the "Example N.n" label but left filter.lua's
+        # header band in place, so every example drew its type word twice: the
+        # label, then a bare "Example" as a plain <h3> under it.
+        html = self.ENV_HTML.format(id="exa", env="example", title="Example")
+        out, _ = self.render(html, [{"id": "exa", "type": "example",
+                                     "hash": "exa"}])
+        self.assertIn('<div class="example-label">Example 1.1</div>', out)
+        self.assertNotIn("<h3", out)
+        self.assertNotIn("<section", out)
+        self.assertEqual(out.count("Example"), 1)
+        self.assertIn("<p>Body of exa.</p>", out)
+
+    def test_titled_example_keeps_its_title(self):
+        # the header band is the only carrier of an author's title=, so
+        # consuming it must not silently drop one
+        html = self.ENV_HTML.format(id="exa", env="example",
+                                    title="Voltage divider")
+        out, _ = self.render(html, [{"id": "exa", "type": "example",
+                                     "hash": "exa"}])
+        self.assertIn('<div class="example-label">Example 1.1 '
+                      '<span class="example-title">Voltage divider</span></div>',
+                      out)
+
+    def test_example_and_exercise_keep_their_own_presentation(self):
+        # Both are boxed environments too, but each has a web presentation of
+        # its own (corner brackets / a run-in "Problem N.n" heading). The
+        # generic rewrite must not reach them.
+        html = (self.ENV_HTML.format(id="exa", env="example", title="Example")
+                + self.ENV_HTML.format(id="exe", env="exercise", title="Exercise"))
+        out, _ = self.render(html, [
+            {"id": "exa", "type": "example", "hash": "exa"},
+            {"id": "exe", "type": "exercise", "hash": "exe"}])
+        self.assertNotIn("env-head", out)
+        self.assertIn('<div class="example-label">Example 1.1</div>', out)
+        self.assertIn('<div class="problem-label">Problem 1.1</div>', out)
+
+
+class BoxedEnvironmentStyleTests(SimpleTestCase):
+    """A CSS-level guard against the drift that caused task #565.
+
+    Task #318 reimplemented .example as real CSS and left the other five
+    environments on Tailwind utilities that resolve to nothing here — for two
+    releases a theorem rendered as bare prose. Nothing failed, because no test
+    connected the environments filter.lua emits to the stylesheet that has to
+    draw them. This is that connection.
+    """
+
+    #: Every environment parody's filter.lua boxes (its infoboxer/definition/
+    #: comment/theorem/exercise/example handlers). Adding one there without a
+    #: treatment here should fail loudly rather than ship as unstyled prose.
+    FILTER_ENVIRONMENTS = ("infobox", "definition", "comment", "theorem",
+                           "exercise", "example")
+
+    def css(self):
+        path = (Path(__file__).resolve().parent / "static" / "parody_web"
+                / "css" / "content.css")
+        return path.read_text()
+
+    def test_every_boxed_environment_has_a_treatment(self):
+        css = self.css()
+        # the generic rule boxes anything carrying data-env-type, so an
+        # environment is covered either by it or by a rule naming it
+        generic = "[data-env-type]:not([data-env-type=" in css
+        self.assertTrue(generic, "the generic boxed-environment rule is gone; "
+                                 "every environment now needs its own rule")
+        for env in self.FILTER_ENVIRONMENTS:
+            with self.subTest(env=env):
+                opted_out = f'[data-env-type="{env}"])' in css
+                named = re.search(rf'^\.[\w .\-\[\]="]*\b{env}\b', css,
+                                  re.M) is not None
+                self.assertTrue(named or not opted_out,
+                                f".{env} opts out of the generic box rule but "
+                                f"has no rule of its own in content.css")
+                self.assertTrue(named or generic,
+                                f".{env} has no styling in content.css")
+
+    def test_environment_hues_are_defined_for_both_themes(self):
+        # a hue defined only in :root leaves dark mode with a light-theme
+        # colour; the site's dark mode is an explicit attribute AND a media
+        # query, and both must carry every token (see tokens.css).
+        css = self.css()
+        for env in ("definition", "theorem", "comment", "infobox"):
+            with self.subTest(env=env):
+                self.assertEqual(css.count(f"--env-{env}:"), 3,
+                                 f"--env-{env} must be defined three times: "
+                                 ":root, [data-theme=dark] and the "
+                                 "prefers-color-scheme media query")
 
 
 class FurtherReadingTests(TestCase):

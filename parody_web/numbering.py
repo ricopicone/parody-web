@@ -374,8 +374,16 @@ def _clean_tables(html):
 _TYPE_LABELS = {
     "figure": "Figure", "table": "Table", "equation": "Equation",
     "exercise": None, "example": "Example", "theorem": "Theorem",
-    "definition": "Definition", "listing": "Listing", "algorithm": "Algorithm",
+    "definition": "Definition", "comment": "Comment",
+    "listing": "Listing", "algorithm": "Algorithm",
 }
+
+#: Boxed environments that show their number in the box's own header rather
+#: than only in the cross-refs pointing at it (see _rewrite_env_boxes).
+#: Examples and exercises are numbered too but carry the label in a
+#: presentation of their own (.example-label / .problem-label), and infoboxes
+#: are referenced by title and never numbered at all.
+_ENV_LABELLED = frozenset({"definition", "theorem", "comment"})
 
 
 def _chapter_label(ch, idx_state):
@@ -603,6 +611,93 @@ def _rewrite_exercise_box(html, eid, label, is_lab):
     return pat.sub(rep, html, count=1)
 
 
+# The remaining boxed environments — definitions, theorems, comments, infoboxes
+# and anything filter.lua adds later — arrive as the same Tailwind markup the
+# exercise box does: a wrapper div, a header <section> holding an <h3>, and a
+# body div. On homepage-django those utility classes resolve; here they are
+# inert, so until task #565 every one of these rendered as undecorated prose.
+# Swap the header for a semantic .env-head and let content.css draw the box.
+#
+# Two environments are excluded because they already have a web presentation of
+# their own: .example (corner brackets) and .exercise (a run-in "Problem N.n"
+# heading). Everything else is matched by the presence of data-env-type, so a
+# new environment in filter.lua is boxed without a change here or in the CSS.
+_ENV_BOX_RE = re.compile(
+    r'(?P<open><div\b(?=[^>]*(?:\bdata-env-type="(?!example"|exercise")[^"]*"'
+    r'|\bclass="(?:[^"]*\s)?infobox(?:\s[^"]*)?"))[^>]*>)'
+    r'(?:\s*<section\b[^>]*>\s*<h3\b[^>]*>(?P<title>.*?)</h3>\s*</section>)?',
+    re.S)
+_ENV_TYPE_RE = re.compile(r'\bdata-env-type="([^"]*)"')
+_ENV_ID_RE = re.compile(r'\bid="([^"]*)"')
+
+
+def _rewrite_env_boxes(html, caps):
+    """Give each boxed environment a semantic header the site can style.
+
+    `caps` maps a box's id to the label its cross-refs use ("Theorem 4.1"), so
+    the header agrees with the link that brought the reader there — before this
+    the box read a bare "Theorem" while the reference said "Theorem 4.1". A box
+    absent from `caps` simply gets no number: infoboxes are referenced by title
+    and never numbered, and an environment written without an #id has nothing
+    to reference and so never got a number to show.
+
+    filter.lua defaults the header to the environment's own name when the
+    author set no title=, so a title equal to the type word is that default and
+    gives way to the number; a real title survives beside it. A box with
+    neither (an untitled infobox) loses the header rather than drawing an empty
+    band.
+    """
+    def rep(mo):
+        open_tag = mo.group("open")
+        m = _ENV_TYPE_RE.search(open_tag)
+        env = m.group(1) if m else "infobox"
+        m = _ENV_ID_RE.search(open_tag)
+        label = caps.get(m.group(1)) if m else None
+        title = re.sub(r"\s+", " ", mo.group("title") or "").strip()
+        if title.casefold() == env.casefold():
+            # filter.lua's default header: the environment's own name. It is
+            # redundant beside a number, but where there is none (a definition
+            # written without an #id is never referenced and so never numbered)
+            # it is the only label the box has — promote it to one.
+            label, title = label or title, ""
+        head = ""
+        if label:
+            head += f'<span class="env-num">{label}</span>'
+        if title:
+            head += f'<span class="env-title">{title}</span>'
+        return open_tag + (f'<div class="env-head">{head}</div>' if head else "")
+
+    return _ENV_BOX_RE.sub(rep, html)
+
+
+def _label_example_box(html, eid, label):
+    """Give one example box its "Example N.n" label, replacing the header band.
+
+    Task #318 added the label but left filter.lua's Tailwind header in place,
+    so every example on the site drew its own type word twice: the injected
+    "Example 1.1" and then a bare "Example" below it, rendered as a plain <h3>
+    because none of the utility classes on it resolve here. Consume that header
+    the way the exercise and boxed-environment rewrites do, keeping an author's
+    title= (which the header is the only carrier of) beside the number.
+    """
+    pat = re.compile(
+        r'(?P<open><div\b(?=[^>]*\bclass="(?:[^"]*\s)?example(?:\s[^"]*)?")'
+        r'[^>]*\bid="' + re.escape(eid) + r'"[^>]*>)'
+        r'(?:\s*<section\b[^>]*>\s*<h3\b[^>]*>(?P<title>.*?)</h3>\s*</section>)?',
+        re.S)
+
+    def rep(mo):
+        title = re.sub(r"\s+", " ", mo.group("title") or "").strip()
+        # filter.lua defaults the header to the literal "Example"; that is the
+        # number's job here, so only a real title survives
+        extra = (f' <span class="example-title">{title}</span>'
+                 if title and title.casefold() != "example" else "")
+        return (mo.group("open")
+                + f'<div class="example-label">{label}{extra}</div>')
+
+    return pat.sub(rep, html, count=1)
+
+
 def _section_kind(sec):
     html = sec.get("html") or ""
     if (sec.get("title") or "").strip().lower() == "problems":
@@ -635,6 +730,7 @@ def number_artifact(data, references=None, edition_query=""):
     subeq_caps = {}       # per-section: subequations parent-id -> group number N
     example_caps = {}     # per-section: example div-id -> number N.n (label inject)
     problem_caps = {}     # per-section: exercise div-id -> (heading label, is_lab)
+    env_caps = {}         # per-section: boxed-env div-id -> "Theorem 4.1"
     # chapter_start: the number the first (non-appendix) chapter takes. The
     # artifact omits it at the default of 1; RTC sets 0 ("Chapter 0").
     # _chapter_label pre-increments "arabic", so seed it one below the start.
@@ -799,6 +895,10 @@ def number_artifact(data, references=None, edition_query=""):
                     targets[a["id"]] = entry
                 if a.get("hash"):
                     targets[a["hash"]] = entry
+                if t in _ENV_LABELLED and a.get("id"):
+                    # pass 2 shows this in the box's own header band, so the
+                    # header and the cross-ref that links to it agree
+                    env_caps.setdefault(sec["slug"], {})[a["id"]] = entry["label"]
                 if t == "example" and a.get("id"):
                     # record the number so pass 2 can inject an "Example N.n"
                     # label into the boxed environment (the web mirrors the
@@ -987,22 +1087,23 @@ def number_artifact(data, references=None, edition_query=""):
                 html = re.sub(r'(<div\b[^>]*\bid="' + re.escape(lid) + r'"[^>]*>)',
                               lambda mo, inj=inject: mo.group(1) + inj, html, count=1)
 
-            # example environments: inject an "Example N.n" label at the top of
-            # the boxed div (::: {.example …}). The box itself is CSS (corner
-            # brackets + a faint divider before .example-solution); here we add
-            # only the visible number, mirroring the print book's box title. The
-            # class-token lookahead matches `example` but not `example-solution`.
+            # example environments (::: {.example …}): the box itself is CSS
+            # (corner brackets + a faint divider before .example-solution);
+            # here we add the visible number, mirroring the print book's box
+            # title.
             for eid, enum in example_caps.get(sec["slug"], {}).items():
-                label = f'<div class="example-label">Example {enum}</div>'
-                html = re.sub(
-                    r'(<div\b(?=[^>]*\bclass="(?:[^"]*\s)?example(?:\s[^"]*)?")'
-                    r'[^>]*\bid="' + re.escape(eid) + r'"[^>]*>)',
-                    lambda mo, lab=label: mo.group(1) + lab, html, count=1)
+                html = _label_example_box(html, eid, f"Example {enum}")
 
             # exercises/lab problems: rewrite the filter's Tailwind box into the
             # web's run-in "Problem N.n" heading (see _rewrite_exercise_box).
             for eid, (label, is_lab) in problem_caps.get(sec["slug"], {}).items():
                 html = _rewrite_exercise_box(html, eid, label, is_lab)
+
+            # every other boxed environment (definition/theorem/comment/infobox
+            # and any later addition): a semantic header content.css can draw.
+            # Runs unconditionally — an untitled, unnumbered infobox still needs
+            # its empty Tailwind header band removed.
+            html = _rewrite_env_boxes(html, env_caps.get(sec["slug"], {}))
 
             # subequations groups: \tag every row "N a", "N b", … then stash the
             # whole <div> behind a placeholder so the single/multi-label tagger

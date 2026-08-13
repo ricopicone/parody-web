@@ -151,6 +151,9 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
       left bottom, right bottom; }
 .example-label { font-family: var(--font-display); font-weight: 700;
     color: var(--accent); margin-bottom: .4rem; }
+/* an example's title= attribute, appended after the number as a gloss — the
+   number is the label, so keep it secondary, exactly as .problem-title does */
+.example-title { font-weight: 400; font-style: italic; color: var(--ink-muted); }
 .example > .example-solution { margin-top: .9rem; padding-top: .9rem;
     border-top: 1px dashed var(--rule); }
 
@@ -180,6 +183,72 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
     color: var(--accent); margin-bottom: .35rem; }
 .freadinglist ul { margin: 0; padding-left: 1.3rem; }
 .freadinglist li { margin: .25rem 0; }
+
+/* ---- boxed environments: definitions, theorems, comments, infoboxes -------
+   filter.lua emits each as a wrapper + header + body styled entirely with
+   Tailwind utility classes, because homepage-django renders those names for
+   real. Nothing here ships Tailwind, so until task #565 a theorem was
+   indistinguishable from the prose around it — the boxes existed in the DOM
+   and drew nothing. numbering.py rewrites the header into .env-head (and folds
+   in the number the cross-refs already promise); this draws the box.
+
+   Keyed on data-env-type, not on a class per environment, so an environment
+   added to filter.lua later is boxed with no change here. .example and
+   .exercise opt out by name: each already has a presentation of its own above
+   (corner brackets / a run-in "Problem N.n" heading). That pair is the only
+   maintenance this rule needs, and matches _ENV_BOX_RE's exclusions exactly.
+
+   Colour is one hue per environment, tokenised light and dark like the --syn-*
+   syntax palette below. Deliberately NOT themeable through PARODY_WEB_THEME:
+   a per-book retint moves --accent, and a theorem drawn in the book's accent
+   would be indistinguishable from a definition — the hues carry meaning here.
+   The wash is mixed into --paper rather than set flat, so one set of hues
+   works in both themes. (The artifact's own bg-white is a Tailwind utility and
+   inert here; there is nothing to override.) */
+:root {
+  --env-definition: #0e6d80;   /* teal   */
+  --env-theorem:    #6b3fbe;   /* violet */
+  --env-comment:    #8a5a12;   /* ochre  */
+  --env-infobox:    #56534c;   /* neutral, = --ink-muted */
+}
+:root[data-theme="dark"] {
+  --env-definition: #67c8dd; --env-theorem: #b9a3f5;
+  --env-comment: #e0b56a; --env-infobox: #a8a49c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --env-definition: #67c8dd; --env-theorem: #b9a3f5;
+    --env-comment: #e0b56a; --env-infobox: #a8a49c;
+  }
+}
+.col .infobox                     { --env-hue: var(--env-infobox); }
+.col [data-env-type="definition"] { --env-hue: var(--env-definition); }
+.col [data-env-type="theorem"]    { --env-hue: var(--env-theorem); }
+.col [data-env-type="comment"]    { --env-hue: var(--env-comment); }
+
+/* --env-hue's fallback is what an environment with no hue of its own gets. */
+.col :is([data-env-type]:not([data-env-type="example"], [data-env-type="exercise"]),
+         .infobox) {
+    --env: var(--env-hue, var(--env-infobox));
+    margin: 1.6rem 0; padding: var(--s3) var(--s4); border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--env) 45%, var(--rule));
+    background: color-mix(in srgb, var(--env) 3%, var(--paper)); }
+/* the header bleeds to the box's edges, so the same padding serves a box with
+   a header band and one without (an untitled infobox drops its .env-head) */
+.col .env-head {
+    margin: calc(var(--s3) * -1) calc(var(--s4) * -1) var(--s3);
+    padding: var(--s2) var(--s4); border-radius: 3px 3px 0 0;
+    font-family: var(--font-display); font-weight: 700; font-size: var(--fs-sm);
+    background: color-mix(in srgb, var(--env) 9%, var(--paper));
+    border-bottom: 1px solid color-mix(in srgb, var(--env) 45%, var(--rule)); }
+.col .env-num { color: color-mix(in srgb, var(--env) 80%, var(--ink)); }
+.col .env-title { color: var(--ink); }
+/* numbered AND titled ("Comment 3.2 · Designing Cost Functions") */
+.col .env-num + .env-title::before { content: "·"; margin: 0 .45em;
+    color: var(--ink-faint); font-weight: 400; }
+/* the body is filter.lua's own wrapper div; keep its prose flush with the box */
+.col .env-head + div > :first-child { margin-top: 0; }
+.col :is([data-env-type], .infobox) > :last-child > :last-child { margin-bottom: 0; }
 
 /* fill-in-the-blank (cloze) content. parody's build decides what reaches the
    browser; this file only draws it. In a `blank` build the answer is stripped
