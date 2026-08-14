@@ -8,8 +8,9 @@ permitted subset publicly.
 
 import re
 from html import unescape as _unescape
+from pathlib import Path
 
-from django.http import Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.html import escape, strip_tags
@@ -352,6 +353,73 @@ def section_detail(request, chapter_slug, section_slug):
         "meta_description": _excerpt(section.html),
         "canonical_url": request.build_absolute_uri(request.path),
     })
+
+
+def _pdf_response(path, download_name):
+    """Stream a PDF, delegating to nginx when X-Accel is configured.
+
+    With PARODY_WEB_PRINT_XACCEL set, nginx serves the bytes from its internal
+    location and Django's worker is free immediately; without it, FileResponse
+    streams from the process, which is fine for dev and small deployments.
+    """
+    from .printing import print_root, xaccel_prefix
+
+    prefix = xaccel_prefix()
+    if prefix:
+        rel = Path(path).resolve().relative_to(Path(print_root()).resolve())
+        resp = HttpResponse(content_type="application/pdf")
+        resp["X-Accel-Redirect"] = f"{prefix.rstrip('/')}/{rel}"
+    else:
+        resp = FileResponse(open(path, "rb"), content_type="application/pdf")
+    resp["Content-Disposition"] = f'attachment; filename="{download_name}"'
+    return resp
+
+
+def _pdf_filename(book, section=None):
+    """A download name a reader can recognise in their downloads folder."""
+    from django.utils.text import slugify
+
+    stem = slugify(book.title) or book.slug
+    if section is None:
+        return f"{stem}.pdf"
+    parts = [stem]
+    if section.number:
+        parts.append(slugify(section.number))
+    parts.append(slugify(section.title) or section.slug)
+    return "-".join(p for p in parts if p) + ".pdf"
+
+
+def section_pdf(request, chapter_slug, section_slug):
+    """This section's pages, cut out of the full print PDF.
+
+    404 covers every unavailable case — no page range, no PDF on disk, no
+    pypdf, or refused by the policy. A refusal must not distinguish itself from
+    an absence, or it would confirm that gated content exists.
+    """
+    from .printing import section_pdf_path
+
+    book, _ = _resolve_book(request)
+    section = get_object_or_404(
+        Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
+    if not get_policy().can_download_section_pdf(request, section):
+        raise Http404("no pdf for this section")
+    path = section_pdf_path(book, section)
+    if path is None:
+        raise Http404("no pdf for this section")
+    return _pdf_response(path, _pdf_filename(book, section))
+
+
+def book_pdf(request):
+    """The whole book as one PDF."""
+    from .printing import book_pdf_path
+
+    book, _ = _resolve_book(request)
+    if not get_policy().can_download_book_pdf(request, book):
+        raise Http404("no pdf for this book")
+    path = book_pdf_path(book)
+    if path is None:
+        raise Http404("no pdf for this book")
+    return _pdf_response(path, _pdf_filename(book))
 
 
 def solution_detail(request, chapter_slug, section_slug, exercise_id):

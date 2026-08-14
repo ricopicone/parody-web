@@ -246,3 +246,88 @@ class PdfPolicyTests(TestCase):
             # the owner always keeps it
             self.assertTrue(
                 self._policy().can_download_book_pdf(self._owner(), self.book))
+
+
+class PdfViewTests(TestCase):
+    def setUp(self):
+        from django.test import Client
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        make_pdf(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+        self.client = Client()
+
+    def _login(self):
+        from django.contrib.auth import get_user_model
+        get_user_model().objects.create_user("owner", password="pw")
+        self.client.login(username="owner", password="pw")
+
+    def _body(self, resp):
+        return b"".join(resp.streaming_content) if resp.streaming else resp.content
+
+    def test_section_pdf_downloads_with_the_right_page_count(self):
+        import io
+
+        from pypdf import PdfReader
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            resp = self.client.get("/one/alpha/pdf/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/pdf")
+        self.assertEqual(len(PdfReader(io.BytesIO(self._body(resp))).pages), 5)
+
+    def test_the_filename_names_the_section(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            resp = self.client.get("/one/alpha/pdf/")
+        self.assertIn("alpha", resp["Content-Disposition"].lower())
+        self.assertIn(".pdf", resp["Content-Disposition"])
+
+    def test_a_preview_sections_pdf_is_refused_to_the_public(self):
+        # THE leak this whole design exists to prevent: the print PDF holds the
+        # full text of a section the online artifact deliberately withholds.
+        Section.objects.filter(book=self.book, slug="alpha").update(preview=True)
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            resp = self.client.get("/one/alpha/pdf/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_the_owner_still_gets_a_preview_sections_pdf(self):
+        Section.objects.filter(book=self.book, slug="alpha").update(preview=True)
+        self._login()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            resp = self.client.get("/one/alpha/pdf/")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_a_section_with_no_range_has_no_pdf(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            self.assertEqual(self.client.get("/one/beta/pdf/").status_code, 404)
+
+    def test_full_book_pdf_is_served_by_default(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            resp = self.client.get("/pdf/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/pdf")
+
+    def test_full_book_pdf_can_be_withheld_from_the_public(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_PUBLIC_BOOK_PDF=False):
+            self.assertEqual(self.client.get("/pdf/").status_code, 404)
+            self._login()
+            self.assertEqual(self.client.get("/pdf/").status_code, 200)
+
+    def test_a_missing_file_on_disk_is_a_404_not_a_500(self):
+        (self.root / "print-book.pdf").unlink()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            self.assertEqual(self.client.get("/one/alpha/pdf/").status_code, 404)
+            self.assertEqual(self.client.get("/pdf/").status_code, 404)
+
+    def test_no_print_root_is_a_404_not_a_500(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=""):
+            self.assertEqual(self.client.get("/one/alpha/pdf/").status_code, 404)
+
+    def test_xaccel_delegates_streaming_to_nginx(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_PRINT_XACCEL="/print-internal/"):
+            resp = self.client.get("/one/alpha/pdf/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp["X-Accel-Redirect"].startswith("/print-internal/"))
+        self.assertEqual(resp.content, b"")
