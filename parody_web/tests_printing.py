@@ -108,3 +108,92 @@ class PrintSettingsTests(SimpleTestCase):
     def test_valid_settings_pass(self):
         with tempfile.TemporaryDirectory() as td:
             printing.validate_print_settings(td, "", "")
+
+
+def make_pdf(path, pages):
+    """A real multi-page PDF."""
+    from pypdf import PdfWriter
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=200, height=200)
+    with open(path, "wb") as f:
+        writer.write(f)
+    return path
+
+
+class SlicingTests(TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        make_pdf(self.root / "print-book.pdf", 20)
+
+    def _book(self):
+        return import_artifact()
+
+    def test_book_pdf_path_finds_the_file(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            self.assertEqual(printing.book_pdf_path(self._book()),
+                             self.root / "print-book.pdf")
+
+    def test_book_pdf_path_is_none_when_the_file_is_absent(self):
+        (self.root / "print-book.pdf").unlink()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            self.assertIsNone(printing.book_pdf_path(self._book()))
+
+    def test_slice_has_exactly_the_inclusive_page_count(self):
+        from pypdf import PdfReader
+        book = self._book()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            out = printing.section_pdf_path(book, book.sections.get(slug="alpha"))
+        # [5, 9] inclusive = 5 pages
+        self.assertEqual(len(PdfReader(str(out)).pages), 5)
+
+    def test_the_cache_path_carries_the_source_hash(self):
+        book = self._book()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            out = printing.section_pdf_path(book, book.sections.get(slug="alpha"))
+        self.assertIn(book.print_sha256[:12], str(out))
+
+    def test_a_repaginated_book_gets_a_fresh_cache_path(self):
+        book = self._book()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            first = printing.section_pdf_path(
+                book, book.sections.get(slug="alpha"))
+            Book.objects.filter(pk=book.pk).update(print_sha256="d" * 64)
+            book.refresh_from_db()
+            second = printing.section_pdf_path(
+                book, book.sections.get(slug="alpha"))
+        self.assertNotEqual(first, second)
+
+    def test_a_second_request_reuses_the_cached_slice(self):
+        book = self._book()
+        section = book.sections.get(slug="alpha")
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            first = printing.section_pdf_path(book, section)
+            stamp = first.stat().st_mtime_ns
+            second = printing.section_pdf_path(book, section)
+        self.assertEqual(first, second)
+        self.assertEqual(stamp, second.stat().st_mtime_ns)
+
+    def test_a_section_with_no_range_has_no_slice(self):
+        book = self._book()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            self.assertIsNone(printing.section_pdf_path(
+                book, book.sections.get(slug="beta")))
+
+    def test_a_range_past_the_end_of_the_pdf_is_clamped(self):
+        from pypdf import PdfReader
+        book = self._book()
+        section = book.sections.get(slug="alpha")
+        Section.objects.filter(pk=section.pk).update(print_pages=[19, 40])
+        section.refresh_from_db()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            out = printing.section_pdf_path(book, section)
+        self.assertEqual(len(PdfReader(str(out)).pages), 2)  # pages 19-20
+
+    def test_no_print_root_means_no_slice(self):
+        book = self._book()
+        with override_settings(PARODY_WEB_PRINT_ROOT=""):
+            self.assertIsNone(printing.section_pdf_path(
+                book, book.sections.get(slug="alpha")))
