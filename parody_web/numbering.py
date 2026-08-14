@@ -91,6 +91,28 @@ def _fix_dollar_math(html):
     return _DOLLAR_MATH_RE.sub(conv, html)
 
 
+# MathJax renders inline math into an <mjx-container>, which is an atomic
+# inline box — and a line may break between an atomic inline and the text after
+# it. So a sentence ending in math would strand its full stop at the start of
+# the next line ("… the resistance R\n. The current …"), and the same for the
+# comma in a list of symbols. There is no CSS for this: white-space controls
+# breaks INSIDE an element, not the one after it, and the punctuation is a
+# separate text node with no element to hold.
+#
+# U+2060 WORD JOINER is a zero-width character that forbids a break at its
+# position. Sliding one between the math and the punctuation binds them.
+# (U+FEFF, the other zero-width no-break character, is deprecated for this and
+# was measured NOT to prevent the break.)
+_MATH_PUNCT_RE = re.compile(
+    r'(<span class="math inline">(?:(?!</span>).)*</span>)([.,;:!?)\]}])', re.S)
+_WORD_JOINER = "⁠"
+
+
+def _bind_math_punctuation(html):
+    """Stop a line break stranding punctuation that follows inline math."""
+    return _MATH_PUNCT_RE.sub(rf'\1{_WORD_JOINER}\2', html)
+
+
 def _target_url(t):
     """The href for a resolved target; chapter refs point at their first section."""
     url = t.get("url")
@@ -1199,6 +1221,8 @@ def number_artifact(data, references=None, edition_query=""):
             html = _clean_rawtex(html, targets)
             html = _clean_tables(html)
             html = _fix_dollar_math(html)
+            # after _fix_dollar_math, so $x$. gets bound too
+            html = _bind_math_punctuation(html)
             html = _style_menus(html)
             hn = heading_numbers.get((ch["slug"], sec["slug"]), {})
             labels = {"lab": sec["number"] if _section_kind(sec) == "lab" else None}

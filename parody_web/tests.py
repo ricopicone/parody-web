@@ -2743,3 +2743,108 @@ class TemplateCommentSyntaxTests(SimpleTestCase):
             "multi-line {# #} comments render as page text; use "
             "{% comment %}…{% endcomment %} or collapse to one line: "
             + ", ".join(offenders)))
+
+
+class ReadingDetailTests(TestCase):
+    """Three things that made the page harder to read than the print book."""
+
+    def render(self, html, anchors=()):
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": list(anchors),
+                          "html": html}]}]}
+        number_artifact(data)
+        return data["chapters"][0]["sections"][0]["html"]
+
+    WJ = "⁠"
+
+    def test_punctuation_after_inline_math_is_bound_to_it(self):
+        # MathJax renders inline math as an atomic inline box, and a line may
+        # break between one and the text after it — stranding the full stop at
+        # the start of the next line. A word joiner forbids that break.
+        out = self.render('<p>the resistance '
+                          '<span class="math inline">\\(R\\)</span>. Next.</p>')
+        assert f'</span>{self.WJ}.' in out
+
+    def test_every_closing_punctuation_is_bound(self):
+        for ch in ".,;:!?)]}":
+            with self.subTest(ch=ch):
+                out = self.render(
+                    f'<p><span class="math inline">\\(x\\)</span>{ch} t</p>')
+                self.assertIn(f'</span>{self.WJ}{ch}', out)
+
+    def test_a_following_word_is_not_bound(self):
+        # only punctuation, which cannot start a line; a word after math may
+        # wrap normally
+        out = self.render('<p><span class="math inline">\\(x\\)</span> volts</p>')
+        self.assertNotIn(self.WJ, out)
+
+    def test_binding_does_not_reach_across_a_span(self):
+        # the regex must not run from one math span to a later one's punctuation
+        out = self.render('<p><span class="math inline">\\(a\\)</span> and '
+                          '<span class="math inline">\\(b\\)</span>.</p>')
+        self.assertEqual(out.count(self.WJ), 1)
+        self.assertIn(f'\\(b\\)</span>{self.WJ}.', out)
+
+    def test_dollar_math_is_bound_too(self):
+        # _fix_dollar_math converts $x$ late; binding must run after it
+        out = self.render('<p>a value $R_e$. Next.</p>')
+        self.assertIn(f'</span>{self.WJ}.', out)
+
+
+class ContentStylesheetTests(SimpleTestCase):
+    """Rules whose selectors must actually match the markup filter.lua emits."""
+
+    def css(self):
+        return (Path(__file__).resolve().parent / "static" / "parody_web"
+                / "css" / "content.css").read_text()
+
+    def test_the_example_solution_separator_is_not_a_child_selector(self):
+        # filter.lua wraps an environment's content in its own body div, so
+        # .example-solution is a GRANDCHILD of .example. `.example >
+        # .example-solution` never matched, and statement and solution ran
+        # together with nothing between them.
+        css = self.css()
+        self.assertNotIn(".example > .example-solution", css)
+        self.assertIn(".example .example-solution", css)
+
+    def test_figures_get_one_scale_rather_than_being_stretched(self):
+        # `width: 100%` gave every figure a different scale, so label text
+        # varied several-fold from one figure to the next
+        css = self.css()
+        self.assertNotIn("figure > img, figure.subfigure > img { width: 100%",
+                         css)
+        self.assertIn("--fig-scale", css)
+        self.assertIn("zoom: var(--fig-scale)", css)
+
+    def test_the_figure_scale_still_caps_at_the_column(self):
+        css = self.css()
+        rule = css.split("zoom: var(--fig-scale)")[1][:80]
+        self.assertIn("max-width: 100%", rule)
+
+    def test_every_stylesheet_parses(self):
+        """Comments must close and braces must balance in all three sheets.
+
+        Asserting that a rule's TEXT is in the file does not mean the browser
+        ever applies it: an unclosed comment silently swallows everything after
+        it, and a stray `*/` dumps prose into the sheet as garbage, dropping the
+        declarations that follow. The second happened while writing the
+        figure-scale rule above — the rule was present, and inert, and the test
+        that greps for it still passed.
+        """
+        base = Path(__file__).resolve().parent / "static" / "parody_web" / "css"
+        for name in ("tokens.css", "book.css", "content.css"):
+            with self.subTest(sheet=name):
+                text = (base / name).read_text()
+                depth = 0
+                for i, tok in enumerate(re.findall(r"/\*|\*/", text), start=1):
+                    depth += 1 if tok == "/*" else -1
+                    self.assertGreaterEqual(
+                        depth, 0, f"{name}: stray */ at delimiter #{i} — the "
+                                  "text after it leaks into the stylesheet")
+                    self.assertLessEqual(
+                        depth, 1, f"{name}: nested /* at delimiter #{i} — CSS "
+                                  "comments do not nest")
+                self.assertEqual(depth, 0, f"{name}: unclosed comment")
+                stripped = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+                self.assertEqual(stripped.count("{"), stripped.count("}"),
+                                 f"{name}: unbalanced braces")

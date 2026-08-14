@@ -154,8 +154,16 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
 /* an example's title= attribute, appended after the number as a gloss — the
    number is the label, so keep it secondary, exactly as .problem-title does */
 .example-title { font-weight: 400; font-style: italic; color: var(--ink-muted); }
-.example > .example-solution { margin-top: .9rem; padding-top: .9rem;
-    border-top: 1px dashed var(--rule); }
+/* The rule that separates the worked solution from the problem statement.
+   A DESCENDANT selector, not a child one: filter.lua wraps an environment's
+   content in its own body div, so .example-solution is a grandchild of
+   .example and the child selector this used to be never matched — the boxes
+   have been running statement and solution together with nothing between
+   them. --rule is too faint to read as a divider inside an already-bracketed
+   box, so the separator uses the same accent the bracket and label do, held
+   back to a hairline. */
+.example .example-solution { margin-top: .9rem; padding-top: .9rem;
+    border-top: 1px dashed var(--accent-soft); }
 
 /* problems (::: {.exercise}) and lab problems (::: {.exercise .lab}). The book
    sets these as a run-in subsubsection — a bold "Problem 3.2" / "Problem L4.1"
@@ -380,9 +388,35 @@ figure.subfigures, figure.subtables { max-width: 100%; }
       vertical-align: middle; }
 }
 
-/* Figures were left at their intrinsic SVG width, which since the reading
-   column narrowed leaves most diagrams well short of it (a 310px diagram in a
-   544px column). Let them fill the column — and drop the UA's default
-   `figure { margin: 1em 40px }`, which insets every float by 40px a side. */
+/* ---- figure size ----------------------------------------------------------
+   Figures are LaTeX drawings converted to SVG, authored at the size and font
+   they take on the printed page: this book sets 8pt labels against an 11pt
+   body, a ratio of 0.727. Reproducing that ratio is what makes a diagram look
+   like it belongs to the text around it.
+
+   Two things were breaking it. Captioned figures were stretched to `width:
+   100%`, which gives every figure a DIFFERENT scale — a small diagram blown up
+   4x, a full-width one not at all — so label text varied several-fold from one
+   figure to the next. And parody only recently began normalising SVG intrinsic
+   size to CSS px; before that a bare `width="132.438"` from the older poppler
+   was read as user units, rendering each point as one pixel instead of 1.333.
+
+   So: one scale for every figure, applied to a now-trustworthy intrinsic size.
+   The web body is 17px (12.75pt) against print's 11pt, so figures need
+   12.75/11 = 1.16 to hold the same ratio to the text they sit in. max-width
+   keeps the handful of full-page-width diagrams inside the column.
+
+   --fig-scale is a token so a book whose figures use a different point size
+   can retune it without forking this rule.
+
+   `zoom` rather than `width`, because CSS cannot multiply an image's intrinsic
+   size and a stylesheet cannot know it. zoom scales the used size and so
+   participates in layout (unlike `transform`, which would leave a hole);
+   max-width still caps a zoomed image, and an author's inline `style="width:"`
+   still wins, which is what we want. Firefox below 126 ignores zoom and simply
+   renders the figure unscaled — the behaviour it has today. */
+:root { --fig-scale: 1.16; }
+
 figure { margin-inline: 0; }
-figure > img, figure.subfigure > img { width: 100%; height: auto; }
+figure img, img.figure-img {
+    zoom: var(--fig-scale); max-width: 100%; height: auto; }
