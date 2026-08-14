@@ -281,6 +281,70 @@ Nothing else needs to change. The join key already carries the book
 (`(book.slug, book.edition_id, section.key)`), and every access-policy hook
 already takes the request — `section.book.slug` tells the books apart.
 
+## 8. Print PDFs
+
+Each section page can offer the PDF of that section — not a separately typeset
+copy, but the exact pages cut out of the full-book print PDF, so a student who
+prints section by section ends up holding the whole book.
+
+`parody publish` emits the PDF plus a page-map sidecar, and the artifact carries
+each section's absolute page range. parody-web slices the range out on demand
+and caches it.
+
+```python
+# settings.py
+PARODY_WEB_PRINT_ROOT = "/var/lib/mysite/print"   # holds <book>.pdf
+PARODY_WEB_PRINT_XACCEL = "/print-internal/"      # optional; nginx streams
+PARODY_WEB_PUBLIC_BOOK_PDF = True                 # see the warning below
+```
+
+Install the extra, or the affordance never renders (by design, not by error):
+
+```
+pip install "parody-web[print]"
+```
+
+**`PARODY_WEB_PRINT_ROOT` must not live under `MEDIA_ROOT`.** nginx serves the
+media tree with no authentication, and the print PDF contains the full text of
+every section — including ones an `--online-only` artifact deliberately
+withholds. Routing downloads through the view is what preserves that gating.
+
+Two policy hooks decide who gets what:
+
+```python
+class CoursePolicy(DefaultPolicy):
+    def can_download_section_pdf(self, request, section): ...
+    def can_download_book_pdf(self, request, book): ...
+```
+
+`can_download_section_pdf` defaults to whatever the page itself shows — a
+preview section's PDF is owner-only because the page is.
+`can_download_book_pdf` defaults to **public**, gated by
+`PARODY_WEB_PUBLIC_BOOK_PDF`. Note the direction: a gated book that forgets to
+set it to `False` serves its whole text. parody-web warns about exactly that
+combination at startup, but the setting is yours to get right.
+
+### Routes
+
+| route | purpose |
+|---|---|
+| `<ch>/<sec>/pdf/` | download that section |
+| `<ch>/<sec>/pdf/view/` | full-window PDF reader |
+| `pdf/` | the whole book |
+
+### The annotation seam
+
+`pdf_view.html` renders the PDF in a positioned container with an empty
+sibling:
+
+```html
+<div class="pdf-annotation-layer" data-section-key="{{ section.key }}"></div>
+```
+
+It ships inert. A host adding drawing or annotation keys its records to that
+`data-section-key` — the same join key described in §5 — and shadows the
+template to add its own layer and scripts.
+
 ## Settings reference
 
 | setting | default | meaning |
@@ -289,3 +353,7 @@ already takes the request — `section.book.slug` tells the books apart.
 | `PARODY_WEB_BOOK_RESOLVER` | `""` (uses `BOOK_SLUG`) | dotted path to a `callable(request) -> slug` choosing the book per request |
 | `PARODY_WEB_THEME` | `{}` | colour and font token overrides; keyed by book slug on a multi-book deployment |
 | `BOOK_SLUG` | the only imported book | the book to serve when the resolver declines or is unset |
+| `PARODY_WEB_PRINT_ROOT` | `""` (feature off) | directory holding the full-book print PDFs; must NOT be inside `MEDIA_ROOT` |
+| `PARODY_WEB_PRINT_CACHE` | `<print root>/.cache` | where sliced section PDFs are cached; must be under the print root when X-Accel is used |
+| `PARODY_WEB_PRINT_XACCEL` | `""` (Django streams) | nginx `internal` location mapped to the print root |
+| `PARODY_WEB_PUBLIC_BOOK_PDF` | `True` | may the public download the whole book as one PDF; set `False` for any book that gates a section |

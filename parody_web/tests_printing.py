@@ -447,3 +447,33 @@ class SectionRailTests(TestCase):
                                PARODY_WEB_PUBLIC_BOOK_PDF=False):
             html = self.client.get("/").content.decode()
         self.assertNotIn('href="/pdf/"', html)
+
+
+class PublicBookPdfWarningTests(TestCase):
+    def test_a_gated_book_with_a_public_full_pdf_warns(self):
+        book = import_artifact()
+        Section.objects.filter(book=book, slug="alpha").update(preview=True)
+        with override_settings(PARODY_WEB_PUBLIC_BOOK_PDF=True):
+            warnings = printing.public_book_pdf_warnings()
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("print-book", warnings[0])
+        self.assertIn("PARODY_WEB_PUBLIC_BOOK_PDF", warnings[0])
+
+    def test_a_fully_public_book_does_not_warn(self):
+        import_artifact()
+        with override_settings(PARODY_WEB_PUBLIC_BOOK_PDF=True):
+            self.assertEqual(printing.public_book_pdf_warnings(), [])
+
+    def test_no_warning_once_the_setting_is_off(self):
+        book = import_artifact()
+        Section.objects.filter(book=book, slug="alpha").update(preview=True)
+        with override_settings(PARODY_WEB_PUBLIC_BOOK_PDF=False):
+            self.assertEqual(printing.public_book_pdf_warnings(), [])
+
+    def test_a_book_with_no_print_pdf_never_warns(self):
+        data = json.loads(json.dumps(ARTIFACT))
+        del data["print"]
+        book = import_artifact(data)
+        Section.objects.filter(book=book, slug="alpha").update(preview=True)
+        with override_settings(PARODY_WEB_PUBLIC_BOOK_PDF=True):
+            self.assertEqual(printing.public_book_pdf_warnings(), [])

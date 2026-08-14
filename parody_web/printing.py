@@ -142,3 +142,31 @@ def section_pdf_path(book, section):
     if not dest.is_file():
         slice_pdf(src, dest, start, end)
     return dest
+
+
+def public_book_pdf_warnings():
+    """Books whose full PDF is public while some of their sections are not.
+
+    PARODY_WEB_PUBLIC_BOOK_PDF defaults to True, which is right for a wholly
+    public book and wrong for a gated one — and the failure is silent, because
+    serving the PDF looks exactly like success. So say something: a gated book
+    that has not turned the setting off is handing out the very text its
+    online-only artifact was built to withhold.
+    """
+    from django.conf import settings
+
+    if not getattr(settings, "PARODY_WEB_PUBLIC_BOOK_PDF", True):
+        return []
+    from .models import Book
+
+    messages = []
+    for book in Book.objects.exclude(print_pdf="").prefetch_related("sections"):
+        if any(s.preview for s in book.sections.all()):
+            label = f"{book.slug}/{book.edition_id}" if book.edition_id \
+                else book.slug
+            messages.append(
+                f"{label}: the full-book PDF is public "
+                "(PARODY_WEB_PUBLIC_BOOK_PDF is True) but the book has "
+                "preview-gated sections — the PDF hands out text the site "
+                "withholds. Set PARODY_WEB_PUBLIC_BOOK_PDF = False.")
+    return messages

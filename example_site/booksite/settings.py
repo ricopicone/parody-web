@@ -82,6 +82,16 @@ STORAGES = {
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(os.getenv("BOOKSITE_MEDIA_ROOT", BASE_DIR / "media"))
 
+# Print PDFs. Deliberately NOT under MEDIA_ROOT: nginx serves that tree with no
+# auth, and the print PDF carries the full text of preview-gated sections.
+# parody-web slices per-section PDFs out of it behind the access policy.
+PARODY_WEB_PRINT_ROOT = os.getenv("BOOKSITE_PRINT_ROOT", "")
+PARODY_WEB_PRINT_XACCEL = os.getenv("BOOKSITE_PRINT_XACCEL", "")
+# The full-book PDF is public by default. A book that gates ANY of its sections
+# must set this to 0 — parody_web.printing.public_book_pdf_warnings() warns at
+# boot if it is left on for such a book.
+PARODY_WEB_PUBLIC_BOOK_PDF = os.getenv("BOOKSITE_PUBLIC_BOOK_PDF", "1") == "1"
+
 # Behind a TLS-terminating proxy in production; harden cookies + redirects.
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

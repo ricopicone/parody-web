@@ -45,6 +45,17 @@ if [ -n "${CONTENT_REPO:-}" ] && [ -n "${ARTIFACT_ASSET:-}" ]; then
     [ -f "$TMP/$MEDIA_ASSET" ] && unzip -oq "$TMP/$MEDIA_ASSET" \
       -d "${BOOKSITE_MEDIA_ROOT:?set BOOKSITE_MEDIA_ROOT for media}"
   fi
+  # Optional print PDFs (+ page maps). These land OUTSIDE the media tree on
+  # purpose: nginx serves media unauthenticated, and the print PDF holds the
+  # full text of gated sections. parody-web's /pdf/ views gate every byte.
+  if [ -n "${PRINT_ASSET:-}" ]; then
+    GH_TOKEN="${GH_TOKEN:-}" gh release download "${TAG_ARGS[@]}" \
+      --repo "$CONTENT_REPO" --pattern "$PRINT_ASSET" --dir "$TMP" --clobber || true
+    if [ -f "$TMP/$PRINT_ASSET" ]; then
+      install -d "${BOOKSITE_PRINT_ROOT:?set BOOKSITE_PRINT_ROOT for print PDFs}"
+      unzip -oq "$TMP/$PRINT_ASSET" -d "${BOOKSITE_PRINT_ROOT}"
+    fi
+  fi
   # optional site-provided extra media (icons, cover, errata figures)
   [ -d "$APP_DIR/deploy/extra-media" ] && \
     cp -f "$APP_DIR/deploy/extra-media"/* "${BOOKSITE_MEDIA_ROOT}/" 2>/dev/null || true
