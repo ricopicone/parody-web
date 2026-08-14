@@ -197,3 +197,52 @@ class SlicingTests(TestCase):
         with override_settings(PARODY_WEB_PRINT_ROOT=""):
             self.assertIsNone(printing.section_pdf_path(
                 book, book.sections.get(slug="alpha")))
+
+
+class PdfPolicyTests(TestCase):
+    def setUp(self):
+        from django.test import RequestFactory
+        self.rf = RequestFactory()
+        self.book = import_artifact()
+
+    def _policy(self):
+        from parody_web.access import DefaultPolicy
+        return DefaultPolicy()
+
+    def _anon(self):
+        from django.contrib.auth.models import AnonymousUser
+        req = self.rf.get("/")
+        req.user = AnonymousUser()
+        return req
+
+    def _owner(self):
+        from django.contrib.auth import get_user_model
+        req = self.rf.get("/")
+        req.user = get_user_model()(username="owner")
+        return req
+
+    def test_a_full_sections_pdf_is_public(self):
+        section = self.book.sections.get(slug="alpha")
+        self.assertTrue(
+            self._policy().can_download_section_pdf(self._anon(), section))
+
+    def test_a_preview_sections_pdf_is_owner_only(self):
+        section = self.book.sections.get(slug="alpha")
+        Section.objects.filter(pk=section.pk).update(preview=True)
+        section.refresh_from_db()
+        self.assertFalse(
+            self._policy().can_download_section_pdf(self._anon(), section))
+        self.assertTrue(
+            self._policy().can_download_section_pdf(self._owner(), section))
+
+    def test_the_full_book_pdf_is_public_by_default(self):
+        self.assertTrue(
+            self._policy().can_download_book_pdf(self._anon(), self.book))
+
+    def test_the_full_book_pdf_can_be_turned_off_for_a_site(self):
+        with override_settings(PARODY_WEB_PUBLIC_BOOK_PDF=False):
+            self.assertFalse(
+                self._policy().can_download_book_pdf(self._anon(), self.book))
+            # the owner always keeps it
+            self.assertTrue(
+                self._policy().can_download_book_pdf(self._owner(), self.book))

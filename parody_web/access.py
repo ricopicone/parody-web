@@ -67,6 +67,34 @@ class DefaultPolicy:
             "message": "Solutions are available to the book's owner.",
         }
 
+    def can_download_section_pdf(self, request, section):
+        """May this reader download this section's print PDF?
+
+        Defaults to exactly what the page itself shows: a preview section's PDF
+        is owner-only, because the page is. This matters more than it looks —
+        the print PDF holds the FULL text of a section the online-only artifact
+        deliberately withholds, so a laxer default here would quietly undo the
+        gating the artifact was built to enforce.
+        """
+        if not self.can_view_section(request, section):
+            return False
+        return not self.section_is_preview(request, section)
+
+    def can_download_book_pdf(self, request, book):
+        """May this reader download the whole book as one PDF?
+
+        Public by default. A site whose book is not wholly public sets
+        PARODY_WEB_PUBLIC_BOOK_PDF = False, leaving it to the owner. Note the
+        direction of that default: a gated book that forgets the setting serves
+        its full text, so printing.public_book_pdf_warnings() calls it out at
+        startup.
+        """
+        from django.conf import settings
+
+        if self.is_owner(request):
+            return True
+        return bool(getattr(settings, "PARODY_WEB_PUBLIC_BOOK_PDF", True))
+
 
 def validate_policy(path):
     """Raise ImproperlyConfigured unless `path` names an importable class."""
