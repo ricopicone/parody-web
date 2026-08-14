@@ -168,7 +168,8 @@ def index(request):
         "ed_query": _ed_query(book),
         "public": public, "systems_list": book.parts or [],
         "meta_description": book.description or f"{book.title} — companion site.",
-        "canonical_url": request.build_absolute_uri(request.path)})
+        "canonical_url": request.build_absolute_uri(request.path),
+        **_print_context(request, book)})
 
 
 _INDEX_SPAN_RE = re.compile(
@@ -317,6 +318,10 @@ def chapter_detail(request, chapter_slug):
         "meta_description": _excerpt(leadin.html if leadin else "")
         or f"{chapter.title} — {book.title}.",
         "canonical_url": request.build_absolute_uri(request.path),
+        # The chapter title + lead-in prose is one print unit, and the lead-in
+        # is read HERE rather than at /<ch>/lead-in/ — so this is the only page
+        # its PDF can be offered on.
+        **_print_context(request, book, leadin),
     })
 
 
@@ -352,6 +357,7 @@ def section_detail(request, chapter_slug, section_slug):
         "next_path": request.get_full_path(),
         "meta_description": _excerpt(section.html),
         "canonical_url": request.build_absolute_uri(request.path),
+        **_print_context(request, book, section),
     })
 
 
@@ -387,6 +393,33 @@ def _pdf_filename(book, section=None):
         parts.append(slugify(section.number))
     parts.append(slugify(section.title) or section.slug)
     return "-".join(p for p in parts if p) + ".pdf"
+
+
+def _print_context(request, book, section=None):
+    """PDF links for the chrome, empty when there is nothing to offer.
+
+    Everything here is computed from what the reader may actually have, so a
+    template can render the affordance on truthiness alone. `section` may be
+    None (the home page) or a chapter's lead-in (the chapter page, where that
+    unit's PDF is the chapter title + intro prose).
+    """
+    from .printing import book_pdf_path, section_pdf_path
+
+    policy = get_policy()
+    ctx = {"section_pdf_url": "", "section_pdf_view_url": "",
+           "section_pdf_pages": None, "book_pdf_url": ""}
+    if book_pdf_path(book) and policy.can_download_book_pdf(request, book):
+        ctx["book_pdf_url"] = reverse("parody_web:book_pdf")
+    if section is not None \
+            and policy.can_download_section_pdf(request, section) \
+            and section_pdf_path(book, section) is not None:
+        ctx["section_pdf_url"] = reverse(
+            "parody_web:section_pdf", args=[section.chapter.slug, section.slug])
+        ctx["section_pdf_view_url"] = reverse(
+            "parody_web:section_pdf_view",
+            args=[section.chapter.slug, section.slug])
+        ctx["section_pdf_pages"] = section.print_page_count
+    return ctx
 
 
 def section_pdf(request, chapter_slug, section_slug):

@@ -271,3 +271,47 @@ form.codebox input { color: var(--ink); background: var(--paper); }
 /* The subject index is a multi-column reference list, not prose — the reading
    measure would force it to a single column and double its length. */
 .page.wide { grid-template-columns: auto minmax(0, 54rem) auto; }
+
+/* ---- sticky utility rail -------------------------------------------------
+   One entry per per-section utility (print PDF now; a video embed later), in
+   the upper right of the CONTENT column. Not in .rail — that column is hidden
+   below 1440px, and the PDF must stay reachable on a laptop. Floating keeps it
+   out of the prose without a second grid track.
+   Opens on hover/focus with no JavaScript; the trigger is a real link to the
+   full-window viewer, so the PDF works with scripting off. */
+.util-rail { position: sticky; top: var(--s3); z-index: 5; float: right;
+    margin: 0 0 var(--s2) var(--s3); padding: 0; list-style: none; }
+.util-rail-item { position: relative; }
+.util-rail-trigger { display: grid; place-items: center;
+    width: 2.15rem; height: 2.15rem; border: 1px solid var(--rule);
+    border-radius: 50%; background: var(--paper); color: var(--ink-muted);
+    opacity: .7; transition: opacity .15s ease, color .15s ease,
+    border-color .15s ease; }
+.util-rail-trigger:hover, .util-rail-trigger:focus-visible {
+    opacity: 1; color: var(--accent); border-color: var(--accent);
+    text-decoration: none; }
+.util-rail-card { position: absolute; top: calc(100% + .35rem); right: 0;
+    min-width: 14rem; display: none; flex-direction: column; gap: .3rem;
+    padding: var(--s2) var(--s3); border: 1px solid var(--rule);
+    border-radius: 4px; background: var(--paper-panel);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 12%);
+    font-family: var(--font-display); font-size: var(--fs-sm); }
+.util-rail-item:hover .util-rail-card,
+.util-rail-item:focus-within .util-rail-card { display: flex; }
+.util-rail-cap { margin: 0 0 .1rem; font-size: var(--fs-xs);
+    letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint); }
+.util-rail-note { display: block; font-size: var(--fs-xs);
+    color: var(--ink-faint); }
+
+/* On a phone the float would crowd the measure; park it out of the flow. */
+@media (max-width: 900px) {
+  .util-rail { position: fixed; top: auto; bottom: var(--s3); right: var(--s3);
+      float: none; margin: 0; }
+  .util-rail-card { top: auto; bottom: calc(100% + .35rem); }
+}
+@media print { .util-rail { display: none; } }
+
+/* full-book download under the hero blurb — quiet, not a call to action */
+.book-pdf-link { font-family: var(--font-display); font-size: var(--fs-sm);
+    color: var(--ink-muted); margin-top: var(--s3); }
+.book-pdf-note { color: var(--ink-faint); }

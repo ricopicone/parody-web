@@ -23,6 +23,7 @@ the page reads "Voltage dividers" while the contents beside it read
 {% if not title_in_html %}<h1>{% if section.number %}<span class="secnum">{{ section.number }}</span> {% endif %}{{ section.title|code_spans }}</h1>{% endif %}
 
 {% include "parody_web/_section_toolbar.html" %}
+{% include "parody_web/_section_rail.html" %}
 
 {% if preview %}
   {% if section.html %}<div class="preview">{{ section.html|render_book|truncatewords_html:150 }}</div>{% endif %}

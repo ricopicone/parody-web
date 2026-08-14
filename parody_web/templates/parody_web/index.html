@@ -29,6 +29,7 @@
       {% endwith %}
     {% endif %}
     {% if book.description %}<p class="hero-blurb">{{ book.description }}</p>{% endif %}
+    {% if book_pdf_url %}<p class="book-pdf-link"><a href="{{ book_pdf_url }}">Download the full book as a PDF</a>{% if book.print_pages %} <span class="book-pdf-note">{{ book.print_pages }} pages</span>{% endif %}</p>{% endif %}
   </div>
 </div>
 

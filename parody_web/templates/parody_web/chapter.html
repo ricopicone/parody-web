@@ -14,6 +14,8 @@
 
 <h1>{% if chapter.number %}{% if chapter.appendix %}Appendix {% endif %}{{ chapter.number }}. {% endif %}{{ chapter.title|code_spans }}</h1>
 
+{% include "parody_web/_section_rail.html" %}
+
 {% if leadin %}
   {% if preview %}
     {% if leadin.html %}<div class="preview">{{ leadin.html|render_book|truncatewords_html:150 }}</div>{% endif %}

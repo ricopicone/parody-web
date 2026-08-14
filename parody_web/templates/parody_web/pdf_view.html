@@ -1,12 +1,19 @@
 {% load parody_web %}<title>{{ section.title|cut:"`" }} (PDF) — {{ book.title }}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+{% comment %}
+Chrome-free by design, but it still needs the design tokens — without them the
+bar would ignore the reader's theme (and dark mode) entirely. Only tokens: the
+book stylesheets style prose this page does not have.
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'parody_web/css/tokens.css' %}">
+<style>{% theme_css %}</style>
 <style>
   .pdf-shell { position: fixed; inset: 0; display: flex; flex-direction: column;
-               background: var(--surface, #fff); color: var(--ink, #111); }
+               background: var(--paper, #fff); color: var(--ink, #111); }
   .pdf-bar { display: flex; align-items: baseline; gap: 1rem; flex: none;
              padding: .55rem .9rem; border-bottom: 1px solid var(--rule, #ddd);
-             font: 500 .9rem/1.3 var(--ui-font, system-ui, sans-serif); }
+             font: 500 .9rem/1.3 var(--font-display, system-ui, sans-serif); }
   .pdf-bar .pdf-title { font-weight: 600; }
   .pdf-bar .pdf-book { color: var(--ink-muted, #666); font-size: .85rem; }
   .pdf-bar .pdf-spacer { margin-left: auto; }

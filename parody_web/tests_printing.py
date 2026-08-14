@@ -374,3 +374,76 @@ class PdfViewerTests(TestCase):
         with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
             self.assertEqual(
                 self.client.get("/one/beta/pdf/view/").status_code, 404)
+
+
+class SectionRailTests(TestCase):
+    def setUp(self):
+        from django.test import Client
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        make_pdf(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+        self.client = Client()
+
+    def test_the_rail_offers_the_section_pdf(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/alpha/").content.decode()
+        self.assertIn('class="util-rail"', html)
+        self.assertIn('data-util="pdf"', html)
+        self.assertIn("/one/alpha/pdf/", html)
+        self.assertIn("/one/alpha/pdf/view/", html)
+
+    def test_the_rail_states_the_page_count(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/alpha/").content.decode()
+        self.assertIn("5 pages", html)
+
+    def test_the_rail_is_absent_when_the_section_has_no_pdf(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/beta/").content.decode()
+        self.assertNotIn('class="util-rail"', html)
+
+    def test_the_rail_is_absent_without_a_print_root(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=""):
+            html = self.client.get("/one/alpha/").content.decode()
+        self.assertNotIn('class="util-rail"', html)
+
+    def test_a_preview_section_offers_the_public_no_pdf(self):
+        Section.objects.filter(book=self.book, slug="alpha").update(preview=True)
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/alpha/").content.decode()
+        self.assertNotIn("/one/alpha/pdf/", html)
+
+    def test_the_rail_works_without_javascript(self):
+        # the trigger is a real link to the viewer, progressively enhanced
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/alpha/").content.decode()
+        self.assertIn('<a class="util-rail-trigger"', html)
+
+    def test_the_chapter_page_offers_the_lead_in_pdf(self):
+        # The lead-in is the chapter title + intro prose unit. It is rendered
+        # on the chapter landing page, not at /one/lead-in/, so this is the
+        # only place its PDF can be offered.
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/").content.decode()
+        self.assertIn('class="util-rail"', html)
+        self.assertIn("/one/lead-in/pdf/", html)
+        self.assertIn("3 pages", html)  # [3, 5] inclusive
+
+    def test_a_chapter_with_no_lead_in_has_no_rail(self):
+        Section.objects.filter(book=self.book, slug="lead-in").delete()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/").content.decode()
+        self.assertNotIn('class="util-rail"', html)
+
+    def test_the_home_page_offers_the_full_book(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/").content.decode()
+        self.assertIn('href="/pdf/"', html)
+
+    def test_the_home_page_hides_a_withheld_full_book(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_PUBLIC_BOOK_PDF=False):
+            html = self.client.get("/").content.decode()
+        self.assertNotIn('href="/pdf/"', html)

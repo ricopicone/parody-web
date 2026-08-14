@@ -1,0 +1,33 @@
+{% comment %}
+Sticky utility rail: one entry per per-section utility, upper right.
+
+Ships with a single tenant (the print PDF). A coming video embed is one more
+<li data-util="video"> and nothing else moves — that is the point of the
+structure. Host-shadowable like _section_toolbar.html / _section_overlay.html.
+
+It floats inside the CONTENT column rather than living in .rail (grid-column 3):
+.rail is hidden below 1440px, and the PDF must not vanish on a laptop.
+
+Progressive enhancement: the trigger is a real link to the full-window viewer,
+so the PDF is reachable with JavaScript off. Hover/focus opens the card via CSS
+alone — no script at all.
+{% endcomment %}
+{% if section_pdf_url %}
+<ul class="util-rail" aria-label="Section tools">
+  <li class="util-rail-item" data-util="pdf">
+    <a class="util-rail-trigger" href="{{ section_pdf_view_url }}"
+       aria-label="Read this section as a PDF">
+      <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" focusable="false">
+        <path fill="currentColor" d="M4.2 1h4.6l3.2 3.2V15H4.2V1zm4.6 1.1v2.3h2.3L8.8 2.1z"/>
+        <path fill="currentColor" d="M5.9 12.9V9.2h1.7a1.25 1.25 0 0 1 0 2.5h-.8v1.2h-.9zm.9-1.9h.7a.47.47 0 0 0 0-.94h-.7v.94z"/>
+      </svg>
+    </a>
+    <div class="util-rail-card">
+      <p class="util-rail-cap">Print version</p>
+      <a href="{{ section_pdf_view_url }}">Read as PDF</a>
+      <a href="{{ section_pdf_url }}">Download this section{% if section_pdf_pages %}<span class="util-rail-note">{{ section_pdf_pages }} page{{ section_pdf_pages|pluralize }}</span>{% endif %}</a>
+      {% if book_pdf_url %}<a href="{{ book_pdf_url }}">Download the full book</a>{% endif %}
+    </div>
+  </li>
+</ul>
+{% endif %}
