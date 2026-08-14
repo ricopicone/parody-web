@@ -19,6 +19,13 @@ classifiers = [
 ]
 dependencies = ["Django>=5.0,<6.0"]
 
+[project.optional-dependencies]
+# Per-section print PDFs are sliced out of the full book PDF at request time.
+# Optional so a deployment that serves no print PDFs keeps parody-web's
+# single-dependency footprint; without it the PDF affordance simply never
+# renders (see parody_web/printing.py).
+print = ["pypdf>=4.0"]
+
 [project.urls]
 Homepage = "https://github.com/ricopicone/parody-web"
 Issues = "https://github.com/ricopicone/parody-web/issues"

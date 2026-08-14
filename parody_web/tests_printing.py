@@ -3,9 +3,11 @@ import json
 import tempfile
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
+from parody_web import printing
 from parody_web.models import Book, Section
 
 ARTIFACT = {
@@ -69,3 +71,40 @@ class ImportPrintFieldsTests(TestCase):
         self.assertEqual(book.print_pdf, "")
         self.assertIsNone(book.print_pages)
         self.assertTrue(all(s.print_pages is None for s in book.sections.all()))
+
+
+class PrintSettingsTests(SimpleTestCase):
+    def test_no_root_configured_means_the_feature_is_off(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=""):
+            self.assertIsNone(printing.print_root())
+
+    def test_cache_defaults_inside_the_print_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            with override_settings(PARODY_WEB_PRINT_ROOT=td,
+                                   PARODY_WEB_PRINT_CACHE=""):
+                self.assertEqual(printing.print_cache_root(),
+                                 Path(td) / ".cache")
+
+    def test_cache_can_be_pointed_elsewhere(self):
+        with tempfile.TemporaryDirectory() as td, \
+                tempfile.TemporaryDirectory() as cache:
+            with override_settings(PARODY_WEB_PRINT_ROOT=td,
+                                   PARODY_WEB_PRINT_CACHE=cache):
+                self.assertEqual(printing.print_cache_root(), Path(cache))
+
+    def test_a_non_directory_root_is_rejected_at_startup(self):
+        with self.assertRaises(ImproperlyConfigured):
+            printing.validate_print_settings("/definitely/not/here", "", "")
+
+    def test_xaccel_requires_the_cache_to_live_under_the_root(self):
+        # nginx maps ONE internal location at the print root, so a cache
+        # outside it could never be streamed.
+        with tempfile.TemporaryDirectory() as td, \
+                tempfile.TemporaryDirectory() as outside:
+            with self.assertRaises(ImproperlyConfigured):
+                printing.validate_print_settings(td, outside, "/print-internal/")
+            printing.validate_print_settings(td, "", "/print-internal/")
+
+    def test_valid_settings_pass(self):
+        with tempfile.TemporaryDirectory() as td:
+            printing.validate_print_settings(td, "", "")

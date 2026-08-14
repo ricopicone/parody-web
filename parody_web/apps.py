@@ -14,7 +14,12 @@ class ParodyWebConfig(AppConfig):
 
         from .access import validate_policy
         from .books import validate_resolver
+        from .printing import validate_print_settings
         from .theme import validate_theme
         validate_theme(getattr(settings, "PARODY_WEB_THEME", None))
         validate_policy(getattr(settings, "PARODY_WEB_ACCESS_POLICY", ""))
         validate_resolver(getattr(settings, "PARODY_WEB_BOOK_RESOLVER", ""))
+        validate_print_settings(
+            getattr(settings, "PARODY_WEB_PRINT_ROOT", ""),
+            getattr(settings, "PARODY_WEB_PRINT_CACHE", ""),
+            getattr(settings, "PARODY_WEB_PRINT_XACCEL", ""))
