@@ -141,6 +141,11 @@ class Command(BaseCommand):
                 "cover_image": self.cover,
                 "errata": self.errata,
                 "parts": data.get("parts"),
+                # Print PDF metadata (parody `publish` emits it). Absent for a
+                # web-only build, which leaves the PDF feature switched off.
+                "print_pdf": (data.get("print") or {}).get("pdf", ""),
+                "print_pages": (data.get("print") or {}).get("pages"),
+                "print_sha256": (data.get("print") or {}).get("sha256", ""),
             })
 
         seen_ch, seen_sec = set(), set()
@@ -174,6 +179,7 @@ class Command(BaseCommand):
                         "has_solutions": bool(sec.get("has_solutions", False)),
                         "solutions": sec.get("solutions") or {},
                         "problems": sec.get("problems") or {},
+                        "print_pages": (sec.get("print") or {}).get("pages"),
                     })
                 seen_sec.add((chapter.slug, sec["slug"]))
 

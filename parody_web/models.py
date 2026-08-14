@@ -38,6 +38,14 @@ class Book(models.Model):
     # structured systems catalog (artifact `parts`): list of systems for this
     # edition's active versions; rendered by the /systems/<version>/ pages.
     parts = models.JSONField(null=True, blank=True)
+    # Print PDF this edition's page ranges index into. Empty when the artifact
+    # carried no print block — the PDF feature then simply does not exist for
+    # this book, which is correct for a web-only build.
+    print_pdf = models.CharField(max_length=200, blank=True, default="")
+    print_pages = models.PositiveIntegerField(null=True, blank=True)
+    # sha256 of the source PDF: folded into the slice cache path so a rebuilt
+    # (repaginated) book can never be served a stale slice.
+    print_sha256 = models.CharField(max_length=64, blank=True, default="")
 
     class Meta:
         unique_together = ("slug", "edition_id")
@@ -100,6 +108,10 @@ class Section(models.Model):
     has_solutions = models.BooleanField(default=False)
     solutions = models.JSONField(default=dict, blank=True)
     problems = models.JSONField(default=dict, blank=True)
+    # Inclusive [start, end] absolute page range in the print PDF. The end page
+    # is shared with the next section when both fall on one sheet — intended,
+    # so a student printing section by section loses nothing at the seams.
+    print_pages = models.JSONField(null=True, blank=True)
 
     class Meta:
         ordering = ["order"]
@@ -114,6 +126,14 @@ class Section(models.Model):
     def problem_for(self, exercise_id):
         """The stored problem statement for one exercise, or None."""
         return (self.problems or {}).get(exercise_id)
+
+    @property
+    def print_page_count(self):
+        """Sheets in this section's PDF, or None when it has no page range."""
+        if not self.print_pages or len(self.print_pages) != 2:
+            return None
+        start, end = self.print_pages
+        return end - start + 1
 
     @property
     def key(self):
