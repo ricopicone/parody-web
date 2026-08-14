@@ -1,0 +1,39 @@
+{% load parody_web %}<title>{{ section.title|cut:"`" }} (PDF) — {{ book.title }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<style>
+  .pdf-shell { position: fixed; inset: 0; display: flex; flex-direction: column;
+               background: var(--surface, #fff); color: var(--ink, #111); }
+  .pdf-bar { display: flex; align-items: baseline; gap: 1rem; flex: none;
+             padding: .55rem .9rem; border-bottom: 1px solid var(--rule, #ddd);
+             font: 500 .9rem/1.3 var(--ui-font, system-ui, sans-serif); }
+  .pdf-bar .pdf-title { font-weight: 600; }
+  .pdf-bar .pdf-book { color: var(--ink-muted, #666); font-size: .85rem; }
+  .pdf-bar .pdf-spacer { margin-left: auto; }
+  .pdf-bar a { color: inherit; text-decoration: none; opacity: .8; }
+  .pdf-bar a:hover, .pdf-bar a:focus-visible { opacity: 1; text-decoration: underline; }
+  /* The PDF and its (currently empty) annotation layer share this stacking
+     context, so a future layer can sit exactly over the page. */
+  .pdf-stage { position: relative; flex: 1 1 auto; min-height: 0; }
+  .pdf-stage > iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .pdf-annotation-layer { position: absolute; inset: 0; pointer-events: none; }
+</style>
+<div class="pdf-shell">
+  <nav class="pdf-bar">
+    <span class="pdf-title">{% if section.number %}{{ section.number }} {% endif %}{{ section.title|cut:"`" }}</span>
+    <span class="pdf-book">{{ book.title }}</span>
+    <span class="pdf-spacer"></span>
+    <a href="{% section_url book chapter.slug section.slug %}">← Back to the section</a>
+    <a href="{% url 'parody_web:section_pdf' chapter.slug section.slug %}">Download</a>
+  </nav>
+  <div class="pdf-stage">
+    <iframe title="{{ section.title|cut:'`' }} (PDF)"
+            src="{% url 'parody_web:section_pdf' chapter.slug section.slug %}#view=FitH"></iframe>
+    {% comment %}
+    Annotation seam. Ships empty and inert; a host project that adds drawing
+    keys its records to this data-section-key (the same Section.key hosts
+    already use). See docs/host-integration.md.
+    {% endcomment %}
+    <div class="pdf-annotation-layer" data-section-key="{{ section.key }}"></div>
+  </div>
+</div>

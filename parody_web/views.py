@@ -409,6 +409,29 @@ def section_pdf(request, chapter_slug, section_slug):
     return _pdf_response(path, _pdf_filename(book, section))
 
 
+def section_pdf_view(request, chapter_slug, section_slug):
+    """Full-window PDF reader for one section.
+
+    Deliberately chrome-free: no masthead, sidebar, or rail. The PDF sits in a
+    positioned container with an empty overlay sibling — the seam a future
+    annotation layer adopts (see _section_overlay.html for the same pattern).
+    """
+    from .printing import section_pdf_path
+
+    book, editions = _resolve_book(request)
+    section = get_object_or_404(
+        Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
+    if not get_policy().can_download_section_pdf(request, section):
+        raise Http404("no pdf for this section")
+    if section_pdf_path(book, section) is None:
+        raise Http404("no pdf for this section")
+    return render(request, "parody_web/pdf_view.html", {
+        "book": book, "editions": editions,
+        "section": section, "chapter": section.chapter,
+        "canonical_url": request.build_absolute_uri(request.path),
+    })
+
+
 def book_pdf(request):
     """The whole book as one PDF."""
     from .printing import book_pdf_path

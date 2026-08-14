@@ -331,3 +331,46 @@ class PdfViewTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp["X-Accel-Redirect"].startswith("/print-internal/"))
         self.assertEqual(resp.content, b"")
+
+
+class PdfViewerTests(TestCase):
+    def setUp(self):
+        from django.test import Client
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        make_pdf(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+        self.client = Client()
+
+    def test_the_viewer_renders_and_points_at_the_section_pdf(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            resp = self.client.get("/one/alpha/pdf/view/")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertIn("/one/alpha/pdf/", html)
+        self.assertIn("Alpha", html)
+
+    def test_the_viewer_exposes_the_annotation_seam(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        # the empty overlay a future annotation layer adopts, keyed the way
+        # hosts already key their per-section records
+        self.assertIn('class="pdf-annotation-layer"', html)
+        self.assertIn('data-section-key="al"', html)
+
+    def test_the_viewer_offers_a_way_back_to_the_section(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertIn('href="/one/alpha/"', html)
+
+    def test_a_refused_section_has_no_viewer(self):
+        Section.objects.filter(book=self.book, slug="alpha").update(preview=True)
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            resp = self.client.get("/one/alpha/pdf/view/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_a_section_with_no_pdf_has_no_viewer(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            self.assertEqual(
+                self.client.get("/one/beta/pdf/view/").status_code, 404)

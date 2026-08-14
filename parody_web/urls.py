@@ -32,6 +32,9 @@ urlpatterns = [
     # the bare section pattern so the reserved "solutions" segment reads first.
     path("<slug:chapter_slug>/<slug:section_slug>/solutions/<str:exercise_id>/",
          views.solution_detail, name="solution"),
+    # Full-window PDF reader. Longer path first so it wins over the download.
+    path("<slug:chapter_slug>/<slug:section_slug>/pdf/view/",
+         views.section_pdf_view, name="section_pdf_view"),
     # This section's pages from the print PDF. Before the bare section pattern
     # so the reserved "pdf" segment reads first.
     path("<slug:chapter_slug>/<slug:section_slug>/pdf/", views.section_pdf,
