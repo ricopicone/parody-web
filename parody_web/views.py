@@ -361,12 +361,16 @@ def section_detail(request, chapter_slug, section_slug):
     })
 
 
-def _pdf_response(path, download_name):
+def _pdf_response(path, download_name, inline=False):
     """Stream a PDF, delegating to nginx when X-Accel is configured.
 
     With PARODY_WEB_PRINT_XACCEL set, nginx serves the bytes from its internal
     location and Django's worker is free immediately; without it, FileResponse
     streams from the process, which is fine for dev and small deployments.
+
+    `inline` is what the full-window viewer needs: an attachment disposition
+    makes the browser DOWNLOAD the file even inside an <iframe>, so the viewer
+    would just re-download the PDF instead of showing it.
     """
     from .printing import print_root, xaccel_prefix
 
@@ -377,7 +381,8 @@ def _pdf_response(path, download_name):
         resp["X-Accel-Redirect"] = f"{prefix.rstrip('/')}/{rel}"
     else:
         resp = FileResponse(open(path, "rb"), content_type="application/pdf")
-    resp["Content-Disposition"] = f'attachment; filename="{download_name}"'
+    disposition = "inline" if inline else "attachment"
+    resp["Content-Disposition"] = f'{disposition}; filename="{download_name}"'
     return resp
 
 
@@ -439,7 +444,10 @@ def section_pdf(request, chapter_slug, section_slug):
     path = section_pdf_path(book, section)
     if path is None:
         raise Http404("no pdf for this section")
-    return _pdf_response(path, _pdf_filename(book, section))
+    # ?inline=1 — the viewer embeds this same URL and needs it rendered, not
+    # downloaded. The download links omit it.
+    return _pdf_response(path, _pdf_filename(book, section),
+                         inline=bool(request.GET.get("inline")))
 
 
 def section_pdf_view(request, chapter_slug, section_slug):

@@ -497,3 +497,85 @@ class PublicBookPdfWarningTests(TestCase):
         Section.objects.filter(book=book, slug="alpha").update(preview=True)
         with override_settings(PARODY_WEB_PUBLIC_BOOK_PDF=False):
             self.assertEqual(public_book_pdf_check(None), [])
+
+
+class PdfInlineDispositionTests(TestCase):
+    """The viewer embeds the section PDF, so that URL must render inline.
+
+    An attachment disposition makes the browser DOWNLOAD the file even inside
+    an <iframe>, so 'Read as PDF' just re-downloaded it instead of opening.
+    """
+
+    def setUp(self):
+        from django.test import Client
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        make_pdf(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+        self.client = Client()
+
+    def test_the_download_link_still_attaches(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            resp = self.client.get("/one/alpha/pdf/")
+        self.assertTrue(resp["Content-Disposition"].startswith("attachment"))
+
+    def test_inline_renders_in_place(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            resp = self.client.get("/one/alpha/pdf/?inline=1")
+        self.assertTrue(resp["Content-Disposition"].startswith("inline"),
+                        resp["Content-Disposition"])
+        self.assertEqual(resp["Content-Type"], "application/pdf")
+
+    def test_the_viewer_embeds_the_inline_url(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertIn("/one/alpha/pdf/?inline=1", html)
+
+    def test_inline_is_still_gated(self):
+        # the query string must not be a way around the access policy
+        Section.objects.filter(book=self.book, slug="alpha").update(preview=True)
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            self.assertEqual(
+                self.client.get("/one/alpha/pdf/?inline=1").status_code, 404)
+
+
+class UtilRailHoverTests(TestCase):
+    def test_the_card_bridges_the_gap_to_the_trigger(self):
+        css = (Path(__file__).parent / "static" / "parody_web" / "css"
+               / "book.css").read_text()
+        # the cursor has to cross dead space to reach the card; without a
+        # bridge and a close delay the menu vanishes on the way
+        self.assertIn(".util-rail-item::after", css)
+        self.assertIn(".util-rail-card::before", css)
+        self.assertIn("visibility: hidden", css)
+
+
+class StaticHashingTests(SimpleTestCase):
+    """Stylesheet URLs must carry a content hash where the storage provides one.
+
+    Without it a CDN keeps serving the previous deploy's css (measured on a
+    Cloudflare-fronted site: cf-cache-status HIT, max-age=14400), so a correct
+    deploy shows readers a page missing its newest rules.
+    """
+
+    def test_the_tag_defers_to_the_configured_storage(self):
+        from unittest.mock import patch
+
+        from parody_web.templatetags.parody_web import static
+        with patch("django.contrib.staticfiles.storage.staticfiles_storage.url",
+                   return_value="/static/parody_web/css/book.abc123.css") as m:
+            self.assertEqual(static("parody_web/css/book.css"),
+                             "/static/parody_web/css/book.abc123.css")
+        m.assert_called_once_with("parody_web/css/book.css")
+
+    def test_a_file_missing_from_the_manifest_falls_back(self):
+        # ManifestStaticFilesStorage raises for unknown files; a missing hash
+        # is a cache nuisance, an exception is a 500.
+        from unittest.mock import patch
+
+        from parody_web.templatetags.parody_web import static
+        with patch("django.contrib.staticfiles.storage.staticfiles_storage.url",
+                   side_effect=ValueError("not in manifest")):
+            self.assertEqual(static("parody_web/css/book.css"),
+                             "/static/parody_web/css/book.css")

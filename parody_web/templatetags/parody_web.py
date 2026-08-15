@@ -41,7 +41,25 @@ def media(path):
 
 @register.simple_tag
 def static(path):
-    return settings.STATIC_URL + str(path).lstrip("/")
+    """Static URL through the configured staticfiles storage.
+
+    Hand-building ``STATIC_URL + path`` skips the storage layer, so the URL
+    never carries a content hash even under ManifestStaticFilesStorage. That
+    matters in front of a CDN: an unhashed stylesheet keeps its cached copy
+    until the TTL expires, so a correct deploy can serve readers the OLD css
+    for hours. Observed on a Cloudflare-fronted site with max-age=14400 — the
+    page rendered without its newest rules and looked broken.
+
+    Falls back to the plain join when the file is absent from the manifest
+    (a host that has not run collectstatic, or an asset added at runtime): a
+    missing hash is a cache nuisance, a raised ValueError is a 500.
+    """
+    from django.contrib.staticfiles.storage import staticfiles_storage
+
+    try:
+        return staticfiles_storage.url(str(path))
+    except Exception:
+        return settings.STATIC_URL + str(path).lstrip("/")
 
 
 def _cite(key):

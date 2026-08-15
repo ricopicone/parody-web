@@ -35,7 +35,7 @@ book stylesheets style prose this page does not have.
   </nav>
   <div class="pdf-stage">
     <iframe title="{{ section.title|cut:'`' }} (PDF)"
-            src="{% url 'parody_web:section_pdf' chapter.slug section.slug %}#view=FitH"></iframe>
+            src="{% url 'parody_web:section_pdf' chapter.slug section.slug %}?inline=1#view=FitH"></iframe>
     {% comment %}
     Annotation seam. Ships empty and inert; a host project that adds drawing
     keys its records to this data-section-key (the same Section.key hosts
