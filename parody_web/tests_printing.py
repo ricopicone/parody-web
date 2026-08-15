@@ -477,3 +477,23 @@ class PublicBookPdfWarningTests(TestCase):
         Section.objects.filter(book=book, slug="alpha").update(preview=True)
         with override_settings(PARODY_WEB_PUBLIC_BOOK_PDF=True):
             self.assertEqual(printing.public_book_pdf_warnings(), [])
+
+    def test_the_system_check_reports_it(self):
+        # Registered as a system check, not run from AppConfig.ready(): a query
+        # in ready() trips Django's "Accessing the database during app
+        # initialization is discouraged" warning on every manage.py call.
+        from parody_web.checks import public_book_pdf_check
+        book = import_artifact()
+        Section.objects.filter(book=book, slug="alpha").update(preview=True)
+        with override_settings(PARODY_WEB_PUBLIC_BOOK_PDF=True):
+            issues = public_book_pdf_check(None)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].id, "parody_web.W001")
+        self.assertIn("PARODY_WEB_PUBLIC_BOOK_PDF", issues[0].msg)
+
+    def test_the_system_check_is_quiet_when_correctly_configured(self):
+        from parody_web.checks import public_book_pdf_check
+        book = import_artifact()
+        Section.objects.filter(book=book, slug="alpha").update(preview=True)
+        with override_settings(PARODY_WEB_PUBLIC_BOOK_PDF=False):
+            self.assertEqual(public_book_pdf_check(None), [])

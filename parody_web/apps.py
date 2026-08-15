@@ -24,17 +24,9 @@ class ParodyWebConfig(AppConfig):
             getattr(settings, "PARODY_WEB_PRINT_CACHE", ""),
             getattr(settings, "PARODY_WEB_PRINT_XACCEL", ""))
 
-        # The full-book PDF is public by default, which is wrong for a gated
-        # book and fails silently. Warn rather than refuse — the default is a
-        # deliberate choice, but a site that forgot to override it should hear
-        # about it at boot, not from a reader who downloaded the whole book.
-        import warnings as _warnings
-
-        from django.db import DatabaseError
-
-        from .printing import public_book_pdf_warnings
-        try:
-            for message in public_book_pdf_warnings():
-                _warnings.warn(message, RuntimeWarning)
-        except DatabaseError:
-            pass  # no tables yet (migrate/collectstatic on a fresh install)
+        # Registers the gated-book/public-PDF check (see checks.py). It reads
+        # the database, so it is a system check rather than something ready()
+        # runs directly — querying here trips Django's "Accessing the database
+        # during app initialization is discouraged" warning on every
+        # manage.py invocation.
+        from . import checks  # noqa: F401
