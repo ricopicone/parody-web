@@ -293,7 +293,10 @@ form.codebox input { color: var(--ink); background: var(--paper); }
 .util-rail-card { position: absolute; top: calc(100% + .35rem); right: 0;
     min-width: 14rem; display: none; flex-direction: column; gap: .3rem;
     padding: var(--s2) var(--s3); border: 1px solid var(--rule);
-    border-radius: 4px; background: var(--paper-panel);
+    /* --paper, NOT --paper-panel: that token deliberately stays light in dark
+       mode because it backs figures with a white background baked in by LaTeX.
+       This card is live UI text, so it follows the theme. */
+    border-radius: 4px; background: var(--paper);
     box-shadow: 0 6px 20px rgb(0 0 0 / 12%);
     font-family: var(--font-display); font-size: var(--fs-sm); }
 .util-rail-item:hover .util-rail-card,
