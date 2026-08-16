@@ -121,12 +121,17 @@ def make_pdf(path, pages):
     return path
 
 
-def make_pdf_with_content(path, pages):
+def make_pdf_with_content(path, pages, seed=0):
     """A PDF whose pages differ from one another.
 
     `make_pdf` writes blank pages, which are byte-identical to each other — no
     use at all for testing a key that is supposed to distinguish one page range
     from another.
+
+    `seed` shifts every page's drawing, standing in for a rebuild that really
+    did change the content. Re-running with the same seed stands in for a
+    rebuild that changed something elsewhere in the book: byte-identical pages,
+    and so — by design — an unchanged version key.
     """
     from pypdf import PdfWriter
     from pypdf.generic import DecodedStreamObject, NameObject
@@ -134,7 +139,8 @@ def make_pdf_with_content(path, pages):
     for i in range(pages):
         page = writer.add_blank_page(width=200, height=200)
         stream = DecodedStreamObject()
-        stream.set_data(f"0 0 1 RG 10 {10 + i * 7} m 100 100 l S".encode())
+        stream.set_data(
+            f"0 0 1 RG 10 {10 + i * 7 + seed} m 100 100 l S".encode())
         page[NameObject("/Contents")] = writer._add_object(stream)
     with open(path, "wb") as f:
         writer.write(f)
