@@ -87,6 +87,13 @@ async function boot() {
   wireCarryForward(root, api);
   wireVersionSwitch();
 
+  // pdf.js continues rendering on animation frames, which do not fire while
+  // the tab is in the background — a page opened in a background tab can sit
+  // unfinished until the reader comes to it. Nudge when they do.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') view.update();
+  });
+
   await view.open(pdfUrl);
   root.dataset.ready = '1';
 }

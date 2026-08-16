@@ -128,7 +128,7 @@ export class PageView {
   }
 
   async _render(entry) {
-    if (entry.canvas || entry.slot?.busy) return;
+    if (entry.canvas || entry.slot.busy) return;
     const viewport = entry.viewport;
     const claim = entry.slot.claim();
     const canvas = document.createElement('canvas');
@@ -140,34 +140,34 @@ export class PageView {
     canvas.style.height = `${viewport.height}px`;
     const context = canvas.getContext('2d');
     context.scale(dpr, dpr);
-    const task = entry.page.render({ canvasContext: context, viewport });
-    entry.task = task;
-    try {
-      await task.promise;
-    } catch (err) {
-      entry.slot.finish(claim);
-      return;                       // cancelled by a newer render; not an error
-    }
-    entry.slot.finish(claim);
-    // The scale moved while this was drawing: throw the result away rather
-    // than attach a page at the wrong size.
-    if (!entry.slot.canAttach(claim)) return;
+    // Attach before rendering. pdf.js drives its render loop from the page's
+    // animation frames, and a detached canvas is simply never drawn to.
     entry.el.prepend(canvas);
     entry.canvas = canvas;
+    try {
+      await entry.page.render({ canvasContext: context, viewport }).promise;
+    } catch (err) {
+      canvas.remove();
+      if (entry.canvas === canvas) entry.canvas = null;
+      entry.slot.finish(claim);
+      return;
+    }
+    entry.slot.finish(claim);
+    // The scale moved while this was drawing: take the page back out rather
+    // than leave it attached at the wrong size.
+    if (!entry.slot.canAttach(claim)) {
+      canvas.remove();
+      if (entry.canvas === canvas) entry.canvas = null;
+      return;
+    }
     this.onPageReady(entry);
   }
 
   _release(entry) {
-    // Cancel any render still in flight, so a zoom does not wait on work whose
-    // result is already stale.
-    if (entry.task) {
-      try { entry.task.cancel(); } catch (err) { /* already finished */ }
-      entry.task = null;
-    }
-    // Give up the slot NOW rather than when the cancellation rejects. The
-    // rejection is asynchronous, and update() runs immediately after this —
-    // leaving it held meant the replacement render was skipped and the page
-    // stayed blank at the new zoom.
+    // Give up the slot NOW, so the replacement render — which update() starts
+    // on the very next line — is not skipped. A render still in flight is left
+    // to finish and is discarded by its generation check; cancelling it looked
+    // tidier but wedged pdf.js, whose promise then never settled at all.
     entry.slot.release();
     if (!entry.canvas) return;
     entry.canvas.remove();          // the ink layer is handled separately
