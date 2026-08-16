@@ -290,6 +290,63 @@ class ArchiveTests(TestCase):
         self.assertEqual(book.slug, "print-book")
 
 
+class VersionedSliceTests(TestCase):
+    """Cutting a section out of an ARCHIVED book, after the live one moved on."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name)
+        self.root, self.archive, self.cache = base / "live", base / "arc", base / "cache"
+        self.root.mkdir()
+        make_pdf_with_content(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+
+    def _settings(self):
+        return override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                                 PARODY_WEB_PRINT_ARCHIVE=str(self.archive),
+                                 PARODY_WEB_PRINT_CACHE=str(self.cache))
+
+    def test_slices_an_old_version_after_the_live_book_was_replaced(self):
+        with self._settings():
+            old_sha = self.book.print_sha256
+            printing.archive_book_pdf(self.book)
+            make_pdf_with_content(self.root / "print-book.pdf", 24)
+            printing._reader.cache_clear()
+            path = printing.versioned_section_pdf(self.book, old_sha, [5, 9], "alpha")
+        self.assertIsNotNone(path)
+        from pypdf import PdfReader
+        self.assertEqual(len(PdfReader(str(path)).pages), 5)
+
+    def test_a_version_that_was_never_archived_is_none(self):
+        """It must 404 rather than quietly serve different pages under a key
+        the reader believes is theirs."""
+        with self._settings():
+            self.assertIsNone(
+                printing.versioned_section_pdf(self.book, "f" * 64, [5, 9], "alpha"))
+
+    def test_no_archive_configured_is_none(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_PRINT_ARCHIVE="",
+                               PARODY_WEB_PRINT_CACHE=str(self.cache)):
+            self.assertIsNone(printing.versioned_section_pdf(
+                self.book, self.book.print_sha256, [5, 9], "alpha"))
+
+    def test_two_versions_cache_separately(self):
+        with self._settings():
+            printing.archive_book_pdf(self.book)
+            first = printing.versioned_section_pdf(
+                self.book, self.book.print_sha256, [5, 9], "alpha")
+            make_pdf_with_content(self.root / "print-book.pdf", 24)
+            printing._reader.cache_clear()
+            self.book.print_sha256 = "e" * 64
+            self.book.save()
+            printing.archive_book_pdf(self.book)
+            second = printing.versioned_section_pdf(self.book, "e" * 64, [5, 9], "alpha")
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.is_file() and second.is_file())
+
+
 class SlicingTests(TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

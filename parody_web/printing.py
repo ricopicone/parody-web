@@ -243,6 +243,30 @@ def section_pdf_path(book, section):
     return dest
 
 
+def versioned_section_pdf(book, book_sha256, pages, cache_name):
+    """A section slice cut from an ARCHIVED book version.
+
+    Unlike section_pdf_path this never falls back to the live book. A version
+    we cannot produce must be absent, not silently substituted: the reader
+    asked for the pages they annotated, and different pages under that name
+    would be worse than none.
+    """
+    if not pages or len(pages) != 2 or not has_pypdf():
+        return None
+    src = archived_pdf_path(book.slug, book_sha256)
+    if src is None or not src.is_file():
+        return None
+    cache = print_cache_root()
+    if cache is None:
+        return None
+    start, end = pages
+    dest = (cache / book.slug / (book.edition_id or "_")
+            / f"v{book_sha256[:12]}" / f"{cache_name}-{start}-{end}.pdf")
+    if not dest.is_file():
+        slice_pdf(src, dest, start, end)
+    return dest
+
+
 def public_book_pdf_warnings():
     """Books whose full PDF is public while some of their sections are not.
 
