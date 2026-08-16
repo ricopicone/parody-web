@@ -221,6 +221,75 @@ class SliceKeyTests(TestCase):
         printing._reader.cache_clear()
 
 
+class ArchiveTests(TestCase):
+    """Retention: the live PDF is overwritten by every deploy, so a reader
+    whose notes are on last month's version would otherwise have notes on a
+    document that exists nowhere."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / "live"
+        self.archive = Path(self.tmp.name) / "archive"
+        self.root.mkdir()
+        make_pdf_with_content(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+
+    def _settings(self):
+        return override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                                 PARODY_WEB_PRINT_ARCHIVE=str(self.archive))
+
+    def test_archiving_copies_the_pdf_and_records_it(self):
+        with self._settings():
+            version = printing.archive_book_pdf(self.book)
+            path = printing.archived_pdf_path(self.book.slug, self.book.print_sha256)
+        self.assertEqual(version.sha256, self.book.print_sha256)
+        self.assertEqual(version.page_count, 20)
+        self.assertTrue(path.is_file())
+
+    def test_archiving_twice_writes_one_row_and_one_file(self):
+        from parody_web.models import BookPrintVersion
+        with self._settings():
+            first = printing.archive_book_pdf(self.book)
+            again = printing.archive_book_pdf(self.book)
+        self.assertEqual(first.pk, again.pk)
+        self.assertEqual(BookPrintVersion.objects.count(), 1)
+
+    def test_an_unconfigured_archive_is_a_no_op(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_PRINT_ARCHIVE=""):
+            self.assertIsNone(printing.archive_book_pdf(self.book))
+
+    def test_the_old_version_survives_the_book_being_replaced(self):
+        with self._settings():
+            old_sha = self.book.print_sha256
+            printing.archive_book_pdf(self.book)
+            # a new release lands: the live file is overwritten in place
+            make_pdf_with_content(self.root / "print-book.pdf", 24)
+            printing._reader.cache_clear()
+            self.book.print_sha256 = "d" * 64
+            self.book.save()
+            printing.archive_book_pdf(self.book)
+            old = printing.archived_pdf_path(self.book.slug, old_sha)
+        self.assertTrue(old.is_file())
+        from pypdf import PdfReader
+        self.assertEqual(len(PdfReader(str(old)).pages), 20)
+
+    def test_import_archives_without_being_asked(self):
+        from parody_web.models import BookPrintVersion
+        with self._settings():
+            import_artifact()
+        self.assertEqual(
+            BookPrintVersion.objects.filter(sha256="c" * 64).count(), 1)
+
+    def test_an_archive_failure_does_not_fail_the_import(self):
+        """A book that imports is worth more than a version that is kept."""
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_PRINT_ARCHIVE="/proc/nope/denied"):
+            book = import_artifact()
+        self.assertEqual(book.slug, "print-book")
+
+
 class SlicingTests(TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

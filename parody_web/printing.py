@@ -15,6 +15,7 @@ rather than erroring.
 """
 
 import os
+import shutil
 from functools import lru_cache
 from pathlib import Path
 
@@ -97,6 +98,57 @@ def book_pdf_path(book):
     # basename only: the artifact must never be able to escape the print root
     path = root / Path(book.print_pdf).name
     return path if path.is_file() else None
+
+
+def print_archive_root():
+    """Durable store of released book PDFs, or None when unconfigured.
+
+    MUST point outside the deployment checkout. deploy_ec2.sh runs
+    `git fetch && git reset --hard` in a persistent directory, so an archive
+    under the repo would survive that but be destroyed by any later
+    `git clean -fdx` — taking with it the source PDF behind every annotation a
+    reader has made.
+
+    Unset means versioning is simply off: the current PDF still serves.
+    """
+    value = getattr(settings, "PARODY_WEB_PRINT_ARCHIVE", "")
+    return Path(value) if value else None
+
+
+def archived_pdf_path(book_slug, sha256):
+    """Where a given released version lives, or None when unavailable."""
+    root = print_archive_root()
+    if not root or not sha256:
+        return None
+    return root / book_slug / f"{sha256}.pdf"
+
+
+def archive_book_pdf(book):
+    """Copy the book's current PDF into the archive. Idempotent.
+
+    Called at import, which is the last moment the bytes are reachable: the
+    next deploy overwrites them.
+    """
+    from .models import BookPrintVersion
+
+    src = book_pdf_path(book)
+    dest = archived_pdf_path(book.slug, book.print_sha256)
+    if src is None or dest is None:
+        return None
+    if not dest.is_file():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(f"{dest.name}.{os.getpid()}.tmp")
+        shutil.copyfile(src, tmp)
+        os.replace(tmp, dest)
+    pages = None
+    try:
+        pages = len(_reader(str(dest), dest.stat().st_mtime_ns).pages)
+    except Exception:  # noqa: BLE001 - a page count is not worth failing over
+        pass
+    version, _ = BookPrintVersion.objects.get_or_create(
+        book=book, sha256=book.print_sha256,
+        defaults={"filename": dest.name, "page_count": pages})
+    return version
 
 
 def slice_pdf(src, dest, start, end):

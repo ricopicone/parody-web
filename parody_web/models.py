@@ -148,3 +148,31 @@ class Section(models.Model):
         section to "".
         """
         return self.hash or f"{self.chapter.slug}/{self.slug}"
+
+
+class BookPrintVersion(models.Model):
+    """A released book PDF, kept so an old annotated section stays producible.
+
+    Every deploy overwrites the live PDF in place. Without a copy here, a
+    reader whose notes are on last month's version would have notes on a
+    document that exists nowhere — the page range would still be recorded, and
+    nothing could cut it.
+
+    The bytes live under PARODY_WEB_PRINT_ARCHIVE, which must be outside the
+    deployment checkout; this row is the index over them.
+    """
+
+    book = models.ForeignKey(Book, on_delete=models.CASCADE,
+                             related_name="print_versions")
+    sha256 = models.CharField(max_length=64)
+    filename = models.CharField(max_length=200)
+    page_count = models.PositiveIntegerField(null=True, blank=True)
+    first_seen = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("book", "sha256")
+        indexes = [models.Index(fields=["book", "sha256"])]
+        ordering = ["-first_seen"]
+
+    def __str__(self):
+        return f"{self.book.slug}@{self.sha256[:12]}"

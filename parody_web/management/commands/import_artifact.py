@@ -12,6 +12,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.html import strip_tags
 
+from parody_web import printing
 from parody_web.models import Book, Chapter, Section
 from parody_web.numbering import number_artifact
 
@@ -147,6 +148,14 @@ class Command(BaseCommand):
                 "print_pages": (data.get("print") or {}).get("pages"),
                 "print_sha256": (data.get("print") or {}).get("sha256", ""),
             })
+
+        # Keep this release's PDF before the next deploy overwrites it in
+        # place. Best effort: a book that imports is worth more than a version
+        # that is retained, so a broken archive path must not fail the import.
+        try:
+            printing.archive_book_pdf(book)
+        except Exception as exc:  # noqa: BLE001
+            self.stderr.write(f"print archive skipped: {exc}")
 
         seen_ch, seen_sec = set(), set()
         for ci, ch in enumerate(data.get("chapters", [])):
