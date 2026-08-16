@@ -1,4 +1,16 @@
 {% load parody_web %}<title>{{ section.title|cut:"`" }} (PDF) — {{ book.title }}</title>
+<script>
+/* Apply the stored theme before first paint, exactly as base.html does. This
+   page loads the theme tokens but never ran this, so a reader who had chosen
+   dark mode got a light PDF view — the choice was on the site and this page
+   was not listening. No stored preference = follow the OS. */
+(function () {
+  try {
+    var t = localStorage.getItem('parody-theme');
+    if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 {% comment %}

@@ -50,6 +50,11 @@ export const ICONS = {
     <path d="M19.5 9.5h-9a5 5 0 0 0 0 10H15"/>
     <path d="M16 5.5l4 4-4 4"/>`),
 
+  // A half-filled disc: the same idea as the site's own theme toggle.
+  theme: svg(`
+    <circle cx="12" cy="12" r="8.2"/>
+    <path d="M12 3.8a8.2 8.2 0 0 0 0 16.4z" fill="currentColor" stroke="none"/>`),
+
   zoomIn: svg(`
     <circle cx="10.6" cy="10.6" r="6.4"/>
     <path d="M15.4 15.4 20.5 20.5"/>

@@ -16,10 +16,32 @@
 .ink-page {
   position: relative;
   margin: 0 auto 1rem;
-  /* The page is white because the PDF is white — this is paper, not chrome,
-     so it does not follow the dark-mode token. */
+  /* Paper. White by default because the PDF is white; in dark mode pdf.js is
+     rendering the page onto the dark token instead, and this must match or a
+     white margin frames every page. */
   background: #fff;
   box-shadow: 0 1px 6px rgba(0, 0, 0, .35);
+}
+
+.ink-root[data-dark="1"] .ink-page {
+  background: var(--paper, #16171a);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .6);
+}
+
+/* Dark mode inverts the PAGE only — never the ink layer above it, whose
+   colours are decided in JS, and never the stored file.
+
+   invert + hue-rotate rather than pdf.js's pageColors: that routes through its
+   High Contrast filter, which preserves CONTRAST by flattening colour, so the
+   blue labels on a circuit went white and a green example box went grey. In
+   these books colour means something. Inverting and rotating the hue back
+   keeps a blue figure blue and a green box green while the paper goes dark.
+
+   It is an approximation — saturated hues shift a little — and it would make a
+   photograph look like a negative. These books are line art, and the trade is
+   worth it for figures whose colour carries meaning. */
+.ink-root[data-dark="1"] .ink-page-canvas {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 .ink-page-canvas { display: block; }

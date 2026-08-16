@@ -151,3 +151,54 @@ class StrokedShapeTests(TestCase):
         content = export.page_content(
             [{"d": "M0 0 L1 1", "color": "#000", "mode": "stroke"}], 100)
         self.assertIn("1 w", content)
+
+
+class DownloadIsAlwaysLightTests(TestCase):
+    """Dark mode is a display decision and must never reach a file.
+
+    A reader who studies in dark mode and then prints the section wants black
+    ink on white paper, not the inverse — and the ink they stored is what they
+    chose, not what it was painted as on screen.
+    """
+
+    def setUp(self):
+        from parody_web.tests_printing import make_pdf_with_content
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        self.src = make_pdf_with_content(self.dir / "src.pdf", 2)
+        self.out = self.dir / "out.pdf"
+
+    def _content(self, path, index=0):
+        from pypdf import PdfReader
+        return PdfReader(str(path)).pages[index].get_contents().get_data()
+
+    def test_black_ink_composites_as_black(self):
+        """On screen this stroke is drawn light so it is visible on dark
+        paper; on paper it must be the black the reader picked."""
+        export.composite(self.src, {"1": [{"d": "M0 0 L9 9 Z", "color": "#000000",
+                                           "opacity": 1}]}, self.out)
+        self.assertIn(b"0 0 0 rg", self._content(self.out))
+
+    def test_the_source_page_is_not_inverted(self):
+        """The book's own drawing goes through untouched — no filter, no
+        remapped colours."""
+        before = self._content(self.src)
+        export.composite(self.src, {"1": [{"d": "M0 0 L9 9 Z", "color": "#000000"}]},
+                         self.out)
+        self.assertIn(before.strip(), self._content(self.out))
+
+    def test_a_chosen_colour_survives_exactly(self):
+        export.composite(self.src, {"1": [{"d": "M0 0 L9 9 Z", "color": "#2563eb",
+                                           "opacity": 1}]}, self.out)
+        # 0x25/255, 0x63/255, 0xeb/255
+        self.assertIn(b"0.1451 0.3882 0.9216 rg", self._content(self.out))
+
+    def test_the_exporter_takes_no_theme_argument(self):
+        """The guarantee is structural: there is no way to ask for a dark
+        export, so no caller can accidentally produce one."""
+        import inspect
+        for fn in (export.composite, export.page_content, export.svg_path_to_pdf_ops):
+            names = set(inspect.signature(fn).parameters)
+            self.assertFalse({"dark", "theme", "invert"} & names,
+                             f"{fn.__name__} grew a theme parameter")

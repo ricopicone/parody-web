@@ -139,13 +139,23 @@ export class PageView {
     canvas.style.width = `${viewport.width}px`;
     canvas.style.height = `${viewport.height}px`;
     const context = canvas.getContext('2d');
-    context.scale(dpr, dpr);
     // Attach before rendering. pdf.js drives its render loop from the page's
     // animation frames, and a detached canvas is simply never drawn to.
     entry.el.prepend(canvas);
     entry.canvas = canvas;
     try {
-      await entry.page.render({ canvasContext: context, viewport }).promise;
+      await entry.page.render({
+        canvasContext: context,
+        viewport,
+        // Device pixel ratio goes through pdf.js's own `transform`, not a
+        // ctx.scale() applied beforehand. Its high-contrast path (the one
+        // pageColors switches on) does not honour a transform we set
+        // ourselves, and the page came out drawn at twice its size.
+        // Device pixel ratio goes through pdf.js's own `transform` rather
+        // than a ctx.scale() applied beforehand, which not every render path
+        // honours.
+        transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0],
+      }).promise;
     } catch (err) {
       canvas.remove();
       if (entry.canvas === canvas) entry.canvas = null;

@@ -35,7 +35,9 @@ function group(label) {
   return el;
 }
 
-export function buildToolbar(root, tools, { undo, redo, zoomIn, zoomOut, zoomReset }) {
+export function buildToolbar(root, tools,
+                             { undo, redo, zoomIn, zoomOut, zoomReset,
+                               toggleTheme }) {
   root.innerHTML = '';
 
   const modes = group('Tools');
@@ -89,6 +91,12 @@ export function buildToolbar(root, tools, { undo, redo, zoomIn, zoomOut, zoomRes
   }
   root.appendChild(zoom);
 
+  const view = group('View');
+  const themeButton = button(ICONS.theme, 'Dark mode (⇧D)');
+  themeButton.addEventListener('click', toggleTheme);
+  view.appendChild(themeButton);
+  root.appendChild(view);
+
   function renderWidths() {
     widths.innerHTML = '';
     if (tools.mode === 'erase') {
@@ -127,7 +135,8 @@ export function buildToolbar(root, tools, { undo, redo, zoomIn, zoomOut, zoomRes
   };
 }
 
-export function bindKeys(tools, { undo, redo, zoomIn, zoomOut, zoomReset }) {
+export function bindKeys(tools,
+                         { undo, redo, zoomIn, zoomOut, zoomReset, toggleTheme }) {
   const keys = { d: 'pen', h: 'highlighter', e: 'erase',
                  l: 'line', r: 'rect', c: 'circle' };
   window.addEventListener('keydown', (event) => {
@@ -149,6 +158,7 @@ export function bindKeys(tools, { undo, redo, zoomIn, zoomOut, zoomReset }) {
     }
     const key = event.key.toLowerCase();
     if (keys[key]) { tools.set(keys[key]); event.preventDefault(); return; }
+    if (event.shiftKey && key === 'd') { toggleTheme?.(); event.preventDefault(); return; }
     const index = '123456'.indexOf(event.key);
     if (index >= 0) { tools.setColor(COLORS[index]); event.preventDefault(); }
   });

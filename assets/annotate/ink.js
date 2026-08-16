@@ -11,15 +11,19 @@
 import Konva from 'konva';
 import { buildStroke, hits } from './shapes.js';
 import { screenToPdf } from './paged.js';
+import { displayColor } from './theme.js';
 
 const ERASER_RADIUS = 6;   // PDF points
 
 export class InkLayer {
-  constructor(entry, { store, tools, gate }) {
+  constructor(entry, { store, tools, gate, theme }) {
     this.entry = entry;
     this.store = store;
     this.tools = tools;
     this.gate = gate;
+    // Display-time only. The stored colour never changes, which is what keeps
+    // a downloaded PDF in light mode however it was read.
+    this.theme = theme || { dark: false };
     this.page = entry.number;
 
     const host = document.createElement('div');
@@ -134,19 +138,27 @@ export class InkLayer {
     this.redraw();
   }
 
-  /** Konva styling that matches what the PDF exporter will do. */
+  /** Follow a theme change: only how the ink is painted moves. */
+  setTheme(theme) {
+    this.theme = theme;
+    this.redraw();
+  }
+
+  /** Konva styling. Matches the exporter except for the dark-mode remap, which
+   *  is deliberately display-only. */
   _style(node, stroke) {
+    const colour = displayColor(stroke.color, this.theme);
     node.data(stroke.d);
     node.scale({ x: this.scale, y: this.scale });
     node.opacity(stroke.opacity == null ? 1 : stroke.opacity);
     if (stroke.mode === 'stroke') {
-      node.stroke(stroke.color);
+      node.stroke(colour);
       node.strokeWidth(stroke.width || 1);
       node.lineCap('round');
       node.lineJoin('round');
       node.fill(null);
     } else {
-      node.fill(stroke.color);
+      node.fill(colour);
       node.stroke(null);
     }
   }

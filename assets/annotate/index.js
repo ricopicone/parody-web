@@ -11,6 +11,7 @@ import { InkLayer } from './ink.js';
 import { InkStore } from './store.js';
 import { InkApi } from './api.js';
 import { PointerGate } from './pointer-gate.js';
+import { isDark, themeColors } from './theme.js';
 import { Tools } from './tools.js';
 import { bindKeys, buildToolbar } from './toolbar.js';
 
@@ -52,14 +53,34 @@ async function boot() {
   const gate = new PointerGate();
   const layers = new Map();
 
+  // The paper follows the reader's theme. The page itself is inverted by a
+  // CSS filter on its canvas (see annotate.css) rather than re-rendered, so a
+  // theme change costs nothing and survives any zoom.
+  const theme = () => {
+    const dark = isDark();
+    const { paper, ink } = themeColors();
+    return { dark, paper, ink };
+  };
+  let current = theme();
+  root.dataset.dark = current.dark ? '1' : '0';
+
   const view = new PageView(root.querySelector('[data-ink-pages]'), {
     onPageReady: (entry) => {
       const existing = layers.get(entry.number);
       // After a zoom the layer is still there but drawn at the old scale.
       if (existing) existing.resize(entry.viewport);
-      else layers.set(entry.number, new InkLayer(entry, { store, tools, gate }));
+      else layers.set(entry.number,
+                      new InkLayer(entry, { store, tools, gate, theme: current }));
     },
   });
+
+  function applyTheme() {
+    current = theme();
+    // The page inverts through CSS; only the reader's own ink needs redrawing,
+    // because its colour rule is applied when the strokes are painted.
+    root.dataset.dark = current.dark ? '1' : '0';
+    layers.forEach((layer) => layer.setTheme(current));
+  }
 
   const redrawAll = () => layers.forEach((layer) => layer.redraw());
   let chrome = null;
@@ -69,6 +90,12 @@ async function boot() {
     zoomIn: () => chrome?.showZoom(view.stepZoom(+1) * 100),
     zoomOut: () => chrome?.showZoom(view.stepZoom(-1) * 100),
     zoomReset: () => chrome?.showZoom(view.setZoom(1) * 100),
+    toggleTheme: () => {
+      const next = isDark() ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem('parody-theme', next); } catch (err) { /* private mode */ }
+      applyTheme();
+    },
   };
 
   const toolbar = document.querySelector('[data-ink-toolbar]');
@@ -86,6 +113,21 @@ async function boot() {
 
   wireCarryForward(root, api);
   wireVersionSwitch();
+
+  // Following the OS, or another tab of the same book, without being asked.
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)')
+      .addEventListener('change', () => {
+        if (!document.documentElement.dataset.theme) applyTheme();
+      });
+  }
+  window.addEventListener('storage', (event) => {
+    if (event.key !== 'parody-theme') return;
+    if (event.newValue === 'dark' || event.newValue === 'light') {
+      document.documentElement.dataset.theme = event.newValue;
+      applyTheme();
+    }
+  });
 
   // pdf.js continues rendering on animation frames, which do not fire while
   // the tab is in the background — a page opened in a background tab can sit
