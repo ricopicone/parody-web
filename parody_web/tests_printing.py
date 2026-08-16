@@ -121,6 +121,106 @@ def make_pdf(path, pages):
     return path
 
 
+def make_pdf_with_content(path, pages):
+    """A PDF whose pages differ from one another.
+
+    `make_pdf` writes blank pages, which are byte-identical to each other — no
+    use at all for testing a key that is supposed to distinguish one page range
+    from another.
+    """
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, NameObject
+    writer = PdfWriter()
+    for i in range(pages):
+        page = writer.add_blank_page(width=200, height=200)
+        stream = DecodedStreamObject()
+        stream.set_data(f"0 0 1 RG 10 {10 + i * 7} m 100 100 l S".encode())
+        page[NameObject("/Contents")] = writer._add_object(stream)
+    with open(path, "wb") as f:
+        writer.write(f)
+    return path
+
+
+class SliceKeyTests(TestCase):
+    """The version key: identity for a section's pages.
+
+    Everything in the annotation feature rests on one property — a rebuild that
+    does not touch this section must leave its key alone, or every reader's
+    notes look orphaned.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        make_pdf_with_content(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+        self.section = self.book.sections.get(slug="alpha")   # pages [5, 9]
+
+    def test_the_key_is_stable_across_calls(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            first = printing.slice_key_for(self.book, self.section)
+            second = printing.slice_key_for(self.book, self.section)
+        self.assertEqual(first, second)
+        self.assertEqual(len(first), 64)
+
+    def test_a_different_page_range_gives_a_different_key(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            mine = printing.slice_key_for(self.book, self.section)
+            other = printing.slice_key_for(
+                self.book, self.book.sections.get(slug="lead-in"))
+        self.assertNotEqual(mine, other)
+
+    def test_editing_a_different_section_leaves_this_key_alone(self):
+        """The whole point. Page 1 changes; alpha (pages 5-9) must not move."""
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            before = printing.slice_key_for(self.book, self.section)
+            self._rewrite_page(0, "0 0 1 RG 10 99 m 100 100 l S")
+            after = printing.slice_key_for(self.book, self.section)
+        self.assertEqual(before, after)
+
+    def test_editing_this_section_changes_the_key(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            before = printing.slice_key_for(self.book, self.section)
+            self._rewrite_page(5, "0 0 1 RG 10 99 m 100 100 l S")
+            after = printing.slice_key_for(self.book, self.section)
+        self.assertNotEqual(before, after)
+
+    def test_the_key_needs_no_slice_to_exist(self):
+        """It is asked for every section on a page; slicing each would be absurd."""
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_PRINT_CACHE=str(self.root / "cache")):
+            printing.slice_key_for(self.book, self.section)
+        self.assertFalse((self.root / "cache").exists())
+
+    def test_a_section_with_no_page_range_has_no_key(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            self.assertIsNone(printing.slice_key_for(
+                self.book, self.book.sections.get(slug="beta")))
+
+    def test_no_pdf_on_disk_means_no_key(self):
+        (self.root / "print-book.pdf").unlink()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            self.assertIsNone(printing.slice_key_for(self.book, self.section))
+
+    def _rewrite_page(self, index, ops):
+        """Rewrite one page's drawing, as a rebuild of the book would."""
+        from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import DecodedStreamObject, NameObject
+        path = self.root / "print-book.pdf"
+        reader = PdfReader(str(path))
+        writer = PdfWriter()
+        for i, page in enumerate(reader.pages):
+            writer.add_page(page)
+            if i == index:
+                stream = DecodedStreamObject()
+                stream.set_data(ops.encode())
+                writer.pages[i][NameObject("/Contents")] = writer._add_object(stream)
+        with open(path, "wb") as f:
+            writer.write(f)
+        printing._reader.cache_clear()
+
+
 class SlicingTests(TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

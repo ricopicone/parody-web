@@ -108,11 +108,19 @@ A section's version is
 slice_key = sha256( for each page in range: page content stream bytes + MediaBox )
 ```
 
-Not the sha256 of the sliced file. `pypdf`'s writer output is not guaranteed
-byte-identical between runs (document `/ID`, metadata), so a file hash would
-change whenever the slice cache was cleared and manufacture phantom versions.
-Hashing the source pages' content streams is deterministic, needs no slice to
-be produced, and has exactly the property we want: **a rebuild that does not
+Not the sha256 of the sliced file. Measured: pypdf's writer *is* byte-stable
+today — same input, same bytes, no `/ID` or `/CreationDate` — so that is not
+the objection. The objection is that a file hash would make every reader's
+version key depend on **our writer** rather than on the book. A pypdf upgrade
+that changed object ordering or stream compression would silently change every
+slice's hash at once, and every annotation on the site would point at a version
+that no longer appears to exist. Hashing the *source* pages' content streams
+depends only on the PDF parody produced.
+
+It is also the cheaper key: it needs no slice to exist, so the viewer can ask
+"is this the version you annotated?" for a section without cutting a PDF first.
+
+Either way it has the property the feature rests on: **a rebuild that does not
 touch this section yields the same key, and the reader's notes stay put.**
 
 Repagination *does* change the key, because the printed page number is drawn in

@@ -121,6 +121,53 @@ def slice_pdf(src, dest, start, end):
     os.replace(tmp, dest)
 
 
+def _page_fingerprint(page):
+    """Bytes that change when the page's drawing changes, and not otherwise."""
+    contents = page.get_contents()
+    if contents is None:
+        data = b""
+    elif hasattr(contents, "get_data"):
+        data = contents.get_data()
+    else:  # an array of streams: concatenate in order
+        data = b"".join(s.get_object().get_data() for s in contents)
+    box = page.mediabox
+    corners = [float(v) for v in (box.left, box.bottom, box.right, box.top)]
+    return data + repr(corners).encode()
+
+
+def slice_key_for(book, section):
+    """Deterministic identity for this section's pages.
+
+    Deliberately NOT the sha256 of the sliced file. That would make every
+    reader's version key depend on *our writer*: a pypdf upgrade that changed
+    object ordering or stream compression would change every slice's hash at
+    once, and every annotation on the site would suddenly point at a version
+    that appears not to exist. Hashing the source pages' content streams
+    depends only on the PDF parody produced.
+
+    It is also the cheaper key — no slice has to be cut to compute it, which
+    matters because it is asked for a whole page of sections at a time.
+
+    The property the annotation feature rests on: a rebuild that does not touch
+    this section yields the same key, so the reader's notes stay put.
+    Repagination *does* change it, because the printed page number is drawn in
+    the content stream — which is honest, the page really did change.
+    """
+    import hashlib
+
+    if not section.print_pages or len(section.print_pages) != 2:
+        return None
+    src = book_pdf_path(book)
+    if src is None:
+        return None
+    reader = _reader(str(src), src.stat().st_mtime_ns)
+    start, end = section.print_pages
+    digest = hashlib.sha256()
+    for i in range(max(1, start) - 1, min(end, len(reader.pages))):
+        digest.update(_page_fingerprint(reader.pages[i]))
+    return digest.hexdigest()
+
+
 def section_pdf_path(book, section):
     """Path to this section's PDF, slicing and caching it on first request.
 
