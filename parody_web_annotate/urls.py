@@ -18,4 +18,6 @@ urlpatterns = [
          views.carry_forward, name="carry_forward"),
     path("<slug:chapter_slug>/<slug:section_slug>/pdf/at/",
          views.section_pdf_at_version, name="section_pdf_at_version"),
+    path("<slug:chapter_slug>/<slug:section_slug>/pdf/annotated/",
+         views.annotated_section_pdf, name="annotated_section_pdf"),
 ]

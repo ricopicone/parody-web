@@ -20,6 +20,7 @@ from parody_web.access import get_policy
 from parody_web.models import Section
 from parody_web.views import _pdf_filename, _pdf_response, _resolve_book
 
+from . import export
 from .models import InkLayer
 
 
@@ -185,3 +186,52 @@ def carry_forward(request, chapter_slug, section_slug):
                   "pages": section.print_pages or source.pages,
                   "book_sha256": book.print_sha256})
     return JsonResponse({"copied": source.stroke_count, "slice_key": target_key})
+
+
+@require_http_methods(["GET"])
+def annotated_section_pdf(request, chapter_slug, section_slug):
+    """This section's PDF with the reader's own ink drawn into it.
+
+    Composited server-side so what comes back is a real file — one a reader can
+    print, mail, or keep — rather than something only this viewer can show.
+    """
+    import hashlib
+
+    book, section = _section_or_404(request, chapter_slug, section_slug)
+    if not request.user.is_authenticated:
+        return HttpResponseForbidden("sign in to annotate")
+
+    key = request.GET.get("v") or printing.slice_key_for(book, section)
+    layer = _layers(request, book, section).filter(slice_key=key).first()
+    if layer is None:
+        raise Http404("nothing annotated here")
+
+    resolved = _resolve_version(request, book, section, key)
+    if resolved is None:
+        raise Http404("no such version")
+    book_sha, pages = resolved
+    current = printing.slice_key_for(book, section)
+    if not key or key == current:
+        src = printing.section_pdf_path(book, section)
+    else:
+        src = printing.versioned_section_pdf(
+            book, book_sha, pages, f"{section.chapter.slug}-{section.slug}")
+    if src is None:
+        raise Http404("no pdf for this section")
+
+    cache = printing.print_cache_root()
+    if cache is None:
+        raise Http404("no pdf for this section")
+    # Keyed by the ink as well as the version, so editing a stroke produces a
+    # new file rather than serving a stale composite.
+    stamp = hashlib.sha256(
+        json.dumps(layer.strokes, sort_keys=True).encode()).hexdigest()[:12]
+    dest = (cache / "annotated" / str(request.user.pk) / book.slug
+            / f"{section.chapter.slug}-{section.slug}-{(key or '')[:12]}-{stamp}.pdf")
+    if not dest.is_file():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(f"{dest.name}.tmp")
+        export.composite(src, layer.strokes, tmp)
+        tmp.replace(dest)
+    name = _pdf_filename(book, section).replace(".pdf", "-annotated.pdf")
+    return _pdf_response(dest, name, inline=bool(request.GET.get("inline")))

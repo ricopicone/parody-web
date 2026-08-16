@@ -255,3 +255,79 @@ class VersionedPdfAndCarryForwardTests(TestCase):
         self.assertEqual(after["strokes"], before["strokes"])
         self.assertEqual(len(after["versions"]), 1,
                          "an untouched section must not sprout a second version")
+
+
+class AnnotatedDownloadTests(TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from django.test import Client
+        from parody_web.tests_printing import import_artifact, make_pdf_with_content
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name)
+        self.root, self.cache = base / "live", base / "cache"
+        self.root.mkdir()
+        make_pdf_with_content(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+        self.reader = get_user_model().objects.create_user("reader", password="x")
+        self.client = Client()
+        self.client.force_login(self.reader)
+
+    def _settings(self):
+        from django.test import override_settings
+        return override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                                 PARODY_WEB_PRINT_CACHE=str(self.cache))
+
+    def _ink(self):
+        self.client.put("/one/alpha/ink/",
+                        {"strokes": {"1": [{"tool": "pen", "color": "#ff0000",
+                                            "opacity": 1, "d": "M10 10 L50 50 Z"}]}},
+                        content_type="application/json")
+
+    def test_it_returns_a_pdf_with_the_ink_in_it(self):
+        from pypdf import PdfReader
+        import io
+        with self._settings():
+            self._ink()
+            resp = self.client.get("/one/alpha/pdf/annotated/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/pdf")
+        pdf = PdfReader(io.BytesIO(b"".join(resp.streaming_content)
+                                   if resp.streaming else resp.content))
+        self.assertEqual(len(pdf.pages), 5)          # alpha is pages 5..9
+        self.assertIn(b"1 0 0 rg", pdf.pages[0].get_contents().get_data())
+
+    def test_it_is_named_so_the_reader_can_tell_it_apart(self):
+        with self._settings():
+            self._ink()
+            resp = self.client.get("/one/alpha/pdf/annotated/")
+        self.assertIn("-annotated.pdf", resp["Content-Disposition"])
+
+    def test_a_section_with_no_ink_has_nothing_to_download(self):
+        with self._settings():
+            self.assertEqual(
+                self.client.get("/one/alpha/pdf/annotated/").status_code, 404)
+
+    def test_editing_the_ink_produces_a_fresh_file(self):
+        with self._settings():
+            self._ink()
+            self.client.get("/one/alpha/pdf/annotated/")
+            self.client.put("/one/alpha/ink/",
+                            {"strokes": {"1": [{"tool": "pen", "color": "#00ff00",
+                                                "opacity": 1, "d": "M1 1 L9 9 Z"}]}},
+                            content_type="application/json")
+            resp = self.client.get("/one/alpha/pdf/annotated/")
+        from pypdf import PdfReader
+        import io
+        pdf = PdfReader(io.BytesIO(b"".join(resp.streaming_content)
+                                   if resp.streaming else resp.content))
+        self.assertIn(b"0 1 0 rg", pdf.pages[0].get_contents().get_data())
+
+    def test_anonymous_gets_nothing(self):
+        with self._settings():
+            self._ink()
+            self.client.logout()
+            self.assertEqual(
+                self.client.get("/one/alpha/pdf/annotated/").status_code, 403)
