@@ -11,6 +11,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "parody_web",
+    "parody_web_annotate",
 ]
 
 MIDDLEWARE = [

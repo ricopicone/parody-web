@@ -356,6 +356,72 @@ class VersionedSliceTests(TestCase):
         self.assertTrue(first.is_file() and second.is_file())
 
 
+class PruneArchiveTests(TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name)
+        self.root, self.archive = base / "live", base / "arc"
+        self.root.mkdir()
+        make_pdf_with_content(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+
+    def _archive_an_extra_version(self, sha):
+        from parody_web.models import BookPrintVersion
+        path = printing.archived_pdf_path(self.book.slug, sha)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        make_pdf_with_content(path, 4)
+        BookPrintVersion.objects.create(book=self.book, sha256=sha,
+                                        filename=path.name, page_count=4)
+        return path
+
+    def _settings(self):
+        return override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                                 PARODY_WEB_PRINT_ARCHIVE=str(self.archive))
+
+    def test_a_dry_run_is_the_default(self):
+        from io import StringIO
+        with self._settings():
+            printing.archive_book_pdf(self.book)
+            orphan = self._archive_an_extra_version("1" * 64)
+            out = StringIO()
+            call_command("prune_print_archive", stdout=out)
+        self.assertTrue(orphan.is_file())
+        self.assertIn("would remove", out.getvalue())
+
+    def test_it_keeps_the_current_version(self):
+        from io import StringIO
+        with self._settings():
+            printing.archive_book_pdf(self.book)
+            current = printing.archived_pdf_path(self.book.slug, self.book.print_sha256)
+            call_command("prune_print_archive", "--yes", stdout=StringIO())
+        self.assertTrue(current.is_file())
+
+    def test_it_removes_a_version_nothing_references(self):
+        from io import StringIO
+        with self._settings():
+            printing.archive_book_pdf(self.book)
+            orphan = self._archive_an_extra_version("1" * 64)
+            call_command("prune_print_archive", "--yes", stdout=StringIO())
+        self.assertFalse(orphan.is_file())
+
+    def test_it_keeps_a_version_a_reader_annotated(self):
+        """The whole reason this command is not automatic."""
+        from io import StringIO
+        from parody_web_annotate.models import InkLayer
+        from django.contrib.auth import get_user_model
+        reader = get_user_model().objects.create_user("r", password="x")
+        with self._settings():
+            printing.archive_book_pdf(self.book)
+            annotated = self._archive_an_extra_version("1" * 64)
+            InkLayer.objects.create(
+                user=reader, book_slug=self.book.slug, edition_id="",
+                section_key="al", slice_key="9" * 64, book_sha256="1" * 64,
+                pages=[5, 9], strokes={})
+            call_command("prune_print_archive", "--yes", stdout=StringIO())
+        self.assertTrue(annotated.is_file())
+
+
 class SlicingTests(TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
