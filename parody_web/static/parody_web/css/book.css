@@ -357,7 +357,9 @@ form.codebox input { color: var(--ink); background: var(--paper); }
 
 .account-name {
   font-size: .82rem;
-  max-width: 10ch;
+  /* Wide enough for an ordinary full name — 10ch clipped "Rico Picone" to
+     "Rico Pic…", which is worse than useless. */
+  max-width: 16ch;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 

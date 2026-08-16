@@ -27,6 +27,11 @@ export class PageView {
     this.entries = [];
     this.doc = null;
     this.dpr = window.devicePixelRatio || 1;
+    // Bumped whenever the scale changes. A page render is asynchronous, so
+    // without it a render started before a zoom finishes after it and
+    // re-attaches a canvas at the old scale — the page then sits there
+    // stretched, and its ink layer never learns the new size.
+    this.generation = 0;
     this._watchDpr();
   }
 
@@ -84,6 +89,7 @@ export class PageView {
 
   /** Drop every canvas and draw the visible window again at the current scale. */
   rerender() {
+    this.generation += 1;
     for (const entry of this.entries) this._release(entry);
     this.update();
   }
@@ -119,25 +125,42 @@ export class PageView {
 
   async _render(entry) {
     if (entry.canvas || entry.rendering) return;
+    const generation = this.generation;
+    const viewport = entry.viewport;
     entry.rendering = true;
     const canvas = document.createElement('canvas');
     canvas.className = 'ink-page-canvas';
     const dpr = this.dpr;
-    canvas.width = Math.floor(entry.viewport.width * dpr);
-    canvas.height = Math.floor(entry.viewport.height * dpr);
-    canvas.style.width = `${entry.viewport.width}px`;
-    canvas.style.height = `${entry.viewport.height}px`;
+    canvas.width = Math.floor(viewport.width * dpr);
+    canvas.height = Math.floor(viewport.height * dpr);
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
     const context = canvas.getContext('2d');
     context.scale(dpr, dpr);
+    const task = entry.page.render({ canvasContext: context, viewport });
+    entry.task = task;
+    try {
+      await task.promise;
+    } catch (err) {
+      entry.rendering = false;
+      return;                       // cancelled by a newer render; not an error
+    }
+    entry.rendering = false;
+    // The scale moved while this was drawing: throw the result away rather
+    // than attach a page at the wrong size.
+    if (generation !== this.generation) return;
     entry.el.prepend(canvas);
     entry.canvas = canvas;
-    await entry.page.render({ canvasContext: context,
-                              viewport: entry.viewport }).promise;
-    entry.rendering = false;
     this.onPageReady(entry);
   }
 
   _release(entry) {
+    // Cancel any render still in flight, so a zoom does not wait on work whose
+    // result is already stale.
+    if (entry.task) {
+      try { entry.task.cancel(); } catch (err) { /* already finished */ }
+      entry.task = null;
+    }
     if (!entry.canvas) return;
     entry.canvas.remove();          // the ink layer is handled separately
     entry.canvas = null;
