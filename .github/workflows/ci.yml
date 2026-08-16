@@ -9,5 +9,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync
+      # --extra print: pypdf is an optional DEPENDENCY, but tests_printing is
+      # not an optional TEST. A plain `uv sync` leaves pypdf out and all 38 of
+      # those tests error on "No module named 'pypdf'" — which is what has kept
+      # main red since the print work landed.
+      - run: uv sync --extra print
       - run: uv run python runtests.py
