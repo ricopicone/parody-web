@@ -24,6 +24,12 @@ await build({
 
 // pdf.js insists on a separate worker file; it cannot be inlined into the
 // bundle, so it is copied beside it and pointed at from the template.
+//
+// Copied to .js, NOT .mjs, even though its contents are a module. Python's
+// mimetypes does not know .mjs, so Django and whitenoise serve it as
+// application/octet-stream — and a module import is strictly MIME-checked, so
+// the browser refuses it and the viewer renders nothing. Found in production.
+// Fixing it here means no host has to learn this.
 await copyFile('node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
-               `${OUT}/pdf.worker.mjs`);
-console.log(`copied pdf.worker.mjs -> ${OUT}`);
+               `${OUT}/pdf.worker.js`);
+console.log(`copied pdf.worker.js -> ${OUT}`);

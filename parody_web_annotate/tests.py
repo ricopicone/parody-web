@@ -426,3 +426,40 @@ class AppOrderCheckTests(TestCase):
         from parody_web_annotate.checks import annotate_app_order
         with override_settings(INSTALLED_APPS=["parody_web_annotate", "parody_web"]):
             self.assertEqual(annotate_app_order(None), [])
+
+
+class ShippedAssetTests(TestCase):
+    """The bundle is built ahead of time and shipped; these guard the packaging.
+
+    Both failures here are silent in production — the app installs, the page
+    renders, and the viewer is simply blank.
+    """
+
+    def _js_dir(self):
+        from pathlib import Path
+        import parody_web_annotate
+        return (Path(parody_web_annotate.__file__).parent
+                / "static" / "parody_web_annotate" / "js")
+
+    def test_the_bundle_and_worker_are_present(self):
+        self.assertTrue((self._js_dir() / "annotate.js").is_file())
+        self.assertTrue((self._js_dir() / "pdf.worker.js").is_file())
+
+    def test_the_worker_is_not_shipped_as_mjs(self):
+        """Python's mimetypes does not know .mjs, so Django and whitenoise
+        serve it as application/octet-stream — and a module import is strictly
+        MIME-checked, so the browser refuses it and the viewer renders nothing.
+        Found in production; this is the guard."""
+        import mimetypes
+        self.assertEqual(list(self._js_dir().glob("*.mjs")), [])
+        guessed, _ = mimetypes.guess_type("pdf.worker.js")
+        self.assertIn("javascript", guessed or "")
+
+    def test_the_template_points_at_the_worker_that_exists(self):
+        from django.template.loader import render_to_string
+        from pathlib import Path
+        import parody_web_annotate
+        source = (Path(parody_web_annotate.__file__).parent / "templates"
+                  / "parody_web" / "_pdf_view_stage.html").read_text()
+        self.assertIn("pdf.worker.js", source)
+        self.assertNotIn("pdf.worker.mjs", source)
