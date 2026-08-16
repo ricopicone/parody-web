@@ -202,6 +202,48 @@ Template `{% block %}`s were deliberately *not* used for this. Django cannot
 force you to copy `section.html` wholesale and re-merge it on every parody-web
 upgrade. Shadowing a small empty partial costs nothing when the page changes.
 
+## 4b. Annotation (`parody_web_annotate`)
+
+Freehand ink on section PDFs — pressure pen, highlighter, shapes, eraser,
+undo — kept per reader and per PDF version. Install it:
+
+```python
+# settings.py
+INSTALLED_APPS = [
+    "parody_web_annotate",   # BEFORE parody_web: it shadows the PDF-view templates
+    "parody_web",
+    ...
+]
+
+# Where released book PDFs are kept so old annotated versions stay producible.
+# MUST be outside the deployment checkout — a `git clean` in the checkout would
+# take every annotation's source PDF with it.
+PARODY_WEB_PRINT_ARCHIVE = "/srv/parody/print-archive"
+```
+
+```python
+# urls.py — alongside parody_web's, under the same book prefix
+path("", include("parody_web_annotate.urls")),
+path("", include("parody_web.urls")),
+```
+
+Then `manage.py migrate`. The app order is enforced by a system check rather
+than left to fail silently.
+
+**What a version is.** A section's version is a hash of its own pages' content
+streams, so a rebuild that does not touch the section keeps the same key and
+the reader's notes stay attached. When a section really does change, the new
+PDF appears and the annotated older one remains openable; the reader is offered
+a one-tap carry-forward, never an automatic one.
+
+Retention starts at the first import after installing: nothing can archive a
+PDF that was already overwritten. `manage.py prune_print_archive` (dry-run by
+default) removes versions that are neither current nor annotated.
+
+**Only sections.** The full-book PDF is deliberately not annotatable — a
+118-page canvas viewer is a memory problem on tablets, and a section is the
+unit a reader studies.
+
 ## 5. The join key
 
 Key your own per-section records to:
