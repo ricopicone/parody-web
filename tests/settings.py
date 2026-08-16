@@ -10,8 +10,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "parody_web",
+    # before parody_web: it shadows the PDF-view templates
     "parody_web_annotate",
+    "parody_web",
 ]
 
 MIDDLEWARE = [

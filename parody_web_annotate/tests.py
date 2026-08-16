@@ -331,3 +331,98 @@ class AnnotatedDownloadTests(TestCase):
             self.client.logout()
             self.assertEqual(
                 self.client.get("/one/alpha/pdf/annotated/").status_code, 403)
+
+
+class ViewerTemplateTests(TestCase):
+    """The stage swap, and who is offered it."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from django.test import Client
+        from parody_web.tests_printing import import_artifact, make_pdf_with_content
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        make_pdf_with_content(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+        self.reader = get_user_model().objects.create_user("reader", password="x")
+        self.client = Client()
+
+    def _settings(self):
+        from django.test import override_settings
+        return override_settings(PARODY_WEB_PRINT_ROOT=str(self.root))
+
+    def _html(self):
+        return self.client.get("/one/alpha/pdf/view/").content.decode()
+
+    def test_a_signed_in_reader_gets_the_drawing_stage(self):
+        self.client.force_login(self.reader)
+        with self._settings():
+            html = self._html()
+        self.assertIn("data-ink-root", html)
+        self.assertIn("annotate.js", html)
+        self.assertNotIn("<iframe", html)
+
+    def test_an_anonymous_reader_gets_the_plain_iframe(self):
+        """Not a disabled toolbar — nothing is offered to someone who cannot
+        use it."""
+        with self._settings():
+            html = self._html()
+        self.assertIn("<iframe", html)
+        self.assertNotIn("data-ink-root", html)
+        self.assertNotIn("annotate.js", html)
+
+    def test_the_stage_is_handed_the_version_it_must_load(self):
+        self.client.force_login(self.reader)
+        with self._settings():
+            html = self._html()
+        self.assertIn('data-slice-key="', html)
+        self.assertIn('data-pages="[5, 9]"', html)
+
+    def test_the_toolbar_appears_for_a_reader_who_may_draw(self):
+        self.client.force_login(self.reader)
+        with self._settings():
+            html = self._html()
+        self.assertIn("data-ink-toolbar", html)
+
+    def test_no_version_switcher_when_there_is_only_one_version(self):
+        self.client.force_login(self.reader)
+        with self._settings():
+            html = self._html()
+        self.assertNotIn("data-ink-versions", html)
+
+    def test_a_section_with_no_pdf_offers_no_stage(self):
+        with self._settings():
+            self.client.force_login(self.reader)
+            self.assertEqual(
+                self.client.get("/one/beta/pdf/view/").status_code, 404)
+
+    def test_the_context_is_computed_once_per_request(self):
+        """Three partials ask for it; it reads the PDF to make a version key."""
+        self.client.force_login(self.reader)
+        with self._settings():
+            from unittest.mock import patch
+            with patch("parody_web.printing.slice_key_for",
+                       wraps=__import__("parody_web.printing",
+                                        fromlist=["x"]).slice_key_for) as spy:
+                self._html()
+        self.assertEqual(spy.call_count, 1)
+
+
+class AppOrderCheckTests(TestCase):
+    def test_it_objects_when_the_annotator_cannot_shadow(self):
+        """Getting this wrong fails silently: the PDF view keeps rendering the
+        plain iframe and nothing says why."""
+        from django.test import override_settings
+        from parody_web_annotate.checks import annotate_app_order
+        with override_settings(INSTALLED_APPS=["parody_web", "parody_web_annotate"]):
+            errors = annotate_app_order(None)
+        self.assertEqual([e.id for e in errors], ["parody_web_annotate.E001"])
+
+    def test_it_is_quiet_when_the_order_is_right(self):
+        from django.test import override_settings
+        from parody_web_annotate.checks import annotate_app_order
+        with override_settings(INSTALLED_APPS=["parody_web_annotate", "parody_web"]):
+            self.assertEqual(annotate_app_order(None), [])

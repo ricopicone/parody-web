@@ -1,0 +1,78 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { InkStore } from './store.js';
+
+const stroke = (d) => ({ tool: 'pen', d, color: '#000' });
+
+test('strokes are kept per page', () => {
+  const s = new InkStore();
+  s.add(1, stroke('a'));
+  s.add(2, stroke('b'));
+  assert.equal(s.get(1).length, 1);
+  assert.equal(s.get(2).length, 1);
+});
+
+test('undo crosses pages in the order the marks were made', () => {
+  const s = new InkStore();
+  s.add(2, stroke('first'));
+  s.add(3, stroke('second'));
+  s.undo();
+  assert.equal(s.get(3).length, 0);
+  assert.equal(s.get(2).length, 1);
+  s.undo();
+  assert.equal(s.get(2).length, 0);
+});
+
+test('redo restores what undo took', () => {
+  const s = new InkStore();
+  s.add(1, stroke('a'));
+  s.undo();
+  s.redo();
+  assert.equal(s.get(1).length, 1);
+});
+
+test('a new mark clears the redo stack', () => {
+  const s = new InkStore();
+  s.add(1, stroke('a'));
+  s.undo();
+  s.add(1, stroke('b'));
+  assert.equal(s.redo(), false);
+  assert.equal(s.get(1)[0].d, 'b');
+});
+
+test('undo on an empty history is a no-op, not a crash', () => {
+  assert.equal(new InkStore().undo(), false);
+});
+
+test('erasing removes the named strokes only', () => {
+  const s = new InkStore();
+  s.add(1, stroke('a')); s.add(1, stroke('b')); s.add(1, stroke('c'));
+  s.removeAt(1, [0, 2]);
+  assert.deepEqual(s.get(1).map((x) => x.d), ['b']);
+});
+
+test('serialising drops pages that hold nothing', () => {
+  const s = new InkStore();
+  s.add(1, stroke('a'));
+  s.add(2, stroke('b'));
+  s.clearPage(2);
+  assert.deepEqual(Object.keys(s.toJSON()), ['1']);
+});
+
+test('it reports emptiness so an untouched page saves nothing', () => {
+  const s = new InkStore();
+  assert.equal(s.isEmpty, true);
+  s.add(1, stroke('a'));
+  assert.equal(s.isEmpty, false);
+});
+
+test('history is bounded so a long session cannot grow without limit', () => {
+  const s = new InkStore();
+  for (let i = 0; i < 80; i += 1) s.add(1, stroke(`s${i}`));
+  assert.ok(s.past.length <= 50);
+});
+
+test('an existing layer loads as the starting state', () => {
+  const s = new InkStore({ 4: [stroke('old')] });
+  assert.equal(s.get(4).length, 1);
+});

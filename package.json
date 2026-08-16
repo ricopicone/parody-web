@@ -1,0 +1,18 @@
+{
+  "name": "parody-web-annotate-build",
+  "private": true,
+  "type": "module",
+  "description": "Build tooling for the parody_web_annotate viewer. Hosts never need this: the bundle it produces is committed and shipped in the wheel.",
+  "scripts": {
+    "build": "node esbuild.config.js",
+    "test": "node --test assets/annotate/*.test.js"
+  },
+  "dependencies": {
+    "konva": "^10.2.0",
+    "pdfjs-dist": "^4.10.38",
+    "perfect-freehand": "^1.2.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.8"
+  }
+}

@@ -1,0 +1,14 @@
+{% load parody_web_annotate %}{% ink_context as ink %}{% if ink.enabled %}
+  <span class="ink-toolbar" data-ink-toolbar></span>
+  {% if ink.versions|length > 1 %}
+    <span class="ink-versions">
+      <select data-ink-versions aria-label="PDF version">
+        {% for v in ink.versions %}
+          <option value="{{ v.key }}" {% if v.key == ink.slice_key %}selected{% endif %}>
+            {% if v.current %}Current{% else %}Annotated {{ v.updated_at|slice:":10" }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </span>
+  {% endif %}
+{% endif %}

@@ -120,3 +120,34 @@ class CompositeTests(TestCase):
         gs = page["/Resources"]["/ExtGState"]
         self.assertIn("/PdA40", gs)
         self.assertAlmostEqual(float(gs["/PdA40"]["/ca"]), 0.4)
+
+
+class StrokedShapeTests(TestCase):
+    """Shape tools are stroked paths with a width, not filled outlines."""
+
+    def test_a_shape_is_stroked_not_filled(self):
+        content = export.page_content(
+            [{"d": "M0 0 L10 10", "color": "#0000ff", "opacity": 1,
+              "mode": "stroke", "width": 2}], 100)
+        self.assertIn("0 0 1 RG", content)
+        self.assertIn("2 w", content)
+        self.assertTrue(content.rstrip("Q ").endswith("S"))
+        self.assertNotIn(" rg", content)
+
+    def test_a_shape_gets_round_caps_like_it_had_on_screen(self):
+        content = export.page_content(
+            [{"d": "M0 0 L10 10", "color": "#000", "mode": "stroke",
+              "width": 2}], 100)
+        self.assertIn("1 J 1 j", content)
+
+    def test_a_pen_stroke_is_still_filled(self):
+        content = export.page_content(
+            [{"d": "M0 0 L1 1 Z", "color": "#000", "opacity": 1}], 100)
+        self.assertIn(" rg", content)
+        self.assertNotIn(" RG", content)
+        self.assertIn(" f", content)
+
+    def test_a_missing_width_does_not_produce_an_invisible_hairline(self):
+        content = export.page_content(
+            [{"d": "M0 0 L1 1", "color": "#000", "mode": "stroke"}], 100)
+        self.assertIn("1 w", content)

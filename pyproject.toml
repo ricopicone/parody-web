@@ -41,3 +41,10 @@ parody_web = ["templates/parody_web/*.html", "templates/registration/*.html",
               "static/parody_web/css/*.css",
               "static/parody_web/fonts/*.woff2",
               "static/parody_web/fonts/OFL.txt"]
+# The annotator's bundle is BUILT but committed, so a host never needs Node.
+# Anything missing from this list is silently absent from the wheel — the app
+# installs, the viewer never appears, and nothing says why.
+parody_web_annotate = ["templates/parody_web/*.html",
+                       "static/parody_web_annotate/js/*.js",
+                       "static/parody_web_annotate/js/*.mjs",
+                       "static/parody_web_annotate/css/*.css"]

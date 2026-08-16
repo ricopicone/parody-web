@@ -11,3 +11,8 @@ dist/
 
 # superpowers brainstorming mockups
 .superpowers/
+
+# JS build tooling for the annotator. The BUILT bundle under
+# parody_web_annotate/static/ is committed on purpose — it ships in
+# the wheel, and hosts must not need Node to install this package.
+node_modules/

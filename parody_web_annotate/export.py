@@ -107,12 +107,21 @@ def page_content(strokes, page_height):
             continue
         r, g, b = _rgb(stroke.get("color"))
         opacity = stroke.get("opacity", 1)
+        # Pen and highlighter arrive as closed outlines from perfect-freehand
+        # and are filled. Shape tools (line, rect, circle) are stroked paths
+        # with a width. One code path either way: everything is a path.
+        stroked = stroke.get("mode") == "stroke"
         body.append("q")
         if opacity is not None and opacity < 1:
             body.append(f"/PdA{int(round(opacity * 100))} gs")
-        body.append(f"{_fmt(r)} {_fmt(g)} {_fmt(b)} rg")
+        if stroked:
+            body.append(f"{_fmt(r)} {_fmt(g)} {_fmt(b)} RG")
+            body.append(f"{_fmt(stroke.get('width', 1) or 1)} w")
+            body.append("1 J 1 j")          # round caps and joins, as on screen
+        else:
+            body.append(f"{_fmt(r)} {_fmt(g)} {_fmt(b)} rg")
         body.append(svg_path_to_pdf_ops(d, page_height))
-        body.append("f")
+        body.append("S" if stroked else "f")
         body.append("Q")
     return " ".join(p for p in body if p)
 

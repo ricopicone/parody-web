@@ -1,0 +1,33 @@
+{% load static parody_web_annotate %}{% ink_context as ink %}{% comment %}
+Replaces parody-web's default stage (an iframe around the browser's PDF
+plugin) with pdf.js canvases the reader can draw on.
+
+The fallback matters: an anonymous reader gets the plain iframe, not a
+disabled toolbar. Nothing is offered to someone who cannot use it.
+{% endcomment %}
+{% if ink.enabled %}
+  <div class="ink-root"
+       data-ink-root
+       data-base="{{ ink.base }}"
+       data-pdf-url="{{ ink.pdf_url }}"
+       data-slice-key="{{ ink.slice_key }}"
+       data-book-sha="{{ ink.book_sha }}"
+       data-pages="{{ ink.pages }}">
+    {% if ink.carry_from %}
+      <div class="ink-carry" data-ink-carry>
+        <span>You have notes on an earlier version of this section.</span>
+        <button type="button" data-ink-carry-yes
+                data-from="{{ ink.carry_from }}" data-to="{{ ink.slice_key }}">
+          Bring them forward
+        </button>
+        <button type="button" data-ink-carry-no>Not now</button>
+      </div>
+    {% endif %}
+    <div class="ink-pages" data-ink-pages></div>
+  </div>
+  <script type="module" src="{% static 'parody_web_annotate/js/annotate.js' %}"
+          data-pdf-worker="{% static 'parody_web_annotate/js/pdf.worker.mjs' %}"></script>
+{% else %}
+  <iframe title="{{ section.title|cut:'`' }} (PDF)"
+          src="{{ pdf_url }}?inline=1#view=FitH"></iframe>
+{% endif %}

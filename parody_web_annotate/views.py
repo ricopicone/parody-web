@@ -45,12 +45,16 @@ def _layers(request, book, section):
         edition_id=book.edition_id or "", section_key=section.key)
 
 
-def versions_for(request, book, section):
+def versions_for(request, book, section, current=None):
     """Versions worth showing: the current one, plus any this reader has ink on.
 
     Not the release history — the reader cares about where their notes are.
+
+    `current` may be passed in by a caller that already computed it; the key
+    is a hash over the section's pages, so recomputing it is not free.
     """
-    current = printing.slice_key_for(book, section)
+    if current is None:
+        current = printing.slice_key_for(book, section)
     rows = []
     seen = set()
     if current:
