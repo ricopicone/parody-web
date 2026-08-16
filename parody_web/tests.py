@@ -2094,11 +2094,15 @@ class ChromeTests(TestCase):
         self.assertIn('class="site-foot"', html)
         self.assertIn('class="theme-toggle"', html)
 
-    def test_owner_signin_moved_out_of_the_floating_div(self):
+    def test_signing_in_moved_from_the_footer_to_the_masthead(self):
+        """It was an owner-only affordance, tucked in the footer. Readers now
+        sign in to keep their PDF annotations, so it belongs where they can
+        see whose notes they are making."""
         html = self.client.get("/").content.decode()
         self.assertNotIn("text-align:right", html)
-        self.assertIn("owner sign in", html)
-        self.assertLess(html.index('class="site-foot"'), html.index("owner sign in"))
+        self.assertIn("account-in", html)
+        self.assertLess(html.index('class="site-head"'), html.index("account-in"))
+        self.assertLess(html.index("account-in"), html.index('class="site-foot"'))
 
     def test_scroll_anchors_clear_the_sticky_masthead(self):
         css = (Path(__file__).resolve().parent / "static" / "parody_web" / "css"
@@ -2848,3 +2852,78 @@ class ContentStylesheetTests(SimpleTestCase):
                 stripped = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
                 self.assertEqual(stripped.count("{"), stripped.count("}"),
                                  f"{name}: unbalanced braces")
+
+
+class AccountChipTests(TestCase):
+    """Signing in moved to the masthead when readers gained a reason to do it."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from django.test import Client
+        _import()
+        self.user = get_user_model().objects.create_user(
+            "student", password="x", first_name="Ada", last_name="Lovelace")
+        self.client = Client()
+
+    def test_an_anonymous_reader_is_offered_a_sign_in(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn("Sign in", html)
+        self.assertIn("account-in", html)
+
+    def test_the_sign_in_returns_the_reader_to_the_page_they_were_on(self):
+        html = self.client.get("/hardware/specific-t1/").content.decode()
+        self.assertIn("next=%2Fhardware%2Fspecific-t1%2F", html)
+
+    def test_a_signed_in_reader_sees_their_name_and_a_way_out(self):
+        self.client.force_login(self.user)
+        html = self.client.get("/").content.decode()
+        self.assertIn("Ada Lovelace", html)
+        self.assertIn("Sign out", html)
+
+    def test_the_footer_no_longer_calls_every_reader_an_owner(self):
+        self.client.force_login(self.user)
+        html = self.client.get("/").content.decode()
+        self.assertNotIn("owner view", html)
+        self.assertNotIn("owner sign in", html)
+
+    def test_without_a_host_avatar_a_reader_gets_their_initial(self):
+        self.client.force_login(self.user)
+        html = self.client.get("/").content.decode()
+        self.assertIn("account-initial", html)
+        self.assertIn(">A</span>", html)
+
+    def test_a_host_avatar_is_used_when_one_is_configured(self):
+        self.client.force_login(self.user)
+        with override_settings(PARODY_WEB_AVATAR="parody_web.tests.fake_avatar"):
+            html = self.client.get("/").content.decode()
+        self.assertIn('src="/media/ada.png"', html)
+        self.assertNotIn("account-initial", html)
+
+    def test_a_broken_avatar_resolver_does_not_take_the_page_down(self):
+        self.client.force_login(self.user)
+        with override_settings(PARODY_WEB_AVATAR="parody_web.tests.exploding_avatar"):
+            resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("account-initial", resp.content.decode())
+
+    def test_a_misspelled_avatar_path_is_reported_rather_than_ignored(self):
+        from django.core.exceptions import ImproperlyConfigured
+        from parody_web import accounts
+        with override_settings(PARODY_WEB_AVATAR="nope.does.not.exist"):
+            with self.assertRaises(ImproperlyConfigured):
+                accounts.get_avatar_resolver()
+
+    def test_a_reader_with_no_full_name_falls_back_to_their_username(self):
+        from django.contrib.auth import get_user_model
+        plain = get_user_model().objects.create_user("plainuser", password="x")
+        self.client.force_login(plain)
+        html = self.client.get("/").content.decode()
+        self.assertIn("plainuser", html)
+
+
+def fake_avatar(user):
+    return "/media/ada.png"
+
+
+def exploding_avatar(user):
+    raise RuntimeError("the profile service is down")

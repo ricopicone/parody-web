@@ -333,3 +333,44 @@ form.codebox input { color: var(--ink); background: var(--paper); }
 .book-pdf-link { font-family: var(--font-display); font-size: var(--fs-sm);
     color: var(--ink-muted); margin-top: var(--s3); }
 .book-pdf-note { color: var(--ink-faint); }
+
+/* ---- account chip -------------------------------------------------------
+   Signing in stopped being an owner-only affordance when readers began
+   keeping PDF annotations, so it moved from a footer line to the masthead.
+   Quiet by design: a book is not an app dashboard. */
+.account { display: inline-flex; align-items: center; gap: .5rem; margin-left: .75rem; }
+
+.account-who { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; }
+
+.account-avatar {
+  width: 1.5rem; height: 1.5rem; border-radius: 50%;
+  object-fit: cover; flex: none;
+  border: 1px solid var(--rule, rgba(127, 127, 127, .4));
+}
+
+.account-initial {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--paper-panel, rgba(127, 127, 127, .18));
+  color: var(--ink, inherit);
+  font: 600 .78rem/1 var(--font-display, system-ui, sans-serif);
+}
+
+.account-name {
+  font-size: .82rem;
+  max-width: 10ch;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.account-in,
+.account-out button {
+  font: inherit; font-size: .82rem;
+  background: none; border: 0; padding: 0;
+  color: inherit; opacity: .7; cursor: pointer; text-decoration: none;
+}
+.account-in:hover, .account-out button:hover { opacity: 1; text-decoration: underline; }
+.account-out { display: inline; }
+
+/* On a narrow screen the name goes and the picture carries the meaning. */
+@media (max-width: 48rem) {
+  .account-name { display: none; }
+}

@@ -49,8 +49,34 @@
   background: var(--paper-panel, rgba(127, 127, 127, .18));
 }
 
-.ink-swatch { width: 1.1rem; height: 1.1rem; border-radius: 50%; padding: 0; }
-.ink-swatch.is-on { outline: 2px solid var(--ink, #111); outline-offset: 2px; }
+.ink-toolbar button svg { display: block; }
+
+/* Groups are separated by a hairline rather than by space alone, so tools,
+   widths, colours and zoom read as four things and not one long row. */
+.ink-tool-group + .ink-tool-group {
+  padding-left: .7rem;
+  margin-left: .1rem;
+  border-left: 1px solid var(--rule, rgba(127, 127, 127, .35));
+}
+.ink-tool-group[hidden] { display: none; }
+
+.ink-swatch {
+  width: 1.05rem; height: 1.05rem; border-radius: 50%; padding: 0;
+  border: 1px solid rgba(127, 127, 127, .4);
+  opacity: 1;
+}
+.ink-swatch.is-on { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* A width swatch is a dot the size of the stroke it selects. */
+.ink-width { padding: .2rem .25rem; }
+.ink-width.is-on { opacity: 1; background: var(--paper-panel, rgba(127,127,127,.18)); }
+
+.ink-zoom-level {
+  font-variant-numeric: tabular-nums;
+  min-width: 3.4em;
+  text-align: center;
+  opacity: .8;
+}
 
 .ink-versions { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; }
 

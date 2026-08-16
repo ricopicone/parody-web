@@ -1,0 +1,24 @@
+{% load parody_web %}{% account as who %}{% comment %}
+The account chip. Shown wherever a reader needs to know whose notes they are
+making — the masthead on every book page.
+
+Deliberately quiet: a picture (or an initial) and a name, with sign in/out
+behind it. A book is not an app dashboard.
+{% endcomment %}
+<div class="account">
+  {% if who.signed_in %}
+    <span class="account-who" title="{{ who.name }}">
+      {% if who.avatar %}
+        <img class="account-avatar" src="{{ who.avatar }}" alt="" width="24" height="24">
+      {% else %}
+        <span class="account-avatar account-initial" aria-hidden="true">{{ who.initial }}</span>
+      {% endif %}
+      <span class="account-name">{{ who.name }}</span>
+    </span>
+    <form action="{% url 'logout' %}" method="post" class="account-out">
+      {% csrf_token %}<button type="submit">Sign out</button>
+    </form>
+  {% else %}
+    <a class="account-in" href="{% url 'login' %}?next={{ request.get_full_path|urlencode:"" }}">Sign in</a>
+  {% endif %}
+</div>

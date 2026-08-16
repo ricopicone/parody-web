@@ -144,6 +144,20 @@ export class InkLayer {
     }
   }
 
+  /**
+   * Follow a zoom change.
+   *
+   * Only the stage and the node scale move. The strokes themselves are stored
+   * in PDF points and are not touched — which is the reason zoom was cheap to
+   * add at all.
+   */
+  resize(viewport) {
+    this.scale = viewport.scale;
+    this.stage.width(viewport.width);
+    this.stage.height(viewport.height);
+    this.redraw();
+  }
+
   redraw() {
     this.layer.destroyChildren();
     for (const stroke of this.store.get(this.page)) {

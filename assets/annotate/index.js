@@ -11,7 +11,8 @@ import { InkLayer } from './ink.js';
 import { InkStore } from './store.js';
 import { InkApi } from './api.js';
 import { PointerGate } from './pointer-gate.js';
-import { Tools, bindKeys, buildToolbar } from './toolbar.js';
+import { Tools } from './tools.js';
+import { bindKeys, buildToolbar } from './toolbar.js';
 
 const SAVE_DEBOUNCE_MS = 500;
 
@@ -53,24 +54,27 @@ async function boot() {
 
   const view = new PageView(root.querySelector('[data-ink-pages]'), {
     onPageReady: (entry) => {
-      if (!layers.has(entry.number)) {
-        layers.set(entry.number, new InkLayer(entry, { store, tools, gate }));
-      }
+      const existing = layers.get(entry.number);
+      // After a zoom the layer is still there but drawn at the old scale.
+      if (existing) existing.resize(entry.viewport);
+      else layers.set(entry.number, new InkLayer(entry, { store, tools, gate }));
     },
   });
 
   const redrawAll = () => layers.forEach((layer) => layer.redraw());
-  const toolbar = document.querySelector('[data-ink-toolbar]');
-  if (toolbar) {
-    buildToolbar(toolbar, tools, {
-      undo: () => { store.undo(); redrawAll(); },
-      redo: () => { store.redo(); redrawAll(); },
-    });
-  }
-  bindKeys(tools, {
+  let chrome = null;
+  const actions = {
     undo: () => { store.undo(); redrawAll(); },
     redo: () => { store.redo(); redrawAll(); },
-  });
+    zoomIn: () => chrome?.showZoom(view.stepZoom(+1) * 100),
+    zoomOut: () => chrome?.showZoom(view.stepZoom(-1) * 100),
+    zoomReset: () => chrome?.showZoom(view.setZoom(1) * 100),
+  };
+
+  const toolbar = document.querySelector('[data-ink-toolbar]');
+  if (toolbar) chrome = buildToolbar(toolbar, tools, actions);
+  bindKeys(tools, actions);
+  chrome?.showZoom(100);
 
   const scroller = root.querySelector('[data-ink-pages]');
   let ticking = false;

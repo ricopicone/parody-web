@@ -16,12 +16,9 @@
   </nav>
   {% endif %}
 
-  <div class="foot-owner">
-  {% if user.is_authenticated %}
-    owner view ({{ user.get_username }}) ·
-    <form action="{% url 'logout' %}" method="post"><button type="submit">sign out</button></form>
-  {% else %}
-    <a href="{% url 'login' %}">owner sign in</a>
-  {% endif %}
-  </div>
+  {% comment %}
+  Signing in and out lives in the masthead now (_account.html). It moved
+  because it stopped being an owner-only affordance: a reader signs in to keep
+  their PDF annotations, and "owner view" was the wrong thing to tell them.
+  {% endcomment %}
 </footer>

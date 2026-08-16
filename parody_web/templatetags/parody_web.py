@@ -205,3 +205,24 @@ def theme_css(context):
     book = context.get("book")
     return mark_safe(_css(getattr(settings, "PARODY_WEB_THEME", None),
                           getattr(book, "slug", None)))
+
+
+@register.simple_tag(takes_context=True)
+def account(context):
+    """The reader's identity for the masthead chip.
+
+    A tag rather than a context processor: only the masthead needs it, and a
+    host's avatar resolver may hit the database.
+    """
+    from parody_web import accounts
+
+    request = context.get("request")
+    user = getattr(request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return {"signed_in": False}
+    return {
+        "signed_in": True,
+        "name": accounts.display_name(user),
+        "initial": accounts.initial(user),
+        "avatar": accounts.avatar_url(user),
+    }
