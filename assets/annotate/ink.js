@@ -88,7 +88,12 @@ export class InkLayer {
     host.addEventListener('pointermove', move);
     host.addEventListener('pointerup', up);
     host.addEventListener('pointercancel', up);
-    host.addEventListener('pointerleave', up);
+    // NOT pointerleave. setPointerCapture already guarantees the move and up
+    // events keep arriving once a stroke starts, and leave fires while the
+    // pointer is merely crossing a child element — Konva's own canvas sits
+    // inside this host — which ended the stroke one point in and threw the
+    // rest away. It looked intermittent because whether a leave fires depends
+    // on the path the pointer takes.
   }
 
   _eraseAt(at) {
@@ -124,6 +129,8 @@ export class InkLayer {
     const stroke = this._current();
     if (this.preview) { this.preview.destroy(); this.preview = null; }
     if (stroke && stroke.d) this.store.add(this.page, stroke);
+    this.points = [];
+    this.to = null;
     this.redraw();
   }
 
