@@ -1,17 +1,29 @@
 Fonts bundled with parody-web
 =============================
 
-Both families below are licensed under the SIL Open Font License, Version 1.1,
-whose full text follows. The WOFF2 files here are the latin subsets served by
+The family below is licensed under the SIL Open Font License, Version 1.1,
+whose full text follows. The WOFF2 files are the latin subsets served by
 Google Fonts, vendored so the book site has no third-party font dependency.
 
   Courier Prime — courier-prime-*.woff2
     Copyright 2015 The Courier Prime Project Authors
     https://github.com/quoteunquoteapps/CourierPrime
 
-  Source Serif 4 — source-serif-4-variable*.woff2
-    Copyright 2014-2023 Adobe (http://www.adobe.com/)
-    https://github.com/adobe-fonts/source-serif
+The body serif is TeX Gyre Pagella, under a DIFFERENT licence — the GUST Font
+License (an LPPL variant), whose full text is in GUST-FONT-LICENSE.txt beside
+this file. It is not covered by the OFL below.
+
+  TeX Gyre Pagella — tex-gyre-pagella-*.woff2
+    Copyright 2007-2009 B. Jackowski and J.M. Nowacki (on behalf of TeX Users
+    Groups), derived from URW Palladio L, itself a Palatino clone URW released
+    under the GPL+font exception.
+    http://www.gust.org.pl/projects/e-foundry/tex-gyre
+    Subset from TeX Live's texgyrepagella-*.otf with fonttools; see
+    tokens.css for the two unicode-range groups and why they are split.
+
+Pagella replaced Source Serif 4 so the web body text matches print, which sets
+the book in newpxtext — the same TeX Gyre Pagella — and matches the standalone
+figures, which build against the same faces.
 
 -------------------------------------------------------------------------------
 

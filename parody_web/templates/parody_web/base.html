@@ -16,7 +16,7 @@
 <title>{% block title %}{{ book.title }}{% endblock %}</title>
 {% load static %}
 <link rel="preload" as="font" type="font/woff2" crossorigin
-      href="{% static 'parody_web/fonts/source-serif-4-variable.woff2' %}">
+      href="{% static 'parody_web/fonts/tex-gyre-pagella-regular.woff2' %}">
 <link rel="preload" as="font" type="font/woff2" crossorigin
       href="{% static 'parody_web/fonts/courier-prime-700.woff2' %}">
 <link rel="stylesheet" href="{% static 'parody_web/css/tokens.css' %}">
@@ -30,6 +30,12 @@
 window.MathJax = {
   loader: { load: ['[tex]/boldsymbol', '[tex]/mathtools', '[tex]/cancel',
                    '[tex]/color', '[tex]/upgreek', '[tex]/html'] },
+  /* Pagella, so web math matches the rest of the book. Print sets math in
+     newpxmath (Palatino-matched) and standalone figures build against the same
+     faces, so MathJax's default — a Computer Modern derivative — was the one
+     place a reader met a different alphabet, inline against figure math on the
+     same page. `output.font` is v4-only; v3 had no way to say this. */
+  output: { font: 'mathjax-pagella' },
   tex: {
     /* html supplies \class, which a `key` (instructor) build emits around a
        cloze answer inside math. BOTH the loader entry above and this packages
@@ -69,7 +75,9 @@ window.MathJax = {
   } }
 };
 </script>
-<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<!-- v4 drops the /es5 path segment v3 used, and the docs load it `defer`
+     rather than `async`. The font above is fetched from the same CDN. -->
+<script src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" defer></script>
 {% block head_extra %}{% endblock %}
 </head>
 <body>

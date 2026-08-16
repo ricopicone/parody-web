@@ -18,10 +18,41 @@
   font-display: swap; src: url("../fonts/courier-prime-700.woff2") format("woff2"); }
 @font-face { font-family: "Courier Prime"; font-style: italic; font-weight: 700;
   font-display: swap; src: url("../fonts/courier-prime-700-italic.woff2") format("woff2"); }
-@font-face { font-family: "Source Serif 4"; font-style: normal; font-weight: 200 900;
-  font-display: swap; src: url("../fonts/source-serif-4-variable.woff2") format("woff2"); }
-@font-face { font-family: "Source Serif 4"; font-style: italic; font-weight: 200 900;
-  font-display: swap; src: url("../fonts/source-serif-4-variable-italic.woff2") format("woff2"); }
+
+/* Body serif: TeX Gyre Pagella, the metric-compatible free Palatino. Print sets
+ * the book in newpxtext — the same face — and standalone figures build against
+ * it too, so the web now agrees with both instead of being a third alphabet.
+ * Licensed under the GUST Font License, NOT the OFL; see GUST-FONT-LICENSE.txt.
+ *
+ * Split by unicode-range: the latin group is what prose actually uses and is
+ * always fetched (240K, about what the Source Serif it replaced cost). Greek,
+ * arrows and math operators live in the -ext group (116K), which a browser only
+ * downloads for a page carrying those characters in PROSE — inside math they
+ * are MathJax's business, so most pages never ask for it. */
+@font-face { font-family: "TeX Gyre Pagella"; font-style: normal; font-weight: 400;
+  font-display: swap; src: url("../fonts/tex-gyre-pagella-regular.woff2") format("woff2");
+  unicode-range: U+0000-024F, U+02B0-02FF, U+0300-036F, U+1E00-1EFF, U+2000-206F, U+2070-209F, U+20A0-20CF, U+2100-214F, U+FB00-FB4F, U+FEFF, U+FFFD; }
+@font-face { font-family: "TeX Gyre Pagella"; font-style: italic; font-weight: 400;
+  font-display: swap; src: url("../fonts/tex-gyre-pagella-italic.woff2") format("woff2");
+  unicode-range: U+0000-024F, U+02B0-02FF, U+0300-036F, U+1E00-1EFF, U+2000-206F, U+2070-209F, U+20A0-20CF, U+2100-214F, U+FB00-FB4F, U+FEFF, U+FFFD; }
+@font-face { font-family: "TeX Gyre Pagella"; font-style: normal; font-weight: 700;
+  font-display: swap; src: url("../fonts/tex-gyre-pagella-bold.woff2") format("woff2");
+  unicode-range: U+0000-024F, U+02B0-02FF, U+0300-036F, U+1E00-1EFF, U+2000-206F, U+2070-209F, U+20A0-20CF, U+2100-214F, U+FB00-FB4F, U+FEFF, U+FFFD; }
+@font-face { font-family: "TeX Gyre Pagella"; font-style: italic; font-weight: 700;
+  font-display: swap; src: url("../fonts/tex-gyre-pagella-bolditalic.woff2") format("woff2");
+  unicode-range: U+0000-024F, U+02B0-02FF, U+0300-036F, U+1E00-1EFF, U+2000-206F, U+2070-209F, U+20A0-20CF, U+2100-214F, U+FB00-FB4F, U+FEFF, U+FFFD; }
+@font-face { font-family: "TeX Gyre Pagella"; font-style: normal; font-weight: 400;
+  font-display: swap; src: url("../fonts/tex-gyre-pagella-regular-ext.woff2") format("woff2");
+  unicode-range: U+0370-03FF, U+2190-21FF, U+2200-22FF, U+2A00-2AFF; }
+@font-face { font-family: "TeX Gyre Pagella"; font-style: italic; font-weight: 400;
+  font-display: swap; src: url("../fonts/tex-gyre-pagella-italic-ext.woff2") format("woff2");
+  unicode-range: U+0370-03FF, U+2190-21FF, U+2200-22FF, U+2A00-2AFF; }
+@font-face { font-family: "TeX Gyre Pagella"; font-style: normal; font-weight: 700;
+  font-display: swap; src: url("../fonts/tex-gyre-pagella-bold-ext.woff2") format("woff2");
+  unicode-range: U+0370-03FF, U+2190-21FF, U+2200-22FF, U+2A00-2AFF; }
+@font-face { font-family: "TeX Gyre Pagella"; font-style: italic; font-weight: 700;
+  font-display: swap; src: url("../fonts/tex-gyre-pagella-bolditalic-ext.woff2") format("woff2");
+  unicode-range: U+0370-03FF, U+2190-21FF, U+2200-22FF, U+2A00-2AFF; }
 
 :root {
   /* surfaces */
@@ -62,7 +93,9 @@
      long. Chapter titles here reach 94 characters — monospaced running text at
      list size is where the identity breaks. */
   --font-display: "Courier Prime", "Courier New", monospace;
-  --font-body: "Source Serif 4", Charter, Georgia, serif;
+  /* Fallbacks are Palatino-shaped on purpose: if the webfont is slow or blocked
+     the reader still gets Palatino's proportions, not a jarring reflow. */
+  --font-body: "TeX Gyre Pagella", Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --font-mono: "Courier Prime", "Courier New", monospace;
 
   --fs-xs: .72rem;   /* mono labels, badges */
