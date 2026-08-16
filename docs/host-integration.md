@@ -166,6 +166,37 @@ Each receives the full section context: `book`, `chapter`, `section`,
 <script src="{% static 'courses/annotate.js' %}"></script>
 ```
 
+### The full-window PDF view
+
+The PDF reader at `…/pdf/view/` has three more, and they work the same way:
+
+| partial | position | intended for |
+|---|---|---|
+| `parody_web/_pdf_view_head.html` | inside `<head>` | stylesheets and scripts |
+| `parody_web/_pdf_view_toolbar.html` | in the top bar | pens, colours, version switcher |
+| `parody_web/_pdf_view_stage.html` | the document itself | a replacement viewer |
+
+The stage is a **replacement**, not an overlay. It ships as an `<iframe>` around
+the browser's own PDF viewer; shadow it and yours is used instead. It receives
+`pdf_url` so it need not know parody-web's URL names.
+
+An earlier design offered a transparent "annotation layer" div on top of that
+iframe. It was removed because it cannot work: a page can neither draw onto the
+browser's PDF plugin nor discover where its pages are. Anything that draws on a
+PDF has to render the PDF itself.
+
+### Annotation is the one per-user feature that ships
+
+Ink on a section PDF is available as `parody_web_annotate`, a second app in
+this distribution — add it to `INSTALLED_APPS` and it works.
+
+That is a deliberate exception to the rule above, and a narrow one. The rule
+exists because per-user features usually depend on enrollment, assignments and
+due dates that parody-web must not know about. Ink depends on none of that:
+only a user id, and a PDF parody-web itself produced and can version. Shipping
+it here is what makes it available to every book site instead of being
+rewritten in each one.
+
 Template `{% block %}`s were deliberately *not* used for this. Django cannot
 `{% extends %}` a template it is itself overriding, so a block-based seam would
 force you to copy `section.html` wholesale and re-merge it on every parody-web

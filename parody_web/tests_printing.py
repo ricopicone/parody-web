@@ -141,6 +141,15 @@ def make_pdf_with_content(path, pages):
     return path
 
 
+def _templates_with_shadow():
+    """TEMPLATES with a host-style shadow directory ahead of the app loader."""
+    from django.conf import settings as _s
+    conf = json.loads(json.dumps(_s.TEMPLATES, default=str))
+    conf[0]["DIRS"] = [str(Path(__file__).resolve().parent.parent
+                           / "tests" / "shadow_templates")]
+    return conf
+
+
 class SliceKeyTests(TestCase):
     """The version key: identity for a section's pages.
 
@@ -577,13 +586,38 @@ class PdfViewerTests(TestCase):
         self.assertIn("/one/alpha/pdf/", html)
         self.assertIn("Alpha", html)
 
-    def test_the_viewer_exposes_the_annotation_seam(self):
+    def test_the_default_stage_is_still_the_iframe(self):
+        """A host that installs nothing must see no change."""
         with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
             html = self.client.get("/one/alpha/pdf/view/").content.decode()
-        # the empty overlay a future annotation layer adopts, keyed the way
-        # hosts already key their per-section records
-        self.assertIn('class="pdf-annotation-layer"', html)
+        self.assertIn("<iframe", html)
+        self.assertIn("/one/alpha/pdf/?inline=1", html)
+
+    def test_the_stage_carries_the_join_key(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
         self.assertIn('data-section-key="al"', html)
+
+    def test_the_undrawable_overlay_is_gone(self):
+        """It was a transparent div over an iframe. A page cannot draw onto
+        the browser's PDF plugin, so keeping it only misled the next reader."""
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertNotIn("pdf-annotation-layer", html)
+
+    def test_a_host_can_replace_the_stage_outright(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               TEMPLATES=_templates_with_shadow()):
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertIn("REPLACED-STAGE", html)
+        self.assertNotIn("<iframe", html)
+        # and it is handed the URL, so it need not know parody-web's url names
+        self.assertIn('data-pdf="/one/alpha/pdf/"', html)
+
+    def test_the_head_and_toolbar_seams_are_included(self):
+        from django.template.loader import get_template
+        for name in ("_pdf_view_head", "_pdf_view_toolbar", "_pdf_view_stage"):
+            get_template(f"parody_web/{name}.html")   # raises if missing
 
     def test_the_viewer_offers_a_way_back_to_the_section(self):
         with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):

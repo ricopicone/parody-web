@@ -1,0 +1,15 @@
+{% comment %}
+The PDF stage — what actually shows the document.
+
+Default: the browser's own PDF viewer in an iframe. Shadow this template to
+replace it; parody_web_annotate does, with a pdf.js canvas viewer it can draw
+on.
+
+It must REPLACE rather than overlay. An earlier design put a transparent
+"annotation layer" div on top of this iframe, which cannot work: a page can
+neither draw onto the browser's PDF plugin nor discover where its pages are.
+
+Context: book, chapter, section, pdf_url, editions.
+{% endcomment %}
+<iframe title="{{ section.title|cut:'`' }} (PDF)"
+        src="{{ pdf_url }}?inline=1#view=FitH"></iframe>

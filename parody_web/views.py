@@ -453,9 +453,10 @@ def section_pdf(request, chapter_slug, section_slug):
 def section_pdf_view(request, chapter_slug, section_slug):
     """Full-window PDF reader for one section.
 
-    Deliberately chrome-free: no masthead, sidebar, or rail. The PDF sits in a
-    positioned container with an empty overlay sibling — the seam a future
-    annotation layer adopts (see _section_overlay.html for the same pattern).
+    Deliberately chrome-free: no masthead, sidebar, or rail. The document
+    itself comes from _pdf_view_stage.html, which a host may shadow to replace
+    the default iframe outright — parody_web_annotate does, with a pdf.js
+    viewer it can draw on. See docs/host-integration.md.
     """
     from .printing import section_pdf_path
 
@@ -470,6 +471,10 @@ def section_pdf_view(request, chapter_slug, section_slug):
         "book": book, "editions": editions,
         "section": section, "chapter": section.chapter,
         "canonical_url": request.build_absolute_uri(request.path),
+        # The stage partial builds its own src from this, so a replacement
+        # stage does not have to know parody-web's URL names.
+        "pdf_url": reverse("parody_web:section_pdf",
+                           args=[chapter_slug, section_slug]),
     })
 
 

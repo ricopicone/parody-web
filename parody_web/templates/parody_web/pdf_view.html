@@ -8,6 +8,7 @@ book stylesheets style prose this page does not have.
 {% endcomment %}
 <link rel="stylesheet" href="{% static 'parody_web/css/tokens.css' %}">
 <style>{% theme_css %}</style>
+{% include "parody_web/_pdf_view_head.html" %}
 <style>
   .pdf-shell { position: fixed; inset: 0; display: flex; flex-direction: column;
                background: var(--paper, #fff); color: var(--ink, #111); }
@@ -19,28 +20,21 @@ book stylesheets style prose this page does not have.
   .pdf-bar .pdf-spacer { margin-left: auto; }
   .pdf-bar a { color: inherit; text-decoration: none; opacity: .8; }
   .pdf-bar a:hover, .pdf-bar a:focus-visible { opacity: 1; text-decoration: underline; }
-  /* The PDF and its (currently empty) annotation layer share this stacking
-     context, so a future layer can sit exactly over the page. */
+  /* The stage is a positioning context so a replacement can lay its own
+     canvases out inside it. */
   .pdf-stage { position: relative; flex: 1 1 auto; min-height: 0; }
   .pdf-stage > iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-  .pdf-annotation-layer { position: absolute; inset: 0; pointer-events: none; }
 </style>
 <div class="pdf-shell">
   <nav class="pdf-bar">
     <span class="pdf-title">{% if section.number %}{{ section.number }} {% endif %}{{ section.title|cut:"`" }}</span>
     <span class="pdf-book">{{ book.title }}</span>
+    {% include "parody_web/_pdf_view_toolbar.html" %}
     <span class="pdf-spacer"></span>
     <a href="{% section_url book chapter.slug section.slug %}">← Back to the section</a>
     <a href="{% url 'parody_web:section_pdf' chapter.slug section.slug %}">Download</a>
   </nav>
-  <div class="pdf-stage">
-    <iframe title="{{ section.title|cut:'`' }} (PDF)"
-            src="{% url 'parody_web:section_pdf' chapter.slug section.slug %}?inline=1#view=FitH"></iframe>
-    {% comment %}
-    Annotation seam. Ships empty and inert; a host project that adds drawing
-    keys its records to this data-section-key (the same Section.key hosts
-    already use). See docs/host-integration.md.
-    {% endcomment %}
-    <div class="pdf-annotation-layer" data-section-key="{{ section.key }}"></div>
+  <div class="pdf-stage" data-section-key="{{ section.key }}">
+    {% include "parody_web/_pdf_view_stage.html" %}
   </div>
 </div>
