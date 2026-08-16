@@ -9,6 +9,7 @@
  */
 import * as pdfjsLib from 'pdfjs-dist';
 import { pageAt, windowAround } from './paged.js';
+import { Generation, RenderSlot } from './render-slot.js';
 
 // The worker cannot be inlined into the bundle, so the template hands us its
 // hashed static URL on the script tag that loaded us.
@@ -27,11 +28,10 @@ export class PageView {
     this.entries = [];
     this.doc = null;
     this.dpr = window.devicePixelRatio || 1;
-    // Bumped whenever the scale changes. A page render is asynchronous, so
-    // without it a render started before a zoom finishes after it and
-    // re-attaches a canvas at the old scale — the page then sits there
-    // stretched, and its ink layer never learns the new size.
-    this.generation = 0;
+    // Ownership of in-flight renders: see render-slot.js. Zoom cancels renders
+    // midway, and getting this wrong is what made a zoomed page render at the
+    // old scale, and then made it blank.
+    this.generation = new Generation();
     this._watchDpr();
   }
 
@@ -89,7 +89,7 @@ export class PageView {
 
   /** Drop every canvas and draw the visible window again at the current scale. */
   rerender() {
-    this.generation += 1;
+    this.generation.bump();
     for (const entry of this.entries) this._release(entry);
     this.update();
   }
@@ -106,7 +106,11 @@ export class PageView {
       el.style.height = `${viewport.height}px`;
       el.dataset.page = String(number);
       this.container.appendChild(el);
-      this.entries.push({ number, page, viewport, el, canvas: null, layer: null });
+      this.entries.push({ number, page, viewport, el, canvas: null,
+                          layer: null,
+                          // One slot per page: pages render independently, but
+                          // a zoom invalidates all of them together.
+                          slot: new RenderSlot(this.generation) });
     }
     this.update();
     return this.doc.numPages;
@@ -124,10 +128,9 @@ export class PageView {
   }
 
   async _render(entry) {
-    if (entry.canvas || entry.rendering) return;
-    const generation = this.generation;
+    if (entry.canvas || entry.slot?.busy) return;
     const viewport = entry.viewport;
-    entry.rendering = true;
+    const claim = entry.slot.claim();
     const canvas = document.createElement('canvas');
     canvas.className = 'ink-page-canvas';
     const dpr = this.dpr;
@@ -142,13 +145,13 @@ export class PageView {
     try {
       await task.promise;
     } catch (err) {
-      entry.rendering = false;
+      entry.slot.finish(claim);
       return;                       // cancelled by a newer render; not an error
     }
-    entry.rendering = false;
+    entry.slot.finish(claim);
     // The scale moved while this was drawing: throw the result away rather
     // than attach a page at the wrong size.
-    if (generation !== this.generation) return;
+    if (!entry.slot.canAttach(claim)) return;
     entry.el.prepend(canvas);
     entry.canvas = canvas;
     this.onPageReady(entry);
@@ -161,6 +164,11 @@ export class PageView {
       try { entry.task.cancel(); } catch (err) { /* already finished */ }
       entry.task = null;
     }
+    // Give up the slot NOW rather than when the cancellation rejects. The
+    // rejection is asynchronous, and update() runs immediately after this —
+    // leaving it held meant the replacement render was skipped and the page
+    // stayed blank at the new zoom.
+    entry.slot.release();
     if (!entry.canvas) return;
     entry.canvas.remove();          // the ink layer is handled separately
     entry.canvas = null;
