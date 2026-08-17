@@ -41,3 +41,33 @@ export function showable(clozes) {
   return (clozes || []).filter((c) => Number.isFinite(c.x0)
                                    && Number.isFinite(c.page));
 }
+
+/**
+ * The maths region being spoken at `ms`, or null.
+ *
+ * Regions are short and few — a handful per section against thousands of
+ * words — so a scan is fine here where the word lookup needed a binary search.
+ */
+export function regionAt(regions, ms) {
+  for (const region of regions || []) {
+    if (ms >= region.start_ms && ms < region.end_ms) return region;
+  }
+  return null;
+}
+
+/**
+ * Where skipping should land: the end of the maths being spoken now, or the
+ * start of the next one if we are between them and it is close enough to be
+ * what the reader meant. Null when there is nothing to skip.
+ */
+export function skipTarget(regions, ms, reachMs = 1500) {
+  const here = regionAt(regions, ms);
+  if (here) return here.end_ms;
+  let best = null;
+  for (const region of regions || []) {
+    if (region.start_ms >= ms && region.start_ms - ms <= reachMs) {
+      if (!best || region.start_ms < best.start_ms) best = region;
+    }
+  }
+  return best ? best.end_ms : null;
+}

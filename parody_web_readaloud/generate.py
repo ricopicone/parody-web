@@ -104,8 +104,23 @@ def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
     # the very start of the section.
     _time_silent_clozes(placed, clozes, window)
 
+    # Timed maths regions, so a reader can skip the rest of a long expression.
+    # SRE is verbose by necessity — a modest integral becomes a long sentence —
+    # and a student who has understood it should not have to sit through it.
+    # Clozes are deliberately excluded: their narration IS the answer.
+    regions = []
+    for spot in placed:
+        if spot.token.kind != "math":
+            continue
+        span = window.get(spot.index)
+        if not span or span[1] <= span[0]:
+            continue
+        regions.append({"token": spot.index, "display": spot.token.display,
+                        "start_ms": span[0], "end_ms": span[1]})
+
     duration = words[-1]["end_ms"] if words else 0
-    return {"words": words, "clozes": clozes, "audio_bytes": audio_bytes,
+    return {"words": words, "clozes": clozes, "regions": regions,
+            "audio_bytes": audio_bytes,
             "duration_ms": duration, "text": text,
             # [[widthPt, heightPt], ...]. The client divides the rendered page
             # width by this to recover the zoom scale, which is how it converts

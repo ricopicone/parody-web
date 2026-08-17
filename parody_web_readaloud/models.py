@@ -38,6 +38,9 @@ class ReadAlongTrack(models.Model):
     # [[widthPt, heightPt], ...] — what the client divides the rendered page
     # width by to recover the zoom scale.
     pages = models.JSONField(default=list, blank=True)
+    # [{token, display, start_ms, end_ms}] — spoken maths, so the reader can
+    # skip the rest of one.
+    regions = models.JSONField(default=list, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

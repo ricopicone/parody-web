@@ -57,6 +57,7 @@ def track(request, chapter_slug, section_slug):
         "words": row.words,
         "clozes": row.clozes,
         "pages": row.pages,
+        "regions": row.regions,
         # A preview track carries timings but no audio. The client drives
         # itself from a clock when this is null, so the pacing and the reveals
         # can be judged before a voice is chosen or paid for.

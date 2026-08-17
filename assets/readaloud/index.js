@@ -9,7 +9,7 @@ import { Clock } from './clock.js';
 import { Highlight } from './highlight.js';
 import { Reveal } from './reveal.js';
 import { isRendered, pageAt } from './pageview.js';
-import { clozeAt, showable, wordAt } from './track.js';
+import { clozeAt, showable, skipTarget, wordAt } from './track.js';
 
 async function boot() {
   const root = document.querySelector('[data-ink-root]');
@@ -27,6 +27,7 @@ async function boot() {
   }
 
   const clozes = showable(track.clozes);
+  const regions = track.regions || [];
   // A preview track has timings but no audio. A clock stands in for the
   // element so everything downstream — the frame loop, the holds, the
   // controls — is identical whether or not a voice has been synthesised.
@@ -44,6 +45,16 @@ async function boot() {
   let following = true;
 
   root.dataset.readalong = 'idle';
+
+  // A button as well as a key: the reader is holding a stylus, not resting
+  // their hands on a keyboard. Shown only while maths is actually being read.
+  const skipButton = document.createElement('button');
+  skipButton.type = 'button';
+  skipButton.className = 'readalong-skip';
+  skipButton.textContent = 'Skip the equation';
+  skipButton.hidden = true;
+  root.appendChild(skipButton);
+  skipButton.addEventListener('click', () => skip());
 
   const isDark = () => root.dataset.dark === '1';
 
@@ -119,6 +130,7 @@ async function boot() {
       audio.dispatch('ended');
     }
     paint(ms);
+    skipButton.hidden = skipTarget(regions, ms) === null || holding >= 0;
     const due = clozeAt(clozes, ms);
     if (due >= 0 && due !== announced) {
       announced = due;
@@ -149,7 +161,28 @@ async function boot() {
     audio.pause();
   }
 
+  /**
+   * Skip the rest of the equation being read.
+   *
+   * SRE has to be verbose to be unambiguous — a modest integral becomes a long
+   * sentence — so a reader who has taken the point needs a way past it without
+   * losing their place in the prose.
+   */
+  function skip() {
+    const target = skipTarget(regions, audio.currentTime * 1000);
+    if (target === null) return false;
+    audio.currentTime = target / 1000;
+    // Anything already passed must not fire on the way through.
+    announced = clozeAt(clozes, target);
+    step(target);
+    return true;
+  }
+
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowRight' && holding < 0) {
+      if (skip()) event.preventDefault();
+      return;
+    }
     if (event.key !== ' ') return;
     if (holding >= 0) {
       event.preventDefault();
@@ -182,7 +215,7 @@ async function boot() {
   });
 
   window.parodyReadAlong = {
-    audio, track, play, pause, resume, step,
+    audio, track, play, pause, resume, step, skip,
     follow: (on) => { following = on; },
   };
 

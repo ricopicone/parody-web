@@ -178,7 +178,8 @@ class Command(BaseCommand):
                 defaults={"engine": options["engine"], "audio_name": name,
                           "duration_ms": track["duration_ms"],
                           "words": track["words"], "clozes": track["clozes"],
-                          "pages": track["pages"]})
+                          "pages": track["pages"],
+                          "regions": track["regions"]})
             made += 1
             self.stdout.write(
                 f"made {section.key}: {len(track['words'])} words, "

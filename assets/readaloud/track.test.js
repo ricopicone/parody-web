@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { clozeAt, showable, wordAt } from './track.js';
+import { clozeAt, regionAt, showable, skipTarget, wordAt } from './track.js';
 
 const WORDS = [
   { start_ms: 0, end_ms: 100 },
@@ -56,4 +56,34 @@ test('a cloze with no box is not showable', () => {
 
 test('showable copes with a missing list', () => {
   assert.deepEqual(showable(undefined), []);
+});
+
+const REGIONS = [
+  { token: 3, start_ms: 1000, end_ms: 4000 },
+  { token: 9, start_ms: 8000, end_ms: 9000 },
+];
+
+test('finds the maths being spoken now', () => {
+  assert.equal(regionAt(REGIONS, 2000).token, 3);
+  assert.equal(regionAt(REGIONS, 8500).token, 9);
+  assert.equal(regionAt(REGIONS, 6000), null);
+});
+
+test('skipping lands at the end of the current expression', () => {
+  assert.equal(skipTarget(REGIONS, 2000), 4000);
+});
+
+test('skipping just before an expression still skips it', () => {
+  // Pressing skip as the equation begins is the common case.
+  assert.equal(skipTarget(REGIONS, 7200), 9000);
+});
+
+test('skipping in open prose does nothing', () => {
+  assert.equal(skipTarget(REGIONS, 6000), null);
+  assert.equal(skipTarget([], 100), null);
+});
+
+test('skipping never goes backwards', () => {
+  const target = skipTarget(REGIONS, 8999);
+  assert.ok(target === null || target >= 8999);
 });
