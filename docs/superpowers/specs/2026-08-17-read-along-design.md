@@ -81,36 +81,38 @@ to text and figure clozes alike — one rhythm, one control.
 
 Three pieces, split by where the knowledge already lives.
 
-### parody (build side) — one small additive change
+### parody (build side) — no change at all
 
-Everything the mode needs is already in the artifact **except the cloze
-answers**, which the web filter strips in `blank` mode
-(`filter.lua:765`, `cloze_blank_html` emits a span with no content).
+The published artifact is built `--clozes blank` and must stay exactly as it
+is. `filter.lua:737` states the invariant plainly:
 
-parody gains a per-section `clozes` list in the artifact:
+> In `blank` the hidden text is NEVER written into the HTML: anything this
+> filter emits is fetchable by the reader, so the answer is replaced here at
+> build time, not hidden with CSS. […] Only the referenced file is staged into
+> media/, so in `blank` mode the complete artwork is never published.
 
-```json
-"clozes": [
-  {"index": 0, "kind": "text",   "answer": "sampling rate"},
-  {"index": 1, "kind": "figure", "answer_src": "figs/bode-complete.svg"}
-]
-```
+An earlier draft of this spec proposed adding a `clozes` list carrying the
+answers to that artifact. **That was wrong** — it breaches the invariant for
+every reader of the ordinary web book, not just this mode, and it would not
+have solved figures anyway, since blank mode never stages the complete
+artwork.
 
-Ordered by document order, so the *n*th entry corresponds to the *n*th
-`<span class="cloze-blank">` in that section's HTML.
+The right source is a **second artifact built `--clozes key`**, generated at
+build time and never published. That mode already gives all three things:
 
-**The answers go in the artifact, not in served section HTML.** This project
-has a hard norm that answer-gating fails closed (see the
-`solutions-only-is-per-filter-not-shared` memory: `.solutions-only` leaked on
-the web and had to be fixed on both paths). Putting `data-cloze-answer` on the
-served span would breach that norm for every reader of the ordinary web book,
-not just this mode. Answers reach the client only through the read-along
-payload, which is gated to the mode.
+- answers present and *explicitly marked*, as `<span class="cloze-key">`
+  (`filter.lua:775`; math clozes get `\class{cloze-key}{…}` at :853)
+- complete figure artwork rendered and staged, because `cloze_variant_src`
+  returns `nil` for any mode that is not `blank` (`filter.lua:795`)
+- math as `\(…\)` / `\[…\]`, as in any build
 
-`kind: "figure"` covers clozed artwork, which print.lua already supports via
-`cloze_variant_src()` — an explicit `cloze="…"` attribute or a
-`<stem>-cloze.<ext>` sibling. The served PDF already renders the *incomplete*
-artwork; what is missing is only the reveal.
+So the build emits two artifacts: `blank` (published, unchanged) and `key`
+(build-time input to read-along, never served). `parody build --clozes key`
+already exists (`cli.py:319`). The extra cost is one pandoc pass — no LaTeX
+compile. Answers reach a client only through the gated read-along payload.
+
+This is what makes the marker question disappear: read-along never has to
+guess which words were clozed, because `key` mode tells it.
 
 ### parody_web_readaloud (server side)
 
@@ -119,10 +121,11 @@ Generation runs at import or on instructor trigger. **Never on request** — see
 
 For each section:
 
-1. Take the section's HTML from the artifact. This is the text source: clean
-   prose, correct reading order, no running heads, no folios, no hyphenation,
-   no page breaks. Every one of those is an artifact of reading text out of a
-   PDF, and none of them exist here.
+1. Take the section's HTML from the **`key` artifact**. This is the text
+   source: clean prose, correct reading order, no running heads, no folios, no
+   hyphenation, no page breaks. Every one of those is an artifact of reading
+   text out of a PDF, and none of them exist here. It also carries the marked
+   answers and the complete figure artwork for the reveals.
 2. Take the served section PDF (`printing.section_pdf_path`) for geometry.
    Extract words with boxes per page (PyMuPDF, the approach in wolfgang's
    `readaloud/services.py:13 extract_pdf_words`).
@@ -161,14 +164,17 @@ almost everywhere, and the disagreements **self-classify**:
 These stop being hand-written heuristics and become fallout of one algorithm.
 Anchor on long unique token runs so local noise cannot derail it.
 
-**Neither stream contains the answer.** The web filter emits
-`<span class="cloze-blank">` empty (`filter.lua:765`) and the PDF has a rule
-where the word would be, so both streams have a *gap* in the same place. Each
-side marks that gap — the span in the HTML, the vector rule in the PDF — and
-matching the *n*th span to the *n*th rule locates the blank. The answer is
-spliced into the spoken text at that marker from the artifact's `clozes` list,
-so **the spoken stream is the HTML stream plus the answers**, and the two
-differ by exactly the set of things being revealed.
+**Clozes are the one place the streams disagree by design**, and both sides
+mark it. The `key` HTML has the answer wrapped in `<span class="cloze-key">`;
+the `blank` PDF has a vector rule where those words would have been. So a
+clozed answer shows up as a run of HTML tokens matching nothing, *and* as a
+rule found by `get_drawings()` at that position. Two independent signals for
+the same thing: the span says what the answer is and that one belongs here, the
+rule says exactly where on the page it goes. A gap with no corresponding rule
+is alignment noise, not a cloze — which is how the aligner tells the two apart.
+
+The spoken stream is therefore the whole `key` text, answers included, and the
+blanks are the subset of it the page declines to print.
 
 **Known limit: float reordering.** LaTeX moves figures and tables to page
 tops, so a caption sits at a different point in PDF reading order than in the
