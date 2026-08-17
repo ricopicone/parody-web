@@ -9,11 +9,27 @@ from dataclasses import dataclass
 
 import fitz
 
-# A blank is a wide, flat stroke. Environment frames, table borders and the
-# short marks inside figures are excluded by demanding a rule be much wider
-# than it is tall, and wide enough to write in.
+# Blanks come in two shapes and both are flat strokes:
+#
+#   inline `\cloze{...}`  -> \clozeblank{measured width}, ONE short rule
+#   block  `::: {.cloze}` -> \parody@rulelines, one FULL-MEASURE rule per line
+#
+# So width cannot be used to decide what is a blank: a short rule is either an
+# inline blank or a fraction bar, and on the electronics primer, which is dense
+# with maths, flat strokes outnumber blanks roughly 17 to 1.
+#
+# Candidates are therefore left permissive here, and align.py decides — a blank
+# has to fall between the words either side of its cloze, which rejects strays
+# structurally instead of by tuning a threshold. Grouping still needs the
+# full-measure test, because only stacked full-measure rules form one blank.
 MIN_RULE_WIDTH = 8.0
 MAX_RULE_HEIGHT = 2.5
+FULL_MEASURE_RATIO = 0.9
+
+# Rule lines within one blank are stacked at 1.5 baselineskip. Anything closer
+# than this belongs to the same blank; anything further is a separate one.
+MAX_LINE_GAP = 40.0
+SAME_COLUMN_TOL = 3.0
 
 
 @dataclass
@@ -41,28 +57,67 @@ def extract_words(pdf_bytes: bytes) -> list:
         doc.close()
 
 
-def extract_rules(pdf_bytes: bytes) -> list:
-    """The horizontal rules `\\clozeblank` draws — i.e. the blanks.
+def _page_measure(page) -> float:
+    """The width of this page's text block, which is what \\linewidth renders to."""
+    words = page.get_text("words", sort=True)
+    if not words:
+        return page.rect.width
+    return max(w[2] for w in words) - min(w[0] for w in words)
 
-    Found rather than inferred: the rule is a real vector stroke, so its box is
+
+def extract_rules(pdf_bytes: bytes) -> list:
+    """The individual full-measure rule lines a blank is drawn from.
+
+    Found rather than inferred: each rule is a real vector stroke, so its box is
     exact, which matters because the reveal is positioned against it.
     """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
         out = []
         for number, page in enumerate(doc):
+            full = FULL_MEASURE_RATIO * _page_measure(page)
             for drawing in page.get_drawings():
                 rect = drawing["rect"]
                 width, height = rect.x1 - rect.x0, rect.y1 - rect.y0
-                if width < MIN_RULE_WIDTH or height > MAX_RULE_HEIGHT:
+                if height > MAX_RULE_HEIGHT or width < MIN_RULE_WIDTH:
                     continue
                 out.append({"page": number,
                             "x0": round(rect.x0, 2), "y0": round(rect.y0, 2),
-                            "x1": round(rect.x1, 2), "y1": round(rect.y1, 2)})
+                            "x1": round(rect.x1, 2), "y1": round(rect.y1, 2),
+                            "full": width >= full})
         out.sort(key=lambda r: (r["page"], r["y0"], r["x0"]))
         return out
     finally:
         doc.close()
+
+
+def group_rules(rules: list) -> list:
+    """Stacked rule lines belong to ONE blank.
+
+    A `clozeblock` is blanked to the height of the passage it hides, so a
+    three-line equation becomes three rules. Ungrouped, the second and third
+    would be handed to the next two clozes and every blank after them would
+    land in the wrong place.
+    """
+    groups = []
+    for rule in rules:
+        last = groups[-1] if groups else None
+        if (last
+                and last.get("full") and rule.get("full")
+                and last["page"] == rule["page"]
+                and abs(last["x0"] - rule["x0"]) <= SAME_COLUMN_TOL
+                and abs(last["x1"] - rule["x1"]) <= SAME_COLUMN_TOL
+                and 0 <= rule["y0"] - last["y1"] <= MAX_LINE_GAP):
+            last["y1"] = rule["y1"]
+            last["lines"] += 1
+        else:
+            groups.append({**rule, "lines": 1})
+    return groups
+
+
+def extract_blanks(pdf_bytes: bytes) -> list:
+    """Where the student writes: one entry per cloze, in reading order."""
+    return group_rules(extract_rules(pdf_bytes))
 
 
 def page_sizes(pdf_bytes: bytes) -> list:

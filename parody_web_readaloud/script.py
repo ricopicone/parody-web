@@ -44,13 +44,30 @@ def _strip_delims(raw: str) -> str:
     return raw
 
 
+def _block_cloze(raw: str) -> Token:
+    """One `::: {.cloze}` block, as a single cloze token.
+
+    A block usually hides display maths, in which case the token carries the
+    LaTeX and no words: it is spoken through the maths engine, and the reveal
+    has to render it rather than print it as text. A block of ordinary prose
+    still yields words, so both forms come out of here.
+    """
+    body = raw.strip()
+    latex = _strip_delims(body)
+    if latex != body:                      # the whole block was one equation
+        return Token(kind="cloze", latex=latex, display=True, text=body)
+    words = body.split()
+    return Token(kind="cloze", answer=words, text=" ".join(words))
+
+
 class _ScriptParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.tokens = []
         self._skip_depth = 0
         self._math = None                  # "inline" | "display" while open
-        self._cloze = False
+        self._inline_cloze = False
+        self._block_depth = 0              # >0 while inside a cloze block
         self._buf = []
 
     def handle_starttag(self, tag, attrs):
@@ -60,12 +77,27 @@ class _ScriptParser(HTMLParser):
             return
         if self._skip_depth:
             return
+
+        # Everything inside a cloze block is the answer, maths included, so it
+        # is buffered whole rather than handled tag by tag.
+        if self._block_depth:
+            if tag == "div":
+                self._block_depth += 1
+            return
+
         classes = (a.get("class") or "").split()
-        if tag == "span" and "math" in classes:
+        if tag == "div" and "cloze-key-block" in classes:
+            # A `::: {.cloze}` block, blanked to its own height in print. Its
+            # content is usually display maths rather than words — all 21 of
+            # the electronics primer's clozes are of this kind, and none are
+            # inline.
+            self._block_depth = 1
+            self._buf = []
+        elif tag == "span" and "math" in classes:
             self._math = "display" if "display" in classes else "inline"
             self._buf = []
         elif tag == "span" and "cloze-key" in classes:
-            self._cloze = True
+            self._inline_cloze = True
             self._buf = []
         elif tag == "img" and a.get("data-cloze-of"):
             self.tokens.append(Token(kind="figure_cloze", src=a.get("src", "")))
@@ -79,21 +111,35 @@ class _ScriptParser(HTMLParser):
             return
         if self._skip_depth:
             return
+
+        if self._block_depth:
+            if tag != "div":
+                return
+            self._block_depth -= 1
+            if self._block_depth:
+                return
+            self.tokens.append(_block_cloze("".join(self._buf)))
+            self._buf = []
+            return
+
         if tag == "span" and self._math:
             raw = "".join(self._buf).strip()
             self.tokens.append(Token(kind="math", latex=_strip_delims(raw),
                                      display=self._math == "display"))
             self._math, self._buf = None, []
-        elif tag == "span" and self._cloze:
+        elif tag == "span" and self._inline_cloze:
             words = "".join(self._buf).split()
             self.tokens.append(Token(kind="cloze", answer=words,
                                      text=" ".join(words)))
-            self._cloze, self._buf = False, []
+            self._inline_cloze, self._buf = False, []
 
     def handle_data(self, data):
         if self._skip_depth:
             return
-        if self._math is not None or self._cloze:
+        if self._block_depth:
+            self._buf.append(data)
+            return
+        if self._math is not None or self._inline_cloze:
             self._buf.append(data)
             return
         # Punctuation abutting the previous element — the `, which` after a

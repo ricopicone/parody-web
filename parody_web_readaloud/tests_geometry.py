@@ -2,7 +2,8 @@
 import fitz
 from django.test import SimpleTestCase
 
-from parody_web_readaloud.geometry import (extract_rules, extract_words,
+from parody_web_readaloud.geometry import (extract_blanks, extract_rules,
+                                           extract_words,
                                            page_sizes)
 
 
@@ -62,3 +63,40 @@ class ExtractRulesTests(SimpleTestCase):
 class PageSizesTests(SimpleTestCase):
     def test_page_sizes_are_reported(self):
         self.assertEqual(page_sizes(_pdf()), [(200.0, 100.0)])
+
+
+class BlankGroupingTests(SimpleTestCase):
+    """A cloze block is blanked to its own height: one blank, several rules."""
+
+    def _blanks(self, lines, width=180.0):
+        doc = fitz.open()
+        page = doc.new_page(width=220, height=300)
+        # Text defines the measure a full-width rule is judged against.
+        page.insert_text((20, 30), "a b c d e f g h i j k l m n o p q r s t",
+                         fontsize=9)
+        for n in range(lines):
+            y = 60 + n * 18
+            page.draw_line(fitz.Point(20, y), fitz.Point(20 + width, y),
+                           width=0.4)
+        data = doc.tobytes()
+        doc.close()
+        return extract_blanks(data)
+
+    def test_stacked_full_measure_rules_are_one_blank(self):
+        blanks = self._blanks(3)
+        self.assertEqual(len(blanks), 1)
+        self.assertEqual(blanks[0]["lines"], 3)
+
+    def test_one_rule_is_one_blank(self):
+        self.assertEqual(len(self._blanks(1)), 1)
+
+    def test_short_rules_are_never_grouped(self):
+        """Two fraction bars on consecutive lines are not one blank."""
+        blanks = self._blanks(2, width=20.0)
+        self.assertEqual(len(blanks), 2)
+
+    def test_a_short_rule_is_still_offered_as_a_candidate(self):
+        """Inline \\clozeblank is measured to its answer, not the full measure."""
+        blanks = self._blanks(1, width=20.0)
+        self.assertEqual(len(blanks), 1)
+        self.assertFalse(blanks[0]["full"])

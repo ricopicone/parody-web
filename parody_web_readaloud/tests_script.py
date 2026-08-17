@@ -71,3 +71,38 @@ class ParseScriptTests(SimpleTestCase):
         tokens = parse_script("<p>Nyquist&nbsp;rate &amp; aliasing</p>")
         self.assertEqual([t.text for t in tokens],
                          ["Nyquist", "rate", "&", "aliasing"])
+
+
+class BlockClozeTests(SimpleTestCase):
+    """`::: {.cloze}` blocks — the only kind the electronics primer uses."""
+
+    def test_a_block_of_display_maths_is_one_cloze_carrying_its_latex(self):
+        html = ('<p>we get</p><div class="cloze-key-block"><p>'
+                '<span class="math display">\\[Z_C = 1/(j\\omega C)\\]</span>'
+                '</p></div><p>after</p>')
+        tokens = parse_script(html)
+        self.assertEqual([t.kind for t in tokens],
+                         ["word", "word", "cloze", "word"])
+        self.assertEqual(tokens[2].latex, "Z_C = 1/(j\\omega C)")
+        self.assertTrue(tokens[2].display)
+        self.assertEqual(tokens[2].answer, [])
+
+    def test_a_block_of_prose_yields_words_not_latex(self):
+        html = ('<div class="cloze-key-block"><p>the sampling rate</p></div>')
+        tokens = parse_script(html)
+        self.assertEqual([t.kind for t in tokens], ["cloze"])
+        self.assertEqual(tokens[0].answer, ["the", "sampling", "rate"])
+        self.assertEqual(tokens[0].latex, "")
+
+    def test_nested_divs_inside_a_block_do_not_end_it_early(self):
+        html = ('<div class="cloze-key-block"><div><p>'
+                '<span class="math display">\\[x\\]</span></p></div></div>'
+                '<p>after</p>')
+        tokens = parse_script(html)
+        self.assertEqual([t.kind for t in tokens], ["cloze", "word"])
+        self.assertEqual(tokens[0].latex, "x")
+
+    def test_the_maths_inside_a_block_is_not_also_its_own_token(self):
+        html = ('<div class="cloze-key-block"><p>'
+                '<span class="math display">\\[x\\]</span></p></div>')
+        self.assertEqual([t.kind for t in parse_script(html)], ["cloze"])

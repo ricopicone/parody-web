@@ -86,7 +86,11 @@ def build_speech(tokens, math=None):
     """
     math = math or SkipMath()
 
-    math_positions = [i for i, t in enumerate(tokens) if t.kind == "math"]
+    # A cloze block usually hides an equation rather than words, so it needs
+    # the maths engine too — and it must go in the SAME batch, or a section
+    # full of them pays the engine's start-up cost once per blank.
+    math_positions = [i for i, t in enumerate(tokens)
+                      if t.latex and t.kind in ("math", "cloze")]
     spoken_math = math.speak_all(
         [(tokens[i].latex, tokens[i].display) for i in math_positions])
     said_by_index = dict(zip(math_positions, spoken_math))
@@ -98,7 +102,11 @@ def build_speech(tokens, math=None):
         if token.kind == "word":
             spoken = [token.text]
         elif token.kind == "cloze":
-            spoken = list(token.answer)
+            if token.latex:
+                said = said_by_index.get(index)
+                spoken = said.split() if said else []
+            else:
+                spoken = list(token.answer)
         elif token.kind == "math":
             said = said_by_index.get(index)
             spoken = said.split() if said else []

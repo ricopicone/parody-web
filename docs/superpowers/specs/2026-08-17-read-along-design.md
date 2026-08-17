@@ -267,27 +267,69 @@ page dissolved. Nothing on the page fades now — a reveal fades in and out
 
 ## Measured: does the alignment actually work?
 
-Tested against real content before building the rest — 10 sections of rtc
-(120 in the artifact, those over 120 words), aligning each section's artifact
-HTML against the pages of the typeset PDF that hold it:
+**The electronics primer, key HTML against its own blank PDF** — the
+comparison production actually makes, both artifacts built from one source:
 
-| | placed |
+| | |
 |---|---|
-| median | 99.9% |
-| mean | 98.4% |
-| worst | 93.9% |
+| clozes located | **21 / 21** |
+| prose placed | 90.9% (11772 / 12952) |
 
-"Placed" means a speakable token (prose or math) that came away with a box.
+Every blank found, on all six sections that have them. The 9% of unplaced
+prose is mostly real: section page ranges overlap, so each slice carries the
+tail of the previous section and the head of the next, and that text *should*
+fail to match.
 
-This is a harder test than production will be. The PDF is the *ancestor's*
-LaTeX build rather than parody's, and the harness over-grabs page ranges, so
-page words outnumber script words roughly 3:1 — every one of those extras is
-furniture the aligner had to reject. It still placed essentially everything.
+**A correction.** An earlier version of this document reported median 99.9%
+on rtc. That number was wrong, and wrong in the flattering direction. The
+aligner's fallback for a `replace` opcode gave every token in the run the
+run's whole bounding box, so one large divergence handed 397 tokens a single
+box spanning half a page — all counted as "placed" while pointing at nothing.
+Bounding that fallback to genuinely local disagreements (a hyphenated break is
+one token against two page words) drops rtc to median 94.2% / mean 59.7%, with
+four sections under 6%.
+
+Those four were never working; the bug hid it. But the rtc harness is also not
+a fair test: it aligns *parody's* HTML against the *ancestor's* LaTeX build,
+and for migrated sections the two genuinely differ. The primer figures above
+are the ones to trust, because both sides come from the same source.
 
 Worth stating precisely: this measures placement *rate*, not placement
-*correctness*. It shows the aligner is not dropping the stream on real prose;
-it does not prove every box is the right one. That needs eyes on a rendered
-page, which is the first thing to check once a track exists.
+*correctness*. It shows the aligner is not dropping the stream; it does not
+prove every box is the right one. That needs eyes on a rendered page.
+
+### What the primer forced
+
+The primer's clozes are all `::: {.cloze}` blocks wrapping display maths —
+zero inline `[answer]{.cloze}` — which the first implementation did not
+support at all. Getting to 21/21 needed four changes, each recorded here
+because each was a wrong assumption rather than an oversight:
+
+1. **Block clozes are a second shape.** `<div class="cloze-key-block">`
+   carrying LaTeX, spoken through SRE and revealed as rendered maths, not text.
+2. **Blanks are not one rule each.** A `clozeblock` is blanked to its own
+   height, so it draws one full-measure rule *per line*; stacked rules must be
+   grouped or every blank after the first lands wrong.
+3. **Flat strokes are mostly fraction bars.** A naive width test found 362
+   "rules" on a 106-page book. Blanks are now identified by *position* — the
+   rule between the words either side of the cloze — which rejects strays
+   structurally rather than by a threshold.
+4. **Plain LCS wanders on section-sized prose.** Common words let it pair the
+   wrong "the", and a footnote sent it down a path that abandoned a whole
+   passage. Patience anchoring on words unique to both streams fixed the opamp
+   section from 1/9 to 9/9.
+
+### Correction: geometry is NOT identical between builds
+
+This document previously claimed `\settowidth` makes the `blank` and `full`
+builds lay out identically. That holds for *inline* clozes only. A
+`clozeblock` replaces measured content with ruled lines at 1.5 baselineskip
+and does not reproduce display-maths spacing: the primer builds to **106 pages
+blank against 118 full**.
+
+Nothing depends on the claim — geometry is taken from the served blank PDF,
+which is the page the reader actually has — but it rules out any future scheme
+that tries to diff the two builds against each other.
 
 ## Risks
 

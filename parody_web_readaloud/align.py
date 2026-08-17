@@ -54,9 +54,85 @@ def _token_key(token) -> str:
     return f"\x00cloze{next(_UNIQUE)}"
 
 
+# A hyphenated break is one token against two page words. Allow a little more
+# than that for ligatures and odd glyph splits, but nothing resembling a
+# structural divergence.
+MAX_LOCAL_TOKENS = 2
+MAX_LOCAL_WORDS = 4
+
+
+def _is_local(tokens: int, page_words: int) -> bool:
+    return tokens <= MAX_LOCAL_TOKENS and page_words <= MAX_LOCAL_WORDS
+
+
 def _join(boxes):
     return (min(b[0] for b in boxes), min(b[1] for b in boxes),
             max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+
+def _anchors(a: list, b: list) -> list:
+    """Patience anchors: tokens occurring exactly once in each stream.
+
+    Plain LCS matching goes wrong on a section-sized pair. Prose is mostly
+    common words, so the longest common subsequence is free to pair "the" in
+    one place with "the" in another, and a footnote or float that interleaves
+    the two streams can send it down a path that abandons a whole passage —
+    on the primer's opamp section it left 397 tokens unmatched against text
+    that plainly appears on the page.
+
+    Words unique on both sides cannot be paired wrongly, so the longest
+    increasing run of them is a skeleton the rest can be fitted around.
+    """
+    from collections import Counter
+
+    count_a, count_b = Counter(a), Counter(b)
+    where_b = {}
+    for j, key in enumerate(b):
+        if count_b[key] == 1:
+            where_b[key] = j
+
+    pairs = [(i, where_b[key]) for i, key in enumerate(a)
+             if count_a[key] == 1 and key in where_b]
+
+    # Longest increasing subsequence on the b-positions keeps the skeleton
+    # monotonic; a moved passage simply drops out of it.
+    best, parent = [], [-1] * len(pairs)
+    tails = []
+    for index, (_, j) in enumerate(pairs):
+        lo, hi = 0, len(tails)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if pairs[tails[mid]][1] < j:
+                lo = mid + 1
+            else:
+                hi = mid
+        if lo:
+            parent[index] = tails[lo - 1]
+        if lo == len(tails):
+            tails.append(index)
+        else:
+            tails[lo] = index
+    if tails:
+        node = tails[-1]
+        while node != -1:
+            best.append(pairs[node])
+            node = parent[node]
+        best.reverse()
+    return best
+
+
+def _segments(a: list, b: list):
+    """(i1, i2, j1, j2) windows between successive anchors, anchors included."""
+    anchors = _anchors(a, b)
+    if not anchors:
+        yield 0, len(a), 0, len(b)
+        return
+    prev_i = prev_j = 0
+    for i, j in anchors:
+        yield prev_i, i, prev_j, j
+        yield i, i + 1, j, j + 1          # the anchor itself
+        prev_i, prev_j = i + 1, j + 1
+    yield prev_i, len(a), prev_j, len(b)
 
 
 def align(tokens: list, words: list, rules: list) -> list:
@@ -64,24 +140,39 @@ def align(tokens: list, words: list, rules: list) -> list:
 
     a = [_token_key(t) for t in tokens]
     b = [_key(w.text) for w in words]
-    matcher = difflib.SequenceMatcher(a=a, b=b, autojunk=False)
+
+    for si, ei, sj, ej in _segments(a, b):
+        if si >= ei and sj >= ej:
+            continue
+        _align_window(placed, words, a, b, si, ei, sj, ej)
+
+    _attach_rules(placed, rules)
+    return placed
+
+
+def _align_window(placed, words, a, b, si, ei, sj, ej):
+    """Match one window between anchors, where LCS is safe to use."""
+    matcher = difflib.SequenceMatcher(a=a[si:ei], b=b[sj:ej], autojunk=False)
 
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        i1, i2, j1, j2 = i1 + si, i2 + si, j1 + sj, j2 + sj
         if tag == "equal":
             for offset in range(i2 - i1):
                 _place(placed[i1 + offset], [words[j1 + offset]])
-        elif tag == "replace":
-            # A hyphenated break is the common case here: several page words
-            # collapsing onto one token. Give every token in the run the run's
-            # whole extent rather than guessing a split.
+        elif tag == "replace" and _is_local(i2 - i1, j2 - j1):
+            # ONLY a small local disagreement — a hyphenated line break, a
+            # ligature, a symbol that extracted oddly. Give every token in the
+            # run the run's whole extent rather than guessing a split.
+            #
+            # Bounded deliberately. Applied to any replace block, one large
+            # divergence hands hundreds of tokens a single box spanning half a
+            # page: they then count as "placed" while pointing at nothing, and
+            # every cloze after them gets a window derived from that garbage.
+            # Unplaced is the honest outcome for a run this size.
             run = words[j1:j2]
             if run:
                 for p in placed[i1:i2]:
                     _place(p, run)
-
-    _attach_rules([p for p in placed
-                   if p.token.kind in ("cloze", "figure_cloze")], rules)
-    return placed
 
 
 def _place(p: Placed, run: list):
@@ -91,13 +182,48 @@ def _place(p: Placed, run: list):
     p.box = _join([(w.x0, w.y0, w.x1, w.y1) for w in run])
 
 
-def _attach_rules(clozes: list, rules: list):
-    """The nth unprinted token gets the nth rule, in reading order.
+def _attach_rules(placed: list, rules: list):
+    """Give each cloze the blank that lies between its neighbours on the page.
 
-    Both sequences are in document order, so position is the whole join. A
-    cloze with no rule left over keeps `box=None`, and the client skips it
-    rather than revealing over the wrong part of the page.
+    NOT simply the nth rule for the nth cloze. A page carries flat strokes that
+    are not blanks — table rules, dividers — and on the electronics primer a
+    full-measure filter still left 24 candidate regions for 21 clozes. Handing
+    them out in order puts three clozes on the wrong rule and shifts every one
+    after them.
+
+    A cloze sits between two pieces of prose whose boxes the alignment already
+    knows, so the blank has to lie between them in reading order. That rejects
+    strays structurally rather than by tuning a threshold, and it degrades
+    honestly: a cloze with no candidate in its window keeps `box=None`, and the
+    client stays silent about it instead of revealing over the wrong place.
     """
-    for cloze, rule in zip(clozes, rules):
-        cloze.page = rule["page"]
-        cloze.box = (rule["x0"], rule["y0"], rule["x1"], rule["y1"])
+    # The window runs from the TOP of the preceding word to the BOTTOM of the
+    # following one, not between their baselines: an inline blank shares a line
+    # with its neighbours, so its rule sits below their y0 while still
+    # belonging between them.
+    def top(p):
+        return (p.page, p.box[1]) if p.box else None
+
+    def bottom(p):
+        return (p.page, p.box[3]) if p.box else None
+
+    taken = set()
+    for index, p in enumerate(placed):
+        if p.token.kind not in ("cloze", "figure_cloze"):
+            continue
+
+        lo = next((top(q) for q in reversed(placed[:index]) if q.box), None)
+        hi = next((bottom(q) for q in placed[index + 1:] if q.box), None)
+
+        for number, rule in enumerate(rules):
+            if number in taken:
+                continue
+            here = (rule["page"], rule["y0"])
+            if lo is not None and here < lo:
+                continue
+            if hi is not None and here > hi:
+                break
+            taken.add(number)
+            p.page = rule["page"]
+            p.box = (rule["x0"], rule["y0"], rule["x1"], rule["y1"])
+            break

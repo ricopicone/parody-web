@@ -86,3 +86,55 @@ class AlignTests(SimpleTestCase):
         clozes = [p for p in placed if p.token.kind == "cloze"]
         self.assertEqual(clozes[0].page, 0)
         self.assertEqual(clozes[1].page, 1)
+
+
+class WindowedRuleMatchingTests(SimpleTestCase):
+    """A blank is the rule between the words either side of its cloze."""
+
+    def test_a_stray_rule_outside_the_window_is_not_taken(self):
+        """Fraction bars are flat strokes too — position is what rejects them."""
+        tokens = [Token("word", "alpha"), Token("cloze", answer=["x"]),
+                  Token("word", "beta")]
+        words = [_w("alpha", x0=0), _w("beta", x0=40)]
+        stray = {"page": 5, "x0": 0.0, "y0": 900.0, "x1": 40.0, "y1": 901.0}
+        placed = align(tokens, words, [stray])
+        cloze = [p for p in placed if p.token.kind == "cloze"][0]
+        self.assertIsNone(cloze.box)
+
+    def test_two_clozes_take_two_different_rules_in_order(self):
+        tokens = [Token("word", "a"), Token("cloze", answer=["x"]),
+                  Token("word", "b"), Token("cloze", answer=["y"]),
+                  Token("word", "c")]
+        words = [PageWord("a", 0, 0, 10, 8, 20), PageWord("b", 0, 0, 40, 8, 50),
+                 PageWord("c", 0, 0, 70, 8, 80)]
+        rules = [{"page": 0, "x0": 0.0, "y0": 25.0, "x1": 60.0, "y1": 26.0},
+                 {"page": 0, "x0": 0.0, "y0": 55.0, "x1": 60.0, "y1": 56.0}]
+        placed = align(tokens, words, rules)
+        got = [p.box[1] for p in placed if p.token.kind == "cloze"]
+        self.assertEqual(got, [25.0, 55.0])
+
+    def test_a_big_divergence_leaves_tokens_unplaced_not_mispositioned(self):
+        """397 tokens once took one box spanning half a page, and counted as
+        placed while pointing at nothing."""
+        tokens = [Token("word", f"t{i}") for i in range(40)]
+        words = [_w("unrelated", x0=0)]
+        placed = align(tokens, words, [])
+        self.assertEqual(sum(1 for p in placed if p.box), 0)
+
+
+class PatienceAnchorTests(SimpleTestCase):
+    """Rare words anchor the match where plain LCS wanders."""
+
+    def test_a_passage_after_an_interpolation_still_matches(self):
+        common = ["the", "of", "the", "of"] * 3
+        tokens = ([Token("word", w) for w in common]
+                  + [Token("word", "quadrature"), Token("word", "phasor")]
+                  + [Token("word", w) for w in common])
+        page = ([_w(w, x0=i) for i, w in enumerate(common)]
+                + [_w("FOOTNOTE", x0=99), _w("MARKER", x0=98)]
+                + [_w("quadrature", x0=50), _w("phasor", x0=60)]
+                + [_w(w, x0=i) for i, w in enumerate(common)])
+        placed = align(tokens, page, [])
+        rare = [p for p in placed if p.token.text in ("quadrature", "phasor")]
+        self.assertTrue(all(p.box for p in rare),
+                        "unique words must anchor across the interpolation")

@@ -11,7 +11,7 @@ content.
 import json
 
 from .align import align
-from .geometry import extract_rules, extract_words, page_sizes
+from .geometry import extract_blanks, extract_words, page_sizes
 from .script import parse_script
 from .speech import build_speech
 
@@ -44,7 +44,7 @@ def chunk_text(text: str, limit: int = CHUNK_LIMIT) -> list:
 
 def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
     tokens = parse_script(html)
-    placed = align(tokens, extract_words(pdf_bytes), extract_rules(pdf_bytes))
+    placed = align(tokens, extract_words(pdf_bytes), extract_blanks(pdf_bytes))
     text, owners = build_speech(tokens, math=math)
 
     audio_bytes, marks = synth(text)
