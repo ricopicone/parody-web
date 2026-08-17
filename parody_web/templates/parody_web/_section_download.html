@@ -1,0 +1,12 @@
+{% comment %}
+The "download this section" link, as its own partial so an app that knows more
+than core does can point it somewhere better.
+
+parody_web_annotate shadows it to link at the reader's annotated copy when
+they have marks on this section — core has no idea ink exists, and a reader
+who has written on a section and then downloads a clean one has been given
+the wrong file.
+
+Context: book, chapter, section, section_pdf_url, section_pdf_pages.
+{% endcomment %}
+<a href="{{ section_pdf_url }}">Download this section{% if section_pdf_pages %}<span class="util-rail-note">{{ section_pdf_pages }} page{{ section_pdf_pages|pluralize }}</span>{% endif %}</a>

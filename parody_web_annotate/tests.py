@@ -463,3 +463,74 @@ class ShippedAssetTests(TestCase):
                   / "parody_web" / "_pdf_view_stage.html").read_text()
         self.assertIn("pdf.worker.js", source)
         self.assertNotIn("pdf.worker.mjs", source)
+
+
+class DownloadLinkTests(TestCase):
+    """A reader who has written on a section and then downloads it must get
+    the copy with their marks on it. The link used to always point at the
+    clean slice, so the notes were simply missing."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from django.test import Client
+        from parody_web.tests_printing import import_artifact, make_pdf_with_content
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        make_pdf_with_content(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+        self.reader = get_user_model().objects.create_user("reader", password="x")
+        self.client = Client()
+
+    def _settings(self):
+        from django.test import override_settings
+        return override_settings(PARODY_WEB_PRINT_ROOT=str(self.root))
+
+    def _ink(self):
+        self.client.put("/one/alpha/ink/",
+                        {"strokes": {"1": [{"tool": "pen", "color": "#000",
+                                            "opacity": 1, "d": "M1 1 L9 9 Z"}]}},
+                        content_type="application/json")
+
+    def test_with_notes_the_viewer_offers_the_annotated_copy(self):
+        self.client.force_login(self.reader)
+        with self._settings():
+            self._ink()
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertIn("/one/alpha/pdf/annotated/", html)
+        self.assertIn("Download with notes", html)
+
+    def test_without_notes_it_offers_the_plain_pdf(self):
+        self.client.force_login(self.reader)
+        with self._settings():
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertNotIn("pdf/annotated/", html)
+        self.assertIn(">Download</a>", html)
+
+    def test_the_section_rail_offers_it_too(self):
+        """The rail is where a reader actually reaches for the download."""
+        self.client.force_login(self.reader)
+        with self._settings():
+            self._ink()
+            html = self.client.get("/one/alpha/").content.decode()
+        self.assertIn("/one/alpha/pdf/annotated/", html)
+        self.assertIn("with your notes", html)
+
+    def test_an_empty_layer_does_not_promise_notes(self):
+        """Erasing everything leaves a row behind; the link must not claim
+        marks that are no longer there."""
+        self.client.force_login(self.reader)
+        with self._settings():
+            self._ink()
+            self.client.put("/one/alpha/ink/", {"strokes": {}},
+                            content_type="application/json")
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertNotIn("pdf/annotated/", html)
+
+    def test_anonymous_readers_see_the_plain_link(self):
+        with self._settings():
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertNotIn("pdf/annotated/", html)
+        self.assertIn(">Download</a>", html)

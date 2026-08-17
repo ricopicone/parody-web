@@ -1,0 +1,5 @@
+{% load parody_web_annotate %}{% ink_context as ink %}{% if ink.download_url %}
+  <a href="{{ ink.download_url }}">Download this section<span class="util-rail-note">with your notes</span></a>
+{% else %}
+  <a href="{{ section_pdf_url }}">Download this section{% if section_pdf_pages %}<span class="util-rail-note">{{ section_pdf_pages }} page{{ section_pdf_pages|pluralize }}</span>{% endif %}</a>
+{% endif %}

@@ -1,0 +1,8 @@
+{% comment %}
+The PDF view's download link. Its own partial for the same reason as
+_section_download.html: parody_web_annotate shadows it so a reader who has
+annotated this section downloads the copy with their marks on it.
+
+Context: book, chapter, section, pdf_url.
+{% endcomment %}
+<a href="{{ pdf_url }}">Download</a>

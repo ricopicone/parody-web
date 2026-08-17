@@ -37,7 +37,7 @@ function group(label) {
 
 export function buildToolbar(root, tools,
                              { undo, redo, zoomIn, zoomOut, zoomReset,
-                               toggleTheme }) {
+                               toggleTheme, print }) {
   root.innerHTML = '';
 
   const modes = group('Tools');
@@ -95,6 +95,9 @@ export function buildToolbar(root, tools,
   const themeButton = button(ICONS.theme, 'Dark mode (⇧D)');
   themeButton.addEventListener('click', toggleTheme);
   view.appendChild(themeButton);
+  const printButton = button(ICONS.print, 'Print (⌘P)');
+  printButton.addEventListener('click', () => print?.());
+  view.appendChild(printButton);
   root.appendChild(view);
 
   function renderWidths() {

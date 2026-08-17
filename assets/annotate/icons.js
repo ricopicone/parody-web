@@ -50,6 +50,13 @@ export const ICONS = {
     <path d="M19.5 9.5h-9a5 5 0 0 0 0 10H15"/>
     <path d="M16 5.5l4 4-4 4"/>`),
 
+  // A printer: paper going in the top, the sheet coming out the front.
+  print: svg(`
+    <path d="M7 8.4V3.6h10v4.8"/>
+    <path d="M7 17.4H5.4A1.6 1.6 0 0 1 3.8 15.8v-4.2a1.6 1.6 0 0 1 1.6-1.6h13.2a1.6 1.6 0 0 1 1.6 1.6v4.2a1.6 1.6 0 0 1-1.6 1.6H17"/>
+    <path d="M7 14.2h10v6.2H7z"/>
+    <path d="M6.4 12.4h1.4"/>`),
+
   // A half-filled disc: the same idea as the site's own theme toggle.
   theme: svg(`
     <circle cx="12" cy="12" r="8.2"/>

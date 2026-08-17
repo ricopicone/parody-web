@@ -20,6 +20,17 @@ register = template.Library()
 _CACHE_ATTR = "_parody_ink_context"
 
 
+def _has_ink(request, book, section, slice_key):
+    """Does this reader have any strokes on this exact version?"""
+    from ..models import InkLayer
+
+    layer = InkLayer.objects.filter(
+        user=request.user, book_slug=book.slug,
+        edition_id=book.edition_id or "", section_key=section.key,
+        slice_key=slice_key).first()
+    return bool(layer and layer.stroke_count)
+
+
 @register.simple_tag(takes_context=True)
 def ink_context(context):
     """Everything the stage, head and toolbar partials need.
@@ -74,6 +85,14 @@ def ink_context(context):
                 # Offered once, and only when there is nothing on this version
                 # to conflict with.
                 "carry_from": "" if has_current else carry,
+                # Set only when this reader actually has marks on the version
+                # they are looking at, so the link never promises notes that
+                # are not there. Core's plain download stays the default.
+                "download_url": (
+                    reverse("parody_web_annotate:annotated_section_pdf",
+                            args=[section.chapter.slug, section.slug])
+                    + (f"?v={slice_key}" if slice_key != current else "")
+                ) if _has_ink(request, book, section, slice_key) else "",
             }
     setattr(request, _CACHE_ATTR, ctx)
     return ctx

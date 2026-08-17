@@ -12,6 +12,7 @@ import { InkStore } from './store.js';
 import { InkApi } from './api.js';
 import { PointerGate } from './pointer-gate.js';
 import { isDark, themeColors } from './theme.js';
+import { bindPrint } from './print.js';
 import { Tools } from './tools.js';
 import { bindKeys, buildToolbar } from './toolbar.js';
 
@@ -90,6 +91,7 @@ async function boot() {
     zoomIn: () => chrome?.showZoom(view.stepZoom(+1) * 100),
     zoomOut: () => chrome?.showZoom(view.stepZoom(-1) * 100),
     zoomReset: () => chrome?.showZoom(view.setZoom(1) * 100),
+    print: null,          // filled in below, once the root is known
     toggleTheme: () => {
       const next = isDark() ? 'light' : 'dark';
       document.documentElement.dataset.theme = next;
@@ -97,6 +99,22 @@ async function boot() {
       applyTheme();
     },
   };
+
+  // ⌘P prints the composited PDF rather than the DOM: the DOM has canvases
+  // only for the pages near the viewport, and in dark mode they carry an
+  // inversion filter a browser would happily print.
+  actions.print = bindPrint(root);
+
+  // The File > Print menu cannot be intercepted, so the print stylesheet has
+  // to cope. It turns the page's dark-mode inversion off — but the ink is
+  // *drawn* light in dark mode, which on white paper is invisible. Repaint it
+  // in the colours the reader actually chose for the duration of the print.
+  window.addEventListener('beforeprint', () => {
+    if (current.dark) layers.forEach((l) => l.setTheme({ ...current, dark: false }));
+  });
+  window.addEventListener('afterprint', () => {
+    if (current.dark) layers.forEach((l) => l.setTheme(current));
+  });
 
   const toolbar = document.querySelector('[data-ink-toolbar]');
   if (toolbar) chrome = buildToolbar(toolbar, tools, actions);

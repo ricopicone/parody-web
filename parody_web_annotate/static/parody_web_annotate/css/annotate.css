@@ -116,3 +116,40 @@
   .ink-toolbar { gap: .4rem; flex-wrap: wrap; }
   .ink-pages { padding: .5rem 0 2rem; }
 }
+
+/* ---- printing -----------------------------------------------------------
+   ⌘P and the toolbar button print the composited PDF instead of this page,
+   which is the only way to get every page, vector text, and the reader's ink.
+
+   The browser's own File > Print menu cannot be intercepted, so these rules
+   are the safety net: print the pages that are rendered rather than a blank
+   sheet, one per sheet, and — crucially — with the dark-mode inversion turned
+   off, because a browser will otherwise print a negative. */
+@media print {
+  .pdf-bar { display: none !important; }
+
+  .pdf-shell { position: static !important; display: block !important; }
+  .pdf-stage { position: static !important; }
+  .ink-root { position: static !important; }
+
+  .ink-pages {
+    overflow: visible !important;
+    height: auto !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .ink-page {
+    break-after: page;
+    page-break-after: always;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+  .ink-page:last-child { break-after: auto; page-break-after: auto; }
+
+  /* Ink is stored in the colour the reader chose; print it that way, and
+     never print the page inverted. */
+  .ink-root[data-dark="1"] .ink-page-canvas { filter: none !important; }
+  .ink-root[data-dark="1"] .ink-page { background: #fff !important; }
+}

@@ -44,7 +44,7 @@ book stylesheets style prose this page does not have.
     {% include "parody_web/_pdf_view_toolbar.html" %}
     <span class="pdf-spacer"></span>
     <a href="{% section_url book chapter.slug section.slug %}">← Back to the section</a>
-    <a href="{% url 'parody_web:section_pdf' chapter.slug section.slug %}">Download</a>
+    {% include "parody_web/_pdf_view_download.html" %}
   </nav>
   <div class="pdf-stage" data-section-key="{{ section.key }}">
     {% include "parody_web/_pdf_view_stage.html" %}

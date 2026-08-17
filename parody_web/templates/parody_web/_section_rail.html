@@ -25,7 +25,7 @@ alone — no script at all.
     <div class="util-rail-card">
       <p class="util-rail-cap">Print version</p>
       <a href="{{ section_pdf_view_url }}">Read as PDF</a>
-      <a href="{{ section_pdf_url }}">Download this section{% if section_pdf_pages %}<span class="util-rail-note">{{ section_pdf_pages }} page{{ section_pdf_pages|pluralize }}</span>{% endif %}</a>
+      {% include "parody_web/_section_download.html" %}
       {% if book_pdf_url %}<a href="{{ book_pdf_url }}">Download the full book</a>{% endif %}
     </div>
   </li>
