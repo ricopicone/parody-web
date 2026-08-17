@@ -56,6 +56,7 @@ def track(request, chapter_slug, section_slug):
         "duration_ms": row.duration_ms,
         "words": row.words,
         "clozes": row.clozes,
+        "pages": row.pages,
         "audio_url": reverse("parody_web_readaloud:audio", kwargs={
             "chapter_slug": chapter_slug, "section_slug": section_slug,
         }) + f"?voice={row.voice_id}",

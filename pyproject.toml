@@ -56,3 +56,6 @@ parody_web = ["templates/parody_web/*.html", "templates/registration/*.html",
 parody_web_annotate = ["templates/parody_web/*.html",
                        "static/parody_web_annotate/js/*.js",
                        "static/parody_web_annotate/css/*.css"]
+parody_web_readaloud = ["templates/parody_web/*.html",
+                        "static/parody_web_readaloud/js/*.js",
+                        "static/parody_web_readaloud/css/*.css"]

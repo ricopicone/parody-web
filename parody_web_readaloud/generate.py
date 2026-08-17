@@ -11,7 +11,7 @@ content.
 import json
 
 from .align import align
-from .geometry import extract_rules, extract_words
+from .geometry import extract_rules, extract_words, page_sizes
 from .script import parse_script
 from .speech import build_speech
 
@@ -103,7 +103,11 @@ def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
 
     duration = words[-1]["end_ms"] if words else 0
     return {"words": words, "clozes": clozes, "audio_bytes": audio_bytes,
-            "duration_ms": duration, "text": text}
+            "duration_ms": duration, "text": text,
+            # [[widthPt, heightPt], ...]. The client divides the rendered page
+            # width by this to recover the zoom scale, which is how it converts
+            # a PDF box to CSS pixels without holding the annotator's viewport.
+            "pages": [list(size) for size in page_sizes(pdf_bytes)]}
 
 
 def _time_silent_clozes(placed, clozes, window):

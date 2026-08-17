@@ -116,7 +116,8 @@ class Command(BaseCommand):
                 voice_id=options["voice"],
                 defaults={"engine": options["engine"], "audio_name": name,
                           "duration_ms": track["duration_ms"],
-                          "words": track["words"], "clozes": track["clozes"]})
+                          "words": track["words"], "clozes": track["clozes"],
+                          "pages": track["pages"]})
             made += 1
             self.stdout.write(
                 f"made {section.key}: {len(track['words'])} words, "

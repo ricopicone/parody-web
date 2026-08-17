@@ -22,6 +22,22 @@ await build({
   logLevel: 'info',
 });
 
+// Read-along ships as its OWN bundle rather than joining the annotator's: they
+// are separate Django apps, a host may install either alone, and a shared
+// bundle would turn read-along's absence into a missing-module error in the
+// annotator.
+const READALOUD_OUT = 'parody_web_readaloud/static/parody_web_readaloud/js';
+await mkdir(READALOUD_OUT, { recursive: true });
+await build({
+  entryPoints: ['assets/readaloud/index.js'],
+  bundle: true,
+  minify: true,
+  format: 'esm',
+  target: ['es2020'],
+  outfile: `${READALOUD_OUT}/readalong.js`,
+  logLevel: 'info',
+});
+
 // pdf.js insists on a separate worker file; it cannot be inlined into the
 // bundle, so it is copied beside it and pointed at from the template.
 //

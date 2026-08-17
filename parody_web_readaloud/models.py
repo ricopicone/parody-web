@@ -35,6 +35,9 @@ class ReadAlongTrack(models.Model):
     words = models.JSONField(default=list, blank=True)
     # [{token, kind, answer, src, page, x0, y0, x1, y1, start_ms, end_ms}]
     clozes = models.JSONField(default=list, blank=True)
+    # [[widthPt, heightPt], ...] — what the client divides the rendered page
+    # width by to recover the zoom scale.
+    pages = models.JSONField(default=list, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

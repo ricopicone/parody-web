@@ -1,0 +1,71 @@
+/* Read-along overlays.
+ *
+ * Both layers sit above the page canvas and the ink layer but below the
+ * toolbar, and neither takes pointer events except the reveal itself — the pen
+ * must always reach the page.
+ */
+
+.readalong-highlight {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* The answer, on paper-coloured stock so it stays legible over whatever line
+ * of prose it happens to cover. ABOVE the blank, never in it: the blank is
+ * where the student writes. See reveal.js.
+ */
+.readalong-reveal {
+  position: absolute;
+  z-index: 4;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.2rem;
+  background: var(--parody-paper, #fdfcf8);
+  color: var(--parody-ink, #1b1a17);
+  border: 1px solid rgb(27 26 23 / 25%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 18%);
+  font-family: 'Palatino', 'Palatino Linotype', 'Source Serif 4', serif;
+  white-space: nowrap;
+  opacity: 1;
+  cursor: pointer;
+  transition: opacity 900ms ease-out;
+}
+
+.readalong-reveal.is-fading {
+  opacity: 0;
+}
+
+.readalong-reveal[data-kind='figure'] {
+  white-space: normal;
+  max-width: 100%;
+  padding: 0.3rem;
+}
+
+.readalong-reveal[data-kind='figure'] img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Dark mode: the page canvas is inverted by a CSS filter, but these layers are
+ * deliberately outside it — so their colours are set here rather than
+ * inherited and flipped into their complements.
+ */
+[data-dark='1'] .readalong-reveal {
+  background: #26241f;
+  color: #f2eee4;
+  border-color: rgb(242 238 228 / 25%);
+}
+
+/* While a blank is being filled, the reveal is what the student is looking
+ * at; take the emphasis off everything else. */
+[data-readalong='holding'] .ink-page-canvas {
+  opacity: 0.94;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .readalong-reveal {
+    transition: none;
+  }
+}

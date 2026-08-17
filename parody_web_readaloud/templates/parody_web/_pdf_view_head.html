@@ -1,0 +1,15 @@
+{% load static parody_web_annotate %}{% ink_context as ink %}{% comment %}
+Shadows parody_web_annotate's head partial, because Django resolves app
+templates by INSTALLED_APPS order and only the first one wins — so read-along
+must re-emit the annotator's own line as well as its own. The first line below
+is a VERBATIM copy of parody_web_annotate/templates/parody_web/_pdf_view_head.html.
+
+tests_templates.py pins that file's contents, so if the annotator's head ever
+changes this fails loudly instead of silently dropping its stylesheet.
+
+The read-along module boots only when it finds [data-ink-root] and a track on
+the server, so loading it here costs a 404 and nothing else on sections that
+have no audio.
+{% endcomment %}<link rel="stylesheet" href="{% static 'parody_web_annotate/css/annotate.css' %}">
+<link rel="stylesheet" href="{% static 'parody_web_readaloud/css/readalong.css' %}">
+<script type="module" src="{% static 'parody_web_readaloud/js/readalong.js' %}" defer></script>
