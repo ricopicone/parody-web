@@ -108,7 +108,7 @@
 /* Finding the blanks without playing anything. A ruled gap looks like every
  * other rule on a typeset page, so this says how many there are and steps
  * between them. */
-.readalong-nav {
+.readalong-bar {
   position: fixed;
   left: 1.25rem;
   bottom: 1.25rem;
@@ -125,7 +125,7 @@
   font-size: 0.85rem;
 }
 
-.readalong-nav button {
+.readalong-bar button {
   border: 0;
   background: transparent;
   color: inherit;
@@ -137,13 +137,38 @@
   border-radius: 999px;
 }
 
-.readalong-nav button:hover { background: rgb(0 0 0 / 8%); }
-.readalong-nav [data-count] { white-space: nowrap; }
+.readalong-bar button:hover { background: rgb(0 0 0 / 8%); }
+.readalong-bar [data-count] { white-space: nowrap; }
 
-[data-dark='1'] .readalong-nav {
+/* The way in. Without this the mode was live and unstartable — there was no
+   control at all, only a keyboard binding that could pause but never begin. */
+.readalong-play {
+  font-size: 0.85rem !important;
+  padding: 0.2rem 0.6rem !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.readalong-play [data-play-glyph] { font-size: 0.8em; }
+
+/* Separated from the blank stepper beside it. */
+.readalong-blanknav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-left: 0.35rem;
+  border-left: 1px solid rgb(27 26 23 / 20%);
+}
+
+.readalong-blanknav[hidden] { display: none; }
+
+[data-dark='1'] .readalong-bar {
   background: #26241f;
   color: #f2eee4;
   border-color: rgb(242 238 228 / 25%);
 }
 
-[data-dark='1'] .readalong-nav button:hover { background: rgb(255 255 255 / 12%); }
+[data-dark='1'] .readalong-bar button:hover { background: rgb(255 255 255 / 12%); }
+[data-dark='1'] .readalong-blanknav { border-left-color: rgb(242 238 228 / 20%); }

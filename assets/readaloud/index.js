@@ -67,13 +67,43 @@ async function boot() {
    * between them; the marks layer keeps them visible once you are there.
    */
   const nav = document.createElement('div');
-  nav.className = 'readalong-nav';
-  nav.hidden = clozes.length === 0;
-  nav.innerHTML = '<button type="button" data-prev aria-label="Previous blank">\u2039</button>'
+  nav.className = 'readalong-bar';
+  nav.innerHTML = '<button type="button" data-play class="readalong-play">'
+    + '<span data-play-glyph>\u25b6</span> <span data-play-label>Read aloud</span>'
+    + '</button>'
+    + '<span class="readalong-blanknav" data-blanknav>'
+    + '<button type="button" data-prev aria-label="Previous blank">\u2039</button>'
     + '<span data-count></span>'
-    + '<button type="button" data-next aria-label="Next blank">\u203a</button>';
+    + '<button type="button" data-next aria-label="Next blank">\u203a</button>'
+    + '</span>';
   root.appendChild(nav);
   const counter = nav.querySelector('[data-count]');
+  const playButton = nav.querySelector('[data-play]');
+  const playGlyph = nav.querySelector('[data-play-glyph]');
+  const playLabel = nav.querySelector('[data-play-label]');
+  nav.querySelector('[data-blanknav]').hidden = clozes.length === 0;
+
+  /** Keep the control saying what pressing it will do. */
+  function showPlayState() {
+    const state = root.dataset.readalong;
+    const running = state === 'playing';
+    playGlyph.textContent = running ? '\u275a\u275a' : '\u25b6';
+    playLabel.textContent = running ? 'Pause'
+      : state === 'holding' ? 'Continue'
+      : state === 'paused' ? 'Resume'
+      : state === 'done' ? 'Read again'
+      : 'Read aloud';
+  }
+
+  /** The one entry point: start, pause, or continue, whichever applies. */
+  function toggle() {
+    if (holding >= 0) resume();
+    else if (root.dataset.readalong === 'playing') pause();
+    else if (root.dataset.readalong === 'done') { restart(); }
+    else play();
+    showPlayState();
+  }
+  playButton.addEventListener('click', toggle);
 
   function showCount() {
     counter.textContent = current < 0
@@ -81,6 +111,7 @@ async function boot() {
       : `blank ${current + 1} of ${clozes.length}`;
   }
   showCount();
+  showPlayState();
 
   function goToBlank(direction) {
     const at = nextBlank(clozes, current, direction);
@@ -200,6 +231,7 @@ async function boot() {
     current = index;
     showCount();
     root.dataset.readalong = 'holding';
+    showPlayState();
     if (page) reveal.show(cloze, page);
   }
 
@@ -209,6 +241,7 @@ async function boot() {
     root.dataset.readalong = 'playing';
     reveal.fade();
     audio.play();
+    showPlayState();
   }
 
   /** One frame's worth of work at `ms`. Separated from the rAF loop so it can
@@ -250,11 +283,19 @@ async function boot() {
     following = true;
     root.dataset.readalong = 'playing';
     audio.play();
+    showPlayState();
   }
 
   function pause() {
     root.dataset.readalong = 'paused';
     audio.pause();
+    showPlayState();
+  }
+
+  function restart() {
+    audio.currentTime = 0;
+    announced = -1;
+    play();
   }
 
   /**
@@ -280,13 +321,12 @@ async function boot() {
       return;
     }
     if (event.key !== ' ') return;
-    if (holding >= 0) {
-      event.preventDefault();
-      resume();
-    } else if (root.dataset.readalong === 'playing') {
-      event.preventDefault();
-      pause();
-    }
+    // Space is the whole transport: start, pause, continue. It used to pause
+    // and continue but never START, so a reader who had not opened the console
+    // had no way in at all.
+    if (event.target && /^(INPUT|TEXTAREA)$/.test(event.target.tagName)) return;
+    event.preventDefault();
+    toggle();
   });
 
   // Tapping the revealed answer continues, for a reader holding a stylus
@@ -299,6 +339,7 @@ async function boot() {
   audio.addEventListener('ended', () => {
     root.dataset.readalong = 'done';
     layers.forEach((layer) => layer.clear());
+    showPlayState();
   });
 
   // Animation frames stop entirely while a tab is in the background, but audio
@@ -311,7 +352,7 @@ async function boot() {
   });
 
   window.parodyReadAlong = {
-    audio, track, play, pause, resume, step, skip, goToBlank,
+    audio, track, play, pause, resume, restart, toggle, step, skip, goToBlank,
     follow: (on) => { following = on; },
   };
 
