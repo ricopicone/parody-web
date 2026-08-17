@@ -21,11 +21,23 @@ export function wordAt(words, ms) {
 }
 
 /**
- * Index of the cloze that is due at `ms`, or -1.
+ * Index of the cloze being SPOKEN at `ms`, or -1.
  *
- * Due at `end_ms`, not `start_ms`: the answer is spoken first and the reveal
- * holds afterwards, so the pause lands once the student has heard the whole
- * term rather than cutting them off mid-word.
+ * The reveal follows the voice: the answer appears as it is read, not after.
+ * Hearing a term and only then seeing it made the two feel unrelated.
+ */
+export function revealAt(clozes, ms) {
+  for (let i = 0; i < (clozes || []).length; i += 1) {
+    if (ms >= clozes[i].start_ms && ms < clozes[i].end_ms) return i;
+  }
+  return -1;
+}
+
+/**
+ * Index of the cloze whose answer has finished, or -1 — where playback stops.
+ *
+ * Still `end_ms`: the reveal appears with the voice, but the pause waits until
+ * the whole term has been said rather than cutting it off mid-word.
  */
 export function clozeAt(clozes, ms) {
   let due = -1;

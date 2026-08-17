@@ -9,25 +9,29 @@ from dataclasses import dataclass
 
 import fitz
 
-# Blanks come in two shapes and both are flat strokes:
+# Blanks come in two shapes and both reach us as flat strokes:
 #
 #   inline `\cloze{...}`  -> \clozeblank{measured width}, ONE short rule
-#   block  `::: {.cloze}` -> \parody@rulelines, one FULL-MEASURE rule per line
+#   block  `::: {.cloze}` -> a framed box, which TeX draws as its top and
+#                            bottom rules (the sides do not survive extraction)
 #
-# So width cannot be used to decide what is a blank: a short rule is either an
-# inline blank or a fraction bar, and on the electronics primer, which is dense
-# with maths, flat strokes outnumber blanks roughly 17 to 1.
+# So width cannot decide what is a blank: a short rule is either an inline
+# blank or a fraction bar, and on the electronics primer, which is dense with
+# maths, flat strokes outnumber blanks roughly 17 to 1.
 #
-# Candidates are therefore left permissive here, and align.py decides — a blank
+# Candidates are therefore left permissive here and align.py decides — a blank
 # has to fall between the words either side of its cloze, which rejects strays
 # structurally instead of by tuning a threshold. Grouping still needs the
-# full-measure test, because only stacked full-measure rules form one blank.
+# measure test, because only a matched pair spanning the measure is a box.
+#
+# 0.8, not 0.9: a cloze inside a description list is indented, and one measured
+# 0.905 of its page's text block — close enough to the threshold to be luck.
 MIN_RULE_WIDTH = 8.0
 MAX_RULE_HEIGHT = 2.5
-FULL_MEASURE_RATIO = 0.9
+FULL_MEASURE_RATIO = 0.8
 
-# Rule lines within one blank are stacked at 1.5 baselineskip. Anything closer
-# than this belongs to the same blank; anything further is a separate one.
+# The gap between a box's top and bottom rule. Generous enough for a tall
+# equation, tight enough that two separate blanks do not merge.
 MAX_LINE_GAP = 40.0
 SAME_COLUMN_TOL = 3.0
 
@@ -92,12 +96,15 @@ def extract_rules(pdf_bytes: bytes) -> list:
 
 
 def group_rules(rules: list) -> list:
-    """Stacked rule lines belong to ONE blank.
+    """Rules sharing a column and close together are ONE blank.
 
-    A `clozeblock` is blanked to the height of the passage it hides, so a
-    three-line equation becomes three rules. Ungrouped, the second and third
-    would be handed to the next two clozes and every blank after them would
-    land in the wrong place.
+    A blanked block is a framed box the height of the passage it hides, and TeX
+    emits that as a top and a bottom rule with the same x-extent. Ungrouped,
+    the bottom rule would be handed to the NEXT cloze and every blank after it
+    would land in the wrong place.
+
+    (This also handled the earlier rendering, where a block was a stack of one
+    rule per line — same grouping, more rules.)
     """
     groups = []
     for rule in rules:

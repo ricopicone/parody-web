@@ -153,16 +153,23 @@
 
 .readalong-play [data-play-glyph] { font-size: 0.8em; }
 
-/* Separated from the blank stepper beside it. */
-.readalong-blanknav {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding-left: 0.35rem;
-  border-left: 1px solid rgb(27 26 23 / 20%);
+/* "Read from…" and "start over", beside the transport. */
+.readalong-here,
+.readalong-restart {
+  font-size: 0.8rem !important;
+  padding: 0.2rem 0.5rem !important;
+  opacity: 0.85;
 }
 
-.readalong-blanknav[hidden] { display: none; }
+.readalong-here { border-left: 1px solid rgb(27 26 23 / 20%); border-radius: 0; }
+.readalong-restart { font-size: 1rem !important; }
+
+/* Armed: the next tap picks a place to read from instead of drawing. */
+[data-readalong-arming='1'] .ink-page { cursor: crosshair; }
+[data-readalong-arming='1'] .readalong-here {
+  opacity: 1;
+  background: rgb(66 133 244 / 18%);
+}
 
 [data-dark='1'] .readalong-bar {
   background: #26241f;
@@ -171,4 +178,4 @@
 }
 
 [data-dark='1'] .readalong-bar button:hover { background: rgb(255 255 255 / 12%); }
-[data-dark='1'] .readalong-blanknav { border-left-color: rgb(242 238 228 / 20%); }
+[data-dark='1'] .readalong-here { border-left-color: rgb(242 238 228 / 20%); }

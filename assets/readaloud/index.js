@@ -5,12 +5,12 @@
  * leaves the viewer exactly as it was — read-along is additive, and must never
  * become a precondition for annotating.
  */
-import { BlankMarks, blanksOnPage, nextBlank } from './blanks.js';
+import { BlankMarks, blanksOnPage } from './blanks.js';
 import { Clock } from './clock.js';
 import { Highlight } from './highlight.js';
 import { Reveal } from './reveal.js';
 import { isRendered, pageAt } from './pageview.js';
-import { clozeAt, showable, skipTarget, wordAt } from './track.js';
+import { clozeAt, revealAt, showable, skipTarget, wordAt } from './track.js';
 
 async function boot() {
   const root = document.querySelector('[data-ink-root]');
@@ -42,7 +42,8 @@ async function boot() {
   const layers = new Map();             // page index -> Highlight
   const marks = new Map();              // page index -> BlankMarks
 
-  let current = -1;                     // blank the navigator is sitting on
+  let current = -1;                     // blank most recently revealed
+  let shown = -1;                       // blank whose plate is up
   let holding = -1;                     // cloze index we are stopped at
   let announced = -1;
   let following = true;
@@ -71,17 +72,18 @@ async function boot() {
   nav.innerHTML = '<button type="button" data-play class="readalong-play">'
     + '<span data-play-glyph>\u25b6</span> <span data-play-label>Read aloud</span>'
     + '</button>'
-    + '<span class="readalong-blanknav" data-blanknav>'
-    + '<button type="button" data-prev aria-label="Previous blank">\u2039</button>'
-    + '<span data-count></span>'
-    + '<button type="button" data-next aria-label="Next blank">\u203a</button>'
-    + '</span>';
+    + '<button type="button" data-here class="readalong-here">Read from\u2026</button>'
+    + '<button type="button" data-restart class="readalong-restart" '
+    + 'aria-label="Start over" title="Start over">\u21ba</button>';
   root.appendChild(nav);
-  const counter = nav.querySelector('[data-count]');
   const playButton = nav.querySelector('[data-play]');
   const playGlyph = nav.querySelector('[data-play-glyph]');
   const playLabel = nav.querySelector('[data-play-label]');
-  nav.querySelector('[data-blanknav]').hidden = clozes.length === 0;
+
+  const clock = (seconds) => {
+    const total = Math.max(0, Math.floor(seconds));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  };
 
   /** Keep the control saying what pressing it will do. */
   function showPlayState() {
@@ -92,6 +94,7 @@ async function boot() {
       : state === 'holding' ? 'Continue'
       : state === 'paused' ? 'Resume'
       : state === 'done' ? 'Read again'
+      : root.dataset.readalongResume ? `Resume at ${clock(audio.currentTime)}`
       : 'Read aloud';
   }
 
@@ -105,35 +108,108 @@ async function boot() {
   }
   playButton.addEventListener('click', toggle);
 
-  function showCount() {
-    counter.textContent = current < 0
-      ? `${clozes.length} blank${clozes.length === 1 ? '' : 's'}`
-      : `blank ${current + 1} of ${clozes.length}`;
-  }
-  showCount();
   showPlayState();
 
-  function goToBlank(direction) {
-    const at = nextBlank(clozes, current, direction);
-    if (at < 0) return;
-    current = at;
-    const cloze = clozes[at];
-    const page = pageAt(root, cloze.page, track.pages);
-    if (page && scroller) {
-      const row = page.el.parentElement || page.el;
-      scroller.scrollTo({
-        top: row.offsetTop + cloze.y0 * page.scale - scroller.clientHeight / 3,
-        behavior: 'smooth',
-      });
+  nav.querySelector('[data-restart]').addEventListener('click', () => restart());
+
+  /**
+   * "Read from here".
+   *
+   * The pen owns the page — a plain click draws on it — so this is an armed
+   * mode rather than a bare click handler. Press the button, then tap a word;
+   * the tap is taken in the capture phase so it never reaches the ink layer,
+   * and the mode disarms itself immediately afterwards.
+   */
+  const hereButton = nav.querySelector('[data-here]');
+  let arming = false;
+
+  function setArmed(on) {
+    arming = on;
+    root.dataset.readalongArming = on ? '1' : '';
+    hereButton.textContent = on ? 'Tap a word\u2026' : 'Read from\u2026';
+    if (!on) delete root.dataset.readalongArming;
+  }
+  hereButton.addEventListener('click', () => setArmed(!arming));
+
+  /** Seek to the word nearest a point on a page, in PDF points. */
+  function readFrom(pageIndex, xPt, yPt) {
+    let best = -1;
+    let bestScore = Infinity;
+    for (let i = 0; i < track.words.length; i += 1) {
+      const w = track.words[i];
+      if (w.page !== pageIndex || !Number.isFinite(w.x0)) continue;
+      // Same line first, then horizontal distance: reading order, not
+      // euclidean distance, is what a reader means by "from here".
+      const dy = yPt < w.y0 ? w.y0 - yPt : yPt > w.y1 ? yPt - w.y1 : 0;
+      const dx = xPt < w.x0 ? w.x0 - xPt : xPt > w.x1 ? xPt - w.x1 : 0;
+      const score = dy * 1000 + dx;
+      if (score < bestScore) { bestScore = score; best = i; }
     }
-    // The page may not hold a canvas yet; update whatever is there now and let
-    // the next render pick the rest up.
-    syncMarks();
-    showCount();
+    if (best < 0) return false;
+    const at = track.words[best].start_ms;
+    audio.currentTime = at / 1000;
+    announced = clozeAt(clozes, at);
+    shown = -1;
+    reveal.fade();
+    play();
+    return true;
   }
 
-  nav.querySelector('[data-prev]').addEventListener('click', () => goToBlank(-1));
-  nav.querySelector('[data-next]').addEventListener('click', () => goToBlank(1));
+  root.addEventListener('pointerdown', (event) => {
+    if (!arming) return;
+    const pageEl = event.target.closest && event.target.closest('.ink-page');
+    if (!pageEl) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const index = Number(pageEl.dataset.page) - 1;
+    const page = pageAt(root, index, track.pages);
+    if (page) {
+      const box = pageEl.getBoundingClientRect();
+      readFrom(index, (event.clientX - box.left) / page.scale,
+               (event.clientY - box.top) / page.scale);
+    }
+    setArmed(false);
+  }, true);                               // capture: before the ink layer
+
+  /**
+   * Where the reader got to last time.
+   *
+   * Kept per version of the section, so a re-imported or re-cut PDF does not
+   * drop them somewhere that no longer corresponds. localStorage rather than
+   * the server: it is a convenience, not part of the artifact, and it must not
+   * cost a write on every pause.
+   */
+  const RESUME_KEY = `parody-readalong:${track.slice_key}:${track.voice_id}`;
+
+  function rememberPosition() {
+    try {
+      const at = audio.currentTime;
+      if (at > 5 && at < (track.duration_ms / 1000) - 5) {
+        localStorage.setItem(RESUME_KEY, String(Math.floor(at)));
+      } else {
+        localStorage.removeItem(RESUME_KEY);
+      }
+    } catch (err) { /* private mode */ }
+  }
+
+  function savedPosition() {
+    try {
+      const raw = localStorage.getItem(RESUME_KEY);
+      const at = raw ? parseInt(raw, 10) : 0;
+      return Number.isFinite(at) && at > 0 ? at : 0;
+    } catch (err) { return 0; }
+  }
+
+  const resumeAt = savedPosition();
+  if (resumeAt) {
+    audio.currentTime = resumeAt;
+    announced = clozeAt(clozes, resumeAt * 1000);
+    root.dataset.readalongResume = '1';
+  }
+  window.addEventListener('pagehide', rememberPosition);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') rememberPosition();
+  });
 
   const isDark = () => root.dataset.dark === '1';
 
@@ -229,15 +305,15 @@ async function boot() {
     audio.pause();
     holding = index;
     current = index;
-    showCount();
     root.dataset.readalong = 'holding';
     showPlayState();
-    if (page) reveal.show(cloze, page);
+    if (page) reveal.show(cloze, page);   // already up; re-place after any scroll
   }
 
   function resume() {
     if (holding < 0) return;
     holding = -1;
+    shown = -1;
     root.dataset.readalong = 'playing';
     reveal.fade();
     audio.play();
@@ -253,6 +329,20 @@ async function boot() {
     }
     paint(ms);
     skipButton.hidden = skipTarget(regions, ms) === null || holding >= 0;
+
+    // The answer appears WHILE it is read, not after. Hearing a term and only
+    // then seeing it made the two feel unconnected.
+    const speaking = revealAt(clozes, ms);
+    if (speaking >= 0 && speaking !== shown) {
+      shown = speaking;
+      current = speaking;
+      const cloze = clozes[speaking];
+      const page = pageAt(root, cloze.page, track.pages);
+      if (page) reveal.show(cloze, page);
+      syncMarks();
+    }
+
+    // The pause still waits for the whole term to be said.
     const due = clozeAt(clozes, ms);
     if (due >= 0 && due !== announced) {
       announced = due;
@@ -281,6 +371,7 @@ async function boot() {
 
   function play() {
     following = true;
+    delete root.dataset.readalongResume;
     root.dataset.readalong = 'playing';
     audio.play();
     showPlayState();
@@ -290,11 +381,16 @@ async function boot() {
     root.dataset.readalong = 'paused';
     audio.pause();
     showPlayState();
+    rememberPosition();
   }
 
   function restart() {
+    delete root.dataset.readalongResume;
+    try { localStorage.removeItem(RESUME_KEY); } catch (err) { /* ignore */ }
     audio.currentTime = 0;
     announced = -1;
+    shown = -1;
+    reveal.fade();
     play();
   }
 
@@ -352,7 +448,7 @@ async function boot() {
   });
 
   window.parodyReadAlong = {
-    audio, track, play, pause, resume, restart, toggle, step, skip, goToBlank,
+    audio, track, play, pause, resume, restart, toggle, step, skip, readFrom,
     follow: (on) => { following = on; },
   };
 

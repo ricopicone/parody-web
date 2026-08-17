@@ -8,10 +8,13 @@
  * single chapter carries thousands of expressions, so one process per
  * expression would dominate generation time entirely.
  *
- * SRE speaks MathML, not LaTeX, so MathJax converts first. Style is
- * mathspeak/default rather than brief or sbrief: the terse styles emit visual
- * abbreviations ("p'ren", "Sub", "Base") which are meant for braille and
- * displays, and a speech synthesiser reads them as gibberish.
+ * SRE speaks MathML, not LaTeX, so MathJax converts first.
+ *
+ * clearspeak, not mathspeak. Mathspeak is built for unambiguous dictation and
+ * says "upper Z Subscript upper C Baseline"; clearspeak says "Z sub C", which
+ * is what a lecturer says out loud. Its brief/sbrief styles are not an option
+ * either way — those emit visual abbreviations ("p'ren", "Sub") meant for
+ * braille displays, which a synthesiser reads as gibberish.
  *
  * Run only at generation time, from speech.py. A host that never regenerates
  * audio never needs Node — and if it is missing, SreMath falls back to silence
@@ -48,7 +51,7 @@ async function main() {
     OutputJax: new SVG({ fontCache: 'none' }),
   });
   const visitor = new SerializedMmlVisitor();
-  await SRE.setupEngine({ domain: 'mathspeak', style: 'default', locale: 'en' });
+  await SRE.setupEngine({ domain: 'clearspeak', style: 'default', locale: 'en' });
 
   const texts = items.map(({ latex, display }) => {
     try {

@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { clozeAt, regionAt, showable, skipTarget, wordAt } from './track.js';
+import { clozeAt, regionAt, revealAt, showable, skipTarget, wordAt } from './track.js';
 
 const WORDS = [
   { start_ms: 0, end_ms: 100 },
@@ -86,4 +86,19 @@ test('skipping in open prose does nothing', () => {
 test('skipping never goes backwards', () => {
   const target = skipTarget(REGIONS, 8999);
   assert.ok(target === null || target >= 8999);
+});
+
+test('the reveal follows the voice, not the pause', () => {
+  const clozes = [{ token: 4, start_ms: 1000, end_ms: 2500 }];
+  assert.equal(revealAt(clozes, 999), -1);
+  assert.equal(revealAt(clozes, 1000), 0, 'visible as the answer begins');
+  assert.equal(revealAt(clozes, 2499), 0, 'still visible as it ends');
+  // The pause is the other signal, and it lands only once it is finished.
+  assert.equal(clozeAt(clozes, 1000), -1);
+  assert.equal(clozeAt(clozes, 2500), 0);
+});
+
+test('nothing is revealed in open prose', () => {
+  assert.equal(revealAt([{ start_ms: 0, end_ms: 10 }], 500), -1);
+  assert.equal(revealAt([], 5), -1);
 });

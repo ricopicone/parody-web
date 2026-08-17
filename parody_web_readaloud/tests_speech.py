@@ -119,7 +119,20 @@ class SreMathTests(SimpleTestCase):
     def test_the_real_chain_speaks_an_expression(self):
         said = SreMath().speak_all([("x^2", False), ("\\frac{k}{m}", True)])
         self.assertEqual(said[0], "x squared")
-        self.assertIn("Fraction", said[1])
+        self.assertEqual(said[1], "k over m")
+
+    @unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
+                         "needs node and the SRE script")
+    def test_subscripts_are_spoken_the_way_a_lecturer_says_them(self):
+        """clearspeak, not mathspeak.
+
+        Mathspeak is built for unambiguous dictation and says "upper Z
+        Subscript upper C Baseline"; a reader listening to prose wants "Z sub
+        C".
+        """
+        said = SreMath().speak_all([("Z_C", False), ("v_+", False)])
+        self.assertEqual(said[0], "Z sub C")
+        self.assertEqual(said[1], "v sub plus")
 
 
 class SreAvailableTests(SimpleTestCase):
