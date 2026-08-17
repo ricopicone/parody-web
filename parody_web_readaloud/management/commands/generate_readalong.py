@@ -17,7 +17,7 @@ from parody_web.models import Book, Section
 
 from ...generate import EstimatedSynth, PollySynth, build_track
 from ...models import ReadAlongTrack
-from ...speech import SkipMath, SreMath
+from ...speech import SkipMath, SreMath, sre_available
 from ...storage import write_audio
 
 
@@ -117,7 +117,21 @@ class Command(BaseCommand):
             keys = key_html_index(path)
             self.stdout.write(f"key artifact: {len(keys)} section entries")
 
-        math = SkipMath() if options["skip_math"] else SreMath()
+        if options["skip_math"]:
+            math = SkipMath()
+        else:
+            # Ask BEFORE synthesising a book's worth of audio. SreMath treats
+            # every failure as silence, so a misconfigured host would otherwise
+            # produce every track with its equations missing, at full cost, and
+            # say nothing about it.
+            ok, why = sre_available()
+            if not ok:
+                raise CommandError(
+                    f"maths cannot be spoken here: {why}\n"
+                    "Point PARODY_WEB_READALOUD_SRE at a speak.mjs whose npm "
+                    "dependencies resolve (see docs/host-integration.md), or "
+                    "pass --skip-math to accept silent equations.")
+            math = SreMath()
         if options["dry_run"]:
             synth = _counting_synth()
         elif options["no_audio"]:

@@ -5,7 +5,8 @@ import unittest
 from django.test import SimpleTestCase
 
 from parody_web_readaloud.script import Token
-from parody_web_readaloud.speech import SRE_SCRIPT, SkipMath, SreMath, build_speech
+from parody_web_readaloud.speech import (SkipMath, SreMath, _sre_script,
+                                         build_speech, sre_available)
 
 
 class _SpokenMath:
@@ -113,9 +114,29 @@ class SreMathTests(SimpleTestCase):
         engine = SreMath(node="definitely-not-a-real-binary")
         self.assertEqual(engine.speak_all([("x^2", False)]), [None])
 
-    @unittest.skipUnless(shutil.which("node") and SRE_SCRIPT.exists(),
+    @unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
                          "needs node and the SRE script")
     def test_the_real_chain_speaks_an_expression(self):
         said = SreMath().speak_all([("x^2", False), ("\\frac{k}{m}", True)])
         self.assertEqual(said[0], "x squared")
         self.assertIn("Fraction", said[1])
+
+
+class SreAvailableTests(SimpleTestCase):
+    """The preflight that stops a whole book being generated mute.
+
+    SreMath treats every failure as silence, so without this a misconfigured
+    host produces tracks with every equation missing and says nothing.
+    """
+
+    def test_a_missing_node_is_reported_not_swallowed(self):
+        ok, why = sre_available(node="definitely-not-a-real-binary")
+        self.assertFalse(ok)
+        self.assertIn("node", why)
+
+    @unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
+                         "needs node and the SRE script")
+    def test_a_working_setup_reports_ok(self):
+        ok, why = sre_available()
+        self.assertTrue(ok, why)
+        self.assertEqual(why, "")

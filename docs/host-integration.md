@@ -493,10 +493,27 @@ Readers can skip the rest of a spoken equation with ArrowRight or the button
 that appears while one is being read. Clozes are never skippable — their
 narration is the answer.
 
-`--skip-math` leaves equations silent. Otherwise math is spoken through
-MathJax's Speech Rule Engine, which needs **Node on the generating machine**.
-If Node is missing, or an expression will not parse, that equation loses its
-narration and nothing else breaks.
+`--skip-math` leaves equations silent. Otherwise maths is spoken through
+MathJax's Speech Rule Engine, which needs **Node on the generating machine**
+plus two npm packages. speech-rule-engine resolves its own package data
+relative to where it is installed, so it cannot be bundled into the wheel —
+install it once and point a setting at it:
+
+```
+mkdir -p /srv/parody/sre && cd /srv/parody/sre
+npm install mathjax-full speech-rule-engine
+cp <site-packages>/parody_web_readaloud/static/parody_web_readaloud/js/speak.mjs .
+```
+
+```python
+PARODY_WEB_READALOUD_SRE = "/srv/parody/sre/speak.mjs"
+```
+
+`generate_readalong` checks this before synthesising anything and refuses to
+start if maths cannot be spoken. That check earns its keep: the engine treats
+every failure as silence, so without it a misconfigured host pays for a whole
+book of tracks with every equation missing and is told nothing. Pass
+`--skip-math` to accept silent equations deliberately.
 
 ### Audio is serve-only
 
@@ -529,3 +546,4 @@ vanishing.
 | `PARODY_WEB_PRINT_XACCEL` | `""` (Django streams) | nginx `internal` location mapped to the print root |
 | `PARODY_WEB_PUBLIC_BOOK_PDF` | `True` | may the public download the whole book as one PDF; set `False` for any book that gates a section |
 | `PARODY_WEB_READALOUD_CACHE` | `""` (feature off) | directory holding generated read-along audio; required to generate or serve it |
+| `PARODY_WEB_READALOUD_SRE` | `""` (uses the packaged copy) | path to a `speak.mjs` whose npm dependencies resolve; required for spoken maths |

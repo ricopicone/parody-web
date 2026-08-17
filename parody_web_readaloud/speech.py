@@ -20,13 +20,27 @@ import subprocess
 from pathlib import Path
 
 def _sre_script():
-    """The maths-speech helper, bundled beside the app.
+    """Where the maths-speech helper lives.
 
-    Shipped in the wheel, dependencies and all, because it runs on the HOST's
-    machine and a host installs parody-web with pip — nobody is going to
-    `npm install mathjax-full` beside site-packages. The unbundled source is
-    preferred when present so a checkout picks up edits without rebuilding.
+    `PARODY_WEB_READALOUD_SRE` wins, and is how a host makes spoken maths work:
+    speech-rule-engine resolves its own package data relative to where it is
+    installed, so it cannot be bundled into a single file and shipped in the
+    wheel — the script has to sit somewhere its two npm dependencies resolve.
+
+        mkdir -p /srv/parody/sre && cd /srv/parody/sre
+        npm install mathjax-full speech-rule-engine
+        cp <site-packages>/parody_web_readaloud/static/parody_web_readaloud/js/speak.mjs .
+        export PARODY_WEB_READALOUD_SRE=/srv/parody/sre/speak.mjs
+
+    Absent that, a source checkout still works (its node_modules are there),
+    and an installed wheel finds its own copy — which will fail to resolve its
+    imports and fall back to silence. Loudly enough: see `sre_available`.
     """
+    from django.conf import settings
+
+    override = getattr(settings, "PARODY_WEB_READALOUD_SRE", "") or ""
+    if override:
+        return Path(override)
     here = Path(__file__).resolve().parent
     source = here.parent / "assets" / "readaloud-sre" / "speak.mjs"
     if source.exists():
@@ -34,7 +48,32 @@ def _sre_script():
     return here / "static" / "parody_web_readaloud" / "js" / "speak.mjs"
 
 
-SRE_SCRIPT = _sre_script()
+def sre_available(node="node"):
+    """Can maths actually be spoken here? Returns (ok, why-not).
+
+    Worth asking before a long generation run: SreMath treats every failure as
+    silence, so a misconfigured host produces a whole book of tracks with the
+    equations missing and says nothing about it.
+    """
+    script = _sre_script()
+    if not script.exists():
+        return False, f"no speak.mjs at {script}"
+    try:
+        done = subprocess.run(
+            [node, str(script)], input='{"items":[{"latex":"x","display":false}]}',
+            capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as err:
+        return False, f"could not run node: {err}"
+    if done.returncode != 0:
+        first = (done.stderr or "").strip().splitlines()
+        return False, (first[0] if first else "speak.mjs exited non-zero")
+    try:
+        texts = (json.loads(done.stdout or "{}") or {}).get("texts") or []
+    except ValueError:
+        return False, "speak.mjs produced no JSON"
+    if not texts or not texts[0]:
+        return False, "speak.mjs produced no speech"
+    return True, ""
 
 
 class SkipMath:
@@ -63,6 +102,10 @@ class SreMath:
         self.node = node
         self.timeout = timeout
         self.macros = macros or {}
+
+    @property
+    def script(self):
+        return _sre_script()
 
     def speak_all(self, items):
         return self._call(items)["texts"]
@@ -96,7 +139,7 @@ class SreMath:
         """
         try:
             done = subprocess.run(
-                [self.node, str(SRE_SCRIPT)],
+                [self.node, str(_sre_script())],
                 input=json.dumps(payload),
                 capture_output=True, text=True, timeout=self.timeout,
                 check=True)
