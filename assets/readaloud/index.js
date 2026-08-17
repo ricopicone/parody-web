@@ -5,6 +5,7 @@
  * leaves the viewer exactly as it was — read-along is additive, and must never
  * become a precondition for annotating.
  */
+import { BlankMarks, blanksOnPage, nextBlank } from './blanks.js';
 import { Clock } from './clock.js';
 import { Highlight } from './highlight.js';
 import { Reveal } from './reveal.js';
@@ -39,7 +40,9 @@ async function boot() {
   const scroller = root.querySelector('[data-ink-pages]');
   const reveal = new Reveal();
   const layers = new Map();             // page index -> Highlight
+  const marks = new Map();              // page index -> BlankMarks
 
+  let current = -1;                     // blank the navigator is sitting on
   let holding = -1;                     // cloze index we are stopped at
   let announced = -1;
   let following = true;
@@ -56,6 +59,51 @@ async function boot() {
   root.appendChild(skipButton);
   skipButton.addEventListener('click', () => skip());
 
+  /**
+   * Finding the blanks without playing anything.
+   *
+   * A ruled gap looks like every other rule on a typeset page, so scrolling to
+   * hunt for them does not work. This says how many there are and steps
+   * between them; the marks layer keeps them visible once you are there.
+   */
+  const nav = document.createElement('div');
+  nav.className = 'readalong-nav';
+  nav.hidden = clozes.length === 0;
+  nav.innerHTML = '<button type="button" data-prev aria-label="Previous blank">\u2039</button>'
+    + '<span data-count></span>'
+    + '<button type="button" data-next aria-label="Next blank">\u203a</button>';
+  root.appendChild(nav);
+  const counter = nav.querySelector('[data-count]');
+
+  function showCount() {
+    counter.textContent = current < 0
+      ? `${clozes.length} blank${clozes.length === 1 ? '' : 's'}`
+      : `blank ${current + 1} of ${clozes.length}`;
+  }
+  showCount();
+
+  function goToBlank(direction) {
+    const at = nextBlank(clozes, current, direction);
+    if (at < 0) return;
+    current = at;
+    const cloze = clozes[at];
+    const page = pageAt(root, cloze.page, track.pages);
+    if (page && scroller) {
+      const row = page.el.parentElement || page.el;
+      scroller.scrollTo({
+        top: row.offsetTop + cloze.y0 * page.scale - scroller.clientHeight / 3,
+        behavior: 'smooth',
+      });
+    }
+    // The page may not hold a canvas yet; update whatever is there now and let
+    // the next render pick the rest up.
+    syncMarks();
+    showCount();
+  }
+
+  nav.querySelector('[data-prev]').addEventListener('click', () => goToBlank(-1));
+  nav.querySelector('[data-next]').addEventListener('click', () => goToBlank(1));
+
   const isDark = () => root.dataset.dark === '1';
 
   function layerFor(index) {
@@ -66,6 +114,8 @@ async function boot() {
       // than draw a mark over blank paper.
       const stale = layers.get(index);
       if (stale) { stale.destroy(); layers.delete(index); }
+      const staleMark = marks.get(index);
+      if (staleMark) { staleMark.destroy(); marks.delete(index); }
       return null;
     }
     let layer = layers.get(index);
@@ -75,7 +125,44 @@ async function boot() {
     } else {
       layer.fit(page);                  // the page may have been zoomed
     }
+
     return layer;
+  }
+
+  /**
+   * Keep a marker layer on every rendered page that has blanks.
+   *
+   * Deliberately NOT driven by the frame loop. The marks exist so a reader can
+   * find the blanks BEFORE pressing play — and animation frames do not run
+   * when nothing is playing, nor at all in a background tab.
+   */
+  function syncMarks() {
+    const wanted = new Set(clozes.map((c) => c.page));
+    marks.forEach((mark, index) => {
+      if (!wanted.has(index)) { mark.destroy(); marks.delete(index); }
+    });
+    for (const index of wanted) {
+      // Only the page's box is needed, not its canvas. A placeholder already
+      // has the right size, so the markers appear the moment the page exists
+      // rather than waiting for it to finish rasterising — which is the point,
+      // since the reader is looking for the blanks before anything plays.
+      const page = pageAt(root, index, track.pages);
+      if (!page) {
+        const stale = marks.get(index);
+        if (stale) { stale.destroy(); marks.delete(index); }
+        continue;
+      }
+      let mark = marks.get(index);
+      if (!mark) {
+        mark = new BlankMarks(page, { dark: isDark() });
+        mark.setBoxes(blanksOnPage(clozes, index));
+        marks.set(index, mark);
+      } else {
+        mark.fit(page);
+      }
+      const active = current >= 0 ? (clozes[current] || {}).token : -1;
+      mark.setActive(active);
+    }
   }
 
   function clearOthers(keep) {
@@ -110,6 +197,8 @@ async function boot() {
     const page = pageAt(root, cloze.page, track.pages);
     audio.pause();
     holding = index;
+    current = index;
+    showCount();
     root.dataset.readalong = 'holding';
     if (page) reveal.show(cloze, page);
   }
@@ -145,6 +234,13 @@ async function boot() {
 
   // Auto-scroll must not fight a reader who is scrolling or drawing. Any
   // manual scroll hands control back; starting playback takes it again.
+  scroller?.addEventListener('scroll', () => { syncMarks(); },
+                             { passive: true });
+  // A timer rather than an animation frame: pages arrive asynchronously, and
+  // nothing here should depend on playback having started.
+  setInterval(syncMarks, 1000);
+  syncMarks();
+
   scroller?.addEventListener('wheel', () => { following = false; },
                              { passive: true });
   scroller?.addEventListener('touchmove', () => { following = false; },
@@ -215,7 +311,7 @@ async function boot() {
   });
 
   window.parodyReadAlong = {
-    audio, track, play, pause, resume, step, skip,
+    audio, track, play, pause, resume, step, skip, goToBlank,
     follow: (on) => { following = on; },
   };
 

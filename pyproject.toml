@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "parody-web"
-version = "0.52.0"
+version = "0.53.0"
 description = "Django app that serves a parody build artifact as a public book site, with section-level auth gating (public = online-only subset; owner = full book)."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -58,4 +58,8 @@ parody_web_annotate = ["templates/parody_web/*.html",
                        "static/parody_web_annotate/css/*.css"]
 parody_web_readaloud = ["templates/parody_web/*.html",
                         "static/parody_web_readaloud/js/*.js",
+                        # The maths-speech helper, bundled with its deps: it
+                        # runs on the host at generation time and cannot ask
+                        # them to npm install beside site-packages.
+                        "static/parody_web_readaloud/js/*.mjs",
                         "static/parody_web_readaloud/css/*.css"]

@@ -47,3 +47,17 @@ class PackagingTests(SimpleTestCase):
         bundle = (ROOT / "parody_web_readaloud" / "static"
                   / "parody_web_readaloud" / "js" / "readalong.js")
         self.assertLess(bundle.stat().st_size, 100_000)
+
+    def test_the_maths_helper_is_shipped_with_its_dependencies(self):
+        """Otherwise SreMath falls back to silence on every real host, and
+        does it inaudibly."""
+        patterns = _pyproject()["tool"]["setuptools"]["package-data"]
+        self.assertIn("static/parody_web_readaloud/js/*.mjs",
+                      patterns.get("parody_web_readaloud", []))
+        bundled = (ROOT / "parody_web_readaloud" / "static"
+                   / "parody_web_readaloud" / "js" / "speak.mjs")
+        self.assertTrue(bundled.exists(), "run `npm run build`")
+        # Bundled means self-contained: no bare imports left to resolve.
+        head = bundled.read_text(errors="ignore")[:4000]
+        self.assertNotIn("from \"mathjax-full", head)
+        self.assertNotIn("from \"speech-rule-engine", head)

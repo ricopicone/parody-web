@@ -38,6 +38,23 @@ await build({
   logLevel: 'info',
 });
 
+// The maths-speech helper is bundled too, and for the same reason the viewer
+// is: it runs on the HOST's machine at generation time, and a host installs
+// parody-web with pip. Unbundled it would need `npm install mathjax-full
+// speech-rule-engine` beside an installed wheel — which nobody would do, so
+// SreMath would fall back to silence everywhere and the failure would be
+// inaudible rather than loud.
+await build({
+  entryPoints: ['assets/readaloud-sre/speak.mjs'],
+  bundle: true,
+  minify: true,
+  format: 'esm',
+  platform: 'node',
+  target: ['node18'],
+  outfile: `${READALOUD_OUT}/speak.mjs`,
+  logLevel: 'info',
+});
+
 // pdf.js insists on a separate worker file; it cannot be inlined into the
 // bundle, so it is copied beside it and pointed at from the template.
 //

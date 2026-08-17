@@ -19,8 +19,22 @@ import json
 import subprocess
 from pathlib import Path
 
-SRE_SCRIPT = (Path(__file__).resolve().parent.parent
-              / "assets" / "readaloud-sre" / "speak.mjs")
+def _sre_script():
+    """The maths-speech helper, bundled beside the app.
+
+    Shipped in the wheel, dependencies and all, because it runs on the HOST's
+    machine and a host installs parody-web with pip — nobody is going to
+    `npm install mathjax-full` beside site-packages. The unbundled source is
+    preferred when present so a checkout picks up edits without rebuilding.
+    """
+    here = Path(__file__).resolve().parent
+    source = here.parent / "assets" / "readaloud-sre" / "speak.mjs"
+    if source.exists():
+        return source
+    return here / "static" / "parody_web_readaloud" / "js" / "speak.mjs"
+
+
+SRE_SCRIPT = _sre_script()
 
 
 class SkipMath:
