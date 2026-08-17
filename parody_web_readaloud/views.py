@@ -57,9 +57,12 @@ def track(request, chapter_slug, section_slug):
         "words": row.words,
         "clozes": row.clozes,
         "pages": row.pages,
-        "audio_url": reverse("parody_web_readaloud:audio", kwargs={
+        # A preview track carries timings but no audio. The client drives
+        # itself from a clock when this is null, so the pacing and the reveals
+        # can be judged before a voice is chosen or paid for.
+        "audio_url": (reverse("parody_web_readaloud:audio", kwargs={
             "chapter_slug": chapter_slug, "section_slug": section_slug,
-        }) + f"?voice={row.voice_id}",
+        }) + f"?voice={row.voice_id}") if row.audio_name else None,
     })
 
 

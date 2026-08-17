@@ -5,6 +5,7 @@
  * leaves the viewer exactly as it was — read-along is additive, and must never
  * become a precondition for annotating.
  */
+import { Clock } from './clock.js';
 import { Highlight } from './highlight.js';
 import { Reveal } from './reveal.js';
 import { isRendered, pageAt } from './pageview.js';
@@ -26,8 +27,13 @@ async function boot() {
   }
 
   const clozes = showable(track.clozes);
-  const audio = new Audio(track.audio_url);
-  audio.preload = 'auto';
+  // A preview track has timings but no audio. A clock stands in for the
+  // element so everything downstream — the frame loop, the holds, the
+  // controls — is identical whether or not a voice has been synthesised.
+  const audio = track.audio_url
+    ? new Audio(track.audio_url)
+    : new Clock(track.duration_ms);
+  if (track.audio_url) audio.preload = 'auto';
 
   const scroller = root.querySelector('[data-ink-pages]');
   const reveal = new Reveal();
@@ -108,6 +114,10 @@ async function boot() {
   function frame() {
     if (!audio.paused) {
       const ms = audio.currentTime * 1000;
+      if (audio instanceof Clock && ms >= track.duration_ms) {
+        audio.pause();
+        audio.dispatch('ended');
+      }
       paint(ms);
       const due = clozeAt(clozes, ms);
       if (due >= 0 && due !== announced) {

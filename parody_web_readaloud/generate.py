@@ -125,6 +125,32 @@ def _time_silent_clozes(placed, clozes, window):
             cloze["end_ms"] = running
 
 
+class EstimatedSynth:
+    """Word timings at a reading pace, with no audio and no AWS.
+
+    For judging the interaction — pacing, where the reveal lands, whether the
+    rhythm works — before committing to a voice or paying for one. The client
+    drives itself from a clock when a track has no audio.
+
+    Not an approximation of Polly's timings so much as a stand-in for them:
+    real speech varies per word, this does not.
+    """
+
+    def __init__(self, wpm=150):
+        self.wpm = wpm
+
+    def __call__(self, text: str):
+        per_word = 60_000 / max(1, self.wpm)
+        marks, offset, clock = [], 0, 0
+        for word in text.split():
+            marks.append({"type": "word", "start": offset,
+                          "time": int(clock), "value": word})
+            offset += len(word) + 1
+            # Longer words take longer; enough variation to feel like speech.
+            clock += per_word * (0.6 + 0.4 * min(len(word), 12) / 6)
+        return b"", marks
+
+
 class PollySynth:
     """Synthesise with AWS Polly, chunked, with word marks.
 

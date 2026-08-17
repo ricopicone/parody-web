@@ -13,7 +13,7 @@ from django.core.management.base import BaseCommand, CommandError
 from parody_web import printing
 from parody_web.models import Book, Section
 
-from ...generate import PollySynth, build_track
+from ...generate import EstimatedSynth, PollySynth, build_track
 from ...models import ReadAlongTrack
 from ...speech import SkipMath, SreMath
 from ...storage import write_audio
@@ -44,6 +44,13 @@ class Command(BaseCommand):
                             help="Do not shell out to SRE; leave math silent.")
         parser.add_argument("--force", action="store_true",
                             help="Re-synthesise even if a track exists.")
+        parser.add_argument("--no-audio", action="store_true",
+                            help="Estimate timings at reading pace and store "
+                                 "no audio. For judging the interaction "
+                                 "without AWS; the viewer drives itself from "
+                                 "a clock.")
+        parser.add_argument("--wpm", type=int, default=150,
+                            help="Reading pace for --no-audio.")
         parser.add_argument("--dry-run", action="store_true",
                             help="Report what would be synthesised, and the "
                                  "character count, without calling Polly.")
@@ -65,9 +72,13 @@ class Command(BaseCommand):
             raise CommandError("no matching sections")
 
         math = SkipMath() if options["skip_math"] else SreMath()
-        synth = (_counting_synth() if options["dry_run"]
-                 else PollySynth(voice_id=options["voice"],
-                                 engine=options["engine"]))
+        if options["dry_run"]:
+            synth = _counting_synth()
+        elif options["no_audio"]:
+            synth = EstimatedSynth(wpm=options["wpm"])
+        else:
+            synth = PollySynth(voice_id=options["voice"],
+                               engine=options["engine"])
 
         made = skipped = 0
         for section in sections:
@@ -108,8 +119,12 @@ class Command(BaseCommand):
                     f"{len(track['clozes'])} blanks")
                 continue
 
-            name = f"{slice_key}-{options['voice']}.mp3"
-            write_audio(name, track["audio_bytes"])
+            # No audio means no file: the endpoint 404s and the client falls
+            # back to its clock, which is exactly what a preview should do.
+            name = ""
+            if track["audio_bytes"]:
+                name = f"{slice_key}-{options['voice']}.mp3"
+                write_audio(name, track["audio_bytes"])
             ReadAlongTrack.objects.update_or_create(
                 book_slug=book.slug, edition_id=book.edition_id or "",
                 section_key=section.key, slice_key=slice_key,
