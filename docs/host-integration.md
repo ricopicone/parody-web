@@ -445,7 +445,9 @@ path("", include("parody_web.urls")),
 ```
 
 Install with the extra: `pip install "parody-web[print,readalong]"`. It pulls
-`PyMuPDF` (to measure the typeset page) and `boto3` (AWS Polly). Both are
+`PyMuPDF` (to measure the typeset page) and `boto3` (AWS Polly). Speaking maths
+additionally needs **Node on the generating machine**; the IAM user needs
+`polly:SynthesizeSpeech`. Both are
 **generation-time** concerns — a host that never generates still serves
 whatever tracks it already has.
 
@@ -456,11 +458,15 @@ additionally needs a `--clozes key` render of the same source, which is
 **never served**: it is the only artifact that carries the answers, marks them
 as `<span class="cloze-key">`, and stages the complete figure artwork.
 
-Import it into `Section.key_html`. **That field does not exist yet** — it is
-host-side importer work. Until it does, `generate_readalong` skips every
-section with `no key-mode html imported`, rather than falling back to
-blank-mode HTML: that has no answers in it, so it would produce a track whose
-blanks reveal nothing, and the failure would surface in front of a student.
+Point `generate_readalong --key-artifact` at that file. Nothing needs importing
+and nothing is served from it; it is read at generation time on the machine
+doing the generating.
+
+(A host may instead put the HTML on `Section.key_html`, but that field does not
+exist and nothing requires it. Without either, `generate_readalong` skips the
+section rather than falling back to blank-mode HTML: that has no answers in it,
+so it would produce a track whose blanks reveal nothing, and the failure would
+surface in front of a student.)
 
 ### Generating
 
@@ -473,6 +479,19 @@ python manage.py generate_readalong <book_slug> [--section KEY] [--voice Matthew
 `--dry-run` reports the character count per section without calling Polly. Run
 it before committing to a voice: cost scales with characters × voices ×
 re-synthesis, and not at all with listeners.
+
+`--no-audio` estimates word timings at reading pace and stores no file, so the
+pacing and the reveals can be judged before a voice is chosen or paid for; the
+viewer drives itself from a clock. `--key-artifact <path>` takes section text
+straight from a `--clozes key` artifact on disk, so **no importer change and no
+`Section.key_html` are needed** at all.
+
+Whole-book cost is small: the electronics primer is 144k characters, about
+$2.31 on the neural engine and $0.58 on standard.
+
+Readers can skip the rest of a spoken equation with ArrowRight or the button
+that appears while one is being read. Clozes are never skippable — their
+narration is the answer.
 
 `--skip-math` leaves equations silent. Otherwise math is spoken through
 MathJax's Speech Rule Engine, which needs **Node on the generating machine**.
