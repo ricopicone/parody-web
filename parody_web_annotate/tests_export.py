@@ -202,3 +202,62 @@ class DownloadIsAlwaysLightTests(TestCase):
             names = set(inspect.signature(fn).parameters)
             self.assertFalse({"dark", "theme", "invert"} & names,
                              f"{fn.__name__} grew a theme parameter")
+
+
+class OutlineSurvivesTests(TestCase):
+    """A book without its contents pane is much harder to use, and the reader
+    is printing a whole book."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        self.src = self.dir / "src.pdf"
+        self.out = self.dir / "out.pdf"
+        self._make_with_outline(self.src)
+
+    def _make_with_outline(self, path):
+        from parody_web.tests_printing import make_pdf_with_content
+        from pypdf import PdfReader, PdfWriter
+        make_pdf_with_content(path, 4)
+        writer = PdfWriter(clone_from=str(path))
+        first = writer.add_outline_item("Chapter One", 0)
+        writer.add_outline_item("Section 1.1", 1, parent=first)
+        writer.add_outline_item("Chapter Two", 2)
+        with open(path, "wb") as handle:
+            writer.write(handle)
+
+    def _outline_titles(self, path):
+        from pypdf import PdfReader
+
+        def walk(items):
+            out = []
+            for item in items:
+                if isinstance(item, list):
+                    out += walk(item)
+                else:
+                    out.append(str(item.title))
+            return out
+
+        return walk(PdfReader(str(path)).outline)
+
+    def test_the_source_really_has_bookmarks(self):
+        self.assertEqual(self._outline_titles(self.src),
+                         ["Chapter One", "Section 1.1", "Chapter Two"])
+
+    def test_bookmarks_survive_compositing(self):
+        export.composite(self.src, {"1": [{"d": "M0 0 L9 9 Z", "color": "#000"}]},
+                         self.out)
+        self.assertEqual(self._outline_titles(self.out),
+                         ["Chapter One", "Section 1.1", "Chapter Two"])
+
+    def test_bookmarks_survive_even_with_no_ink_at_all(self):
+        export.composite(self.src, {}, self.out)
+        self.assertEqual(len(self._outline_titles(self.out)), 3)
+
+    def test_the_ink_is_still_there_afterwards(self):
+        from pypdf import PdfReader
+        export.composite(self.src, {"2": [{"d": "M0 0 L9 9 Z", "color": "#ff0000",
+                                           "opacity": 1}]}, self.out)
+        page = PdfReader(str(self.out)).pages[1]
+        self.assertIn(b"1 0 0 rg", page.get_contents().get_data())

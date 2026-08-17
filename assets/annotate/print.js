@@ -11,9 +11,19 @@
  * construction. A hidden same-origin iframe holds it and prints itself.
  */
 
-/** Where to print from: the annotated copy when there is ink, else the plain PDF. */
+/**
+ * Where to print from: the annotated copy when there is ink, else the plain PDF.
+ *
+ * Always asks for it inline. The download endpoints send
+ * `Content-Disposition: attachment`, and pointing an iframe at an attachment
+ * downloads the file instead of rendering it — so "Print" quietly saved a copy
+ * and no dialog ever appeared. There is nothing to print until the document is
+ * actually in the frame.
+ */
 export function printUrl(root) {
-  return root.dataset.downloadUrl || root.dataset.pdfUrl;
+  const url = root.dataset.downloadUrl || root.dataset.pdfUrl;
+  if (!url) return url;
+  return url + (url.includes('?') ? '&' : '?') + 'inline=1';
 }
 
 /**

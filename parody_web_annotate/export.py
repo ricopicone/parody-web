@@ -143,14 +143,15 @@ def composite(src_path, strokes_by_page, dest_path):
     Page keys are 1-based and relative to the slice, matching how the viewer
     numbers the pages it showed.
     """
-    from pypdf import PdfReader, PdfWriter
+    from pypdf import PdfWriter
     from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject,
                                FloatObject, NameObject)
 
-    reader = PdfReader(str(src_path))
-    writer = PdfWriter()
-    for page in reader.pages:
-        writer.add_page(page)
+    # Clone the document rather than copying its pages. add_page() carries the
+    # page and nothing else, so the annotated book came out with all 118 pages
+    # and none of its 55 bookmarks — the contents pane empty in every reader.
+    # Cloning keeps the outline, the internal links and the metadata.
+    writer = PdfWriter(clone_from=str(src_path))
 
     alphas = _alpha_states(strokes_by_page)
 
