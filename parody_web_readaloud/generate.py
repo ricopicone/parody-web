@@ -21,24 +21,52 @@ GAP_MS = 400                # assumed silence between synthesised chunks
 
 
 def chunk_text(text: str, limit: int = CHUNK_LIMIT) -> list:
-    """Split on sentence boundaries, under Polly's per-request ceiling.
+    """Partition the text into pieces Polly will accept.
 
-    Splitting mid-sentence would change the prosody at the seam, which is
-    audible; splitting mid-word would also break the character-offset mapping
-    the timings depend on.
+    Works on words, not on sentences, and that matters twice.
+
+    It has to be an exact partition: `build_speech` joins the text with single
+    spaces and the timings are resolved against character offsets into it, so
+    a chunking that dropped or added a character would shift every later word's
+    box. Splitting on ' ' and rejoining with ' ' cannot drift.
+
+    And it has to bound EVERY piece. An earlier version broke on sentence
+    boundaries and emitted whatever lay between them whole — which is fine for
+    prose and fatal for spoken maths, where SRE renders one equation as a
+    single run of hundreds of words containing no sentence break at all. Polly
+    rejected it outright. Found in production, mid-book.
+
+    Sentence ends are still preferred as break points; they are just no longer
+    relied upon to exist.
     """
-    if not text:
-        return []
-    marked = (text.replace("? ", "?\x00").replace("! ", "!\x00")
-                  .replace(". ", ".\x00"))
-    chunks, current = [], ""
-    for sentence in marked.split("\x00"):
-        if current and len(current) + len(sentence) + 1 > limit:
-            chunks.append(current.strip())
-            current = ""
-        current += sentence + " "
-    if current.strip():
-        chunks.append(current.strip())
+    words = text.split(" ") if text else []
+    chunks, current, length = [], [], 0
+    last_stop = -1                      # index in `current` after a sentence end
+
+    for word in words:
+        extra = len(word) + (1 if current else 0)
+        if current and length + extra > limit:
+            # Prefer to break after the last sentence end, provided that does
+            # not throw away most of the chunk.
+            if last_stop > 0 and last_stop >= len(current) // 2:
+                chunks.append(" ".join(current[:last_stop]))
+                current = current[last_stop:]
+                length = len(" ".join(current))
+            else:
+                chunks.append(" ".join(current))
+                current, length = [], 0
+            last_stop = -1
+            extra = len(word)
+        current.append(word)
+        length += extra
+        if word.endswith((".", "?", "!")):
+            last_stop = len(current)
+
+    if current:
+        chunks.append(" ".join(current))
+
+    # A single word longer than the limit cannot be split without corrupting
+    # the offsets, so it goes out oversized and Polly's own error stands.
     return chunks
 
 

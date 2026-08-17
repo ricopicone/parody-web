@@ -98,3 +98,40 @@ class ChunkTextTests(SimpleTestCase):
         text = " ".join(["Alpha beta gamma."] * 50)
         rejoined = " ".join(chunk_text(text, limit=120))
         self.assertEqual(rejoined.split(), text.split())
+
+
+class ChunkTextPartitionTests(SimpleTestCase):
+    """Chunking must bound every piece and lose nothing.
+
+    The timings are resolved against character offsets into the joined text, so
+    a chunking that drops or adds a character shifts every later word's box.
+    """
+
+    def test_an_overlong_run_with_no_sentence_break_is_still_split(self):
+        """SRE renders one equation as hundreds of words and no full stop.
+        Polly rejected exactly this, mid-book, in production."""
+        text = " ".join(["StartFraction"] * 800)
+        chunks = chunk_text(text, limit=200)
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk), 200)
+
+    def test_the_partition_is_exact(self):
+        text = " ".join(f"w{i}" for i in range(500))
+        chunks = chunk_text(text, limit=97)
+        self.assertEqual(" ".join(chunks), text)
+
+    def test_the_partition_is_exact_with_sentences(self):
+        text = " ".join(["alpha beta gamma."] * 60)
+        chunks = chunk_text(text, limit=120)
+        self.assertEqual(" ".join(chunks), text)
+
+    def test_sentence_ends_are_still_preferred(self):
+        text = "one two three. four five six. seven eight nine."
+        chunks = chunk_text(text, limit=30)
+        self.assertTrue(all(c.endswith(".") for c in chunks[:-1]), chunks)
+
+    def test_a_single_word_over_the_limit_goes_out_whole(self):
+        """Splitting inside a word would corrupt the offset mapping."""
+        text = "x" * 50
+        self.assertEqual(chunk_text(text, limit=10), [text])
