@@ -20,7 +20,7 @@ from parody_web.access import get_policy
 from parody_web.models import Section
 from parody_web.views import _pdf_filename, _pdf_response, _resolve_book
 
-from . import export
+from . import bookink, export
 from .models import InkLayer
 
 
@@ -238,4 +238,42 @@ def annotated_section_pdf(request, chapter_slug, section_slug):
         export.composite(src, layer.strokes, tmp)
         tmp.replace(dest)
     name = _pdf_filename(book, section).replace(".pdf", "-annotated.pdf")
+    return _pdf_response(dest, name, inline=bool(request.GET.get("inline")))
+
+
+@require_http_methods(["GET"])
+def annotated_book_pdf(request):
+    """The whole book, with every section's notes drawn on.
+
+    What a student prints to take into an exam. Gated exactly as the plain
+    book PDF is, then again per section inside the planner, so a section they
+    may not read cannot arrive by way of their own notes.
+    """
+    import hashlib
+
+    book, _ = _resolve_book(request)
+    if not request.user.is_authenticated:
+        return HttpResponseForbidden("sign in to annotate")
+    if not get_policy().can_download_book_pdf(request, book):
+        raise Http404("no pdf for this book")
+
+    src = printing.book_pdf_path(book)
+    cache = printing.print_cache_root()
+    if src is None or cache is None:
+        raise Http404("no pdf for this book")
+
+    pages, _skipped = bookink.plan_book_overlay(request, book)
+    if not pages:
+        raise Http404("nothing annotated in this book")
+
+    stamp = hashlib.sha256(
+        json.dumps(pages, sort_keys=True).encode()).hexdigest()[:12]
+    dest = (cache / "annotated-book" / str(request.user.pk) / book.slug
+            / f"{(book.print_sha256 or 'nohash')[:12]}-{stamp}.pdf")
+    if not dest.is_file():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(f"{dest.name}.tmp")
+        export.composite(src, {str(k): v for k, v in pages.items()}, tmp)
+        tmp.replace(dest)
+    name = _pdf_filename(book).replace(".pdf", "-annotated.pdf")
     return _pdf_response(dest, name, inline=bool(request.GET.get("inline")))

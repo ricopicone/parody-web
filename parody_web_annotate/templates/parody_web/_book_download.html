@@ -1,0 +1,3 @@
+{% load parody_web_annotate %}{% book_ink as notes %}
+{% if book_pdf_url %}<a href="{{ book_pdf_url }}">Download the full book</a>{% endif %}
+{% if notes.any %}<a href="{% url 'parody_web_annotate:annotated_book_pdf' %}">Download the book with your notes</a>{% endif %}

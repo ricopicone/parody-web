@@ -376,3 +376,11 @@ form.codebox input { color: var(--ink); background: var(--paper); }
 @media (max-width: 48rem) {
   .account-name { display: none; }
 }
+
+/* The annotated-book download and its caveat, on the book home page. */
+.book-notes-link a { font-weight: 600; }
+.book-notes-stale {
+  font-size: .85rem;
+  color: var(--ink-muted, #666);
+  max-width: 46ch;
+}

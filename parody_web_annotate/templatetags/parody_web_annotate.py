@@ -96,3 +96,24 @@ def ink_context(context):
             }
     setattr(request, _CACHE_ATTR, ctx)
     return ctx
+
+
+@register.simple_tag(takes_context=True)
+def book_ink(context):
+    """Whether this reader has notes anywhere in the book, and what is stale.
+
+    Memoised on the request: the book home page and the section rail both ask,
+    and it walks every layer the reader owns.
+    """
+    from .. import bookink
+
+    request = context.get("request")
+    book = context.get("book")
+    if request is None or book is None:
+        return {"any": False, "pages": 0, "stale": []}
+    cached = getattr(request, "_parody_book_ink", None)
+    if cached is not None:
+        return cached
+    result = bookink.summary(request, book)
+    setattr(request, "_parody_book_ink", result)
+    return result

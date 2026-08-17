@@ -1,0 +1,19 @@
+{% load parody_web_annotate %}{% book_ink as notes %}{% if notes.any %}
+<p class="book-pdf-link book-notes-link">
+  <a href="{% url 'parody_web_annotate:annotated_book_pdf' %}">Download the book with your notes</a>
+  <span class="book-pdf-note">your annotations on {{ notes.pages }} page{{ notes.pages|pluralize }}</span>
+</p>
+{% endif %}
+{% comment %}
+Deliberately OUTSIDE the block above. When every annotated section has been
+re-laid there is nothing to download — which is exactly when the reader most
+needs telling, and an earlier version hid the warning in that case.
+{% endcomment %}
+{% if notes.stale %}
+<p class="book-notes-stale">
+  {{ notes.stale|length }} section{{ notes.stale|pluralize }} ha{{ notes.stale|pluralize:"s,ve" }}
+  notes on an earlier layout and {{ notes.stale|pluralize:"is,are" }} left out:
+  {% for s in notes.stale %}<a href="{{ s.url }}">{{ s.title }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.
+  Open {{ notes.stale|pluralize:"it,them" }} to bring the notes forward.
+</p>
+{% endif %}

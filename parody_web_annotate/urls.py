@@ -12,6 +12,9 @@ from . import views
 app_name = "parody_web_annotate"
 
 urlpatterns = [
+    # The whole book with every section's notes on it. Before parody_web's
+    # "pdf/" so the reserved segment reads first.
+    path("pdf/annotated/", views.annotated_book_pdf, name="annotated_book_pdf"),
     path("<slug:chapter_slug>/<slug:section_slug>/ink/",
          views.ink, name="ink"),
     path("<slug:chapter_slug>/<slug:section_slug>/ink/carry-forward/",

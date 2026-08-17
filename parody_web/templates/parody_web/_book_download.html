@@ -1,0 +1,10 @@
+{% comment %}
+The "download the full book" link, as its own partial so an app that knows
+more than core does can offer something better.
+
+parody_web_annotate shadows it to add a copy carrying every section's notes —
+what a student prints to revise from, or to take into an exam.
+
+Context: book, book_pdf_url, and on section pages the section context too.
+{% endcomment %}
+{% if book_pdf_url %}<a href="{{ book_pdf_url }}">Download the full book</a>{% endif %}
