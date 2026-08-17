@@ -44,6 +44,7 @@ def chunk_text(text: str, limit: int = CHUNK_LIMIT) -> list:
 
 def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
     tokens = parse_script(html)
+    svg_by_index = _render_cloze_maths(tokens, math)
     placed = align(tokens, extract_words(pdf_bytes), extract_blanks(pdf_bytes))
     text, owners = build_speech(tokens, math=math)
 
@@ -90,7 +91,9 @@ def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
         start, end = window.get(spot.index, (0, 0))
         clozes.append({
             "token": spot.index, "kind": spot.token.kind,
-            "answer": spot.token.text, "src": spot.token.src,
+            "answer": "" if spot.token.latex else spot.token.text,
+            "svg": svg_by_index.get(spot.index) or "",
+            "src": spot.token.src,
             "page": spot.page, "x0": spot.box[0], "y0": spot.box[1],
             "x1": spot.box[2], "y1": spot.box[3],
             "start_ms": start, "end_ms": end,
@@ -108,6 +111,23 @@ def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
             # width by this to recover the zoom scale, which is how it converts
             # a PDF box to CSS pixels without holding the annotator's viewport.
             "pages": [list(size) for size in page_sizes(pdf_bytes)]}
+
+
+def _render_cloze_maths(tokens, math):
+    """An SVG per maths cloze, so a blank can reveal what it hides.
+
+    The reader is looking at a pdf.js canvas with no MathJax anywhere near it,
+    so the picture is made here, once, rather than typeset in the browser.
+    """
+    if math is None or not hasattr(math, "render_all"):
+        return {}
+    positions = [i for i, t in enumerate(tokens)
+                 if t.kind == "cloze" and t.latex]
+    if not positions:
+        return {}
+    svgs = math.render_all([(tokens[i].latex, tokens[i].display)
+                            for i in positions])
+    return {i: svg for i, svg in zip(positions, svgs) if svg}
 
 
 def _time_silent_clozes(placed, clozes, window):

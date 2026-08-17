@@ -8,6 +8,8 @@ mode is the one that carries the answers, marks them, and stages the complete
 figure artwork; blank mode strips all three on purpose.
 """
 
+import json
+
 from django.core.management.base import BaseCommand, CommandError
 
 from parody_web import printing
@@ -17,6 +19,37 @@ from ...generate import EstimatedSynth, PollySynth, build_track
 from ...models import ReadAlongTrack
 from ...speech import SkipMath, SreMath
 from ...storage import write_audio
+
+
+def key_html_index(path):
+    """Map section key -> key-mode HTML, read straight from an artifact file.
+
+    Lets a host run read-along without importing the key artifact into its
+    database at all: the file is built alongside the published one and read
+    here, at generation time, on the machine doing the generating. Nothing
+    about it is ever served.
+    """
+    data = json.loads(path.read_text())
+    index = {}
+
+    def walk(node, chapter=None):
+        if isinstance(node, dict):
+            if isinstance(node.get("sections"), list):
+                for section in node["sections"]:
+                    walk(section, node.get("slug"))
+                return
+            if node.get("html") is not None and node.get("slug"):
+                key = node.get("hash") or f"{chapter}/{node['slug']}"
+                index[key] = node["html"]
+                index[f"{chapter}/{node['slug']}"] = node["html"]
+            for value in node.values():
+                walk(value, chapter)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value, chapter)
+
+    walk(data)
+    return index
 
 
 def key_mode_html(section):
@@ -44,6 +77,10 @@ class Command(BaseCommand):
                             help="Do not shell out to SRE; leave math silent.")
         parser.add_argument("--force", action="store_true",
                             help="Re-synthesise even if a track exists.")
+        parser.add_argument("--key-artifact", default=None,
+                            help="Path to a `--clozes key` artifact to take "
+                                 "section text from, instead of "
+                                 "Section.key_html. Never served.")
         parser.add_argument("--no-audio", action="store_true",
                             help="Estimate timings at reading pace and store "
                                  "no audio. For judging the interaction "
@@ -71,6 +108,15 @@ class Command(BaseCommand):
         if not sections:
             raise CommandError("no matching sections")
 
+        from pathlib import Path
+        keys = {}
+        if options["key_artifact"]:
+            path = Path(options["key_artifact"])
+            if not path.exists():
+                raise CommandError(f"no such artifact: {path}")
+            keys = key_html_index(path)
+            self.stdout.write(f"key artifact: {len(keys)} section entries")
+
         math = SkipMath() if options["skip_math"] else SreMath()
         if options["dry_run"]:
             synth = _counting_synth()
@@ -97,7 +143,7 @@ class Command(BaseCommand):
                 skipped += 1
                 continue
 
-            html = key_mode_html(section)
+            html = keys.get(section.key) or key_mode_html(section)
             if not html:
                 self.stderr.write(
                     f"skip {section.key}: no key-mode html imported "

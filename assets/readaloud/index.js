@@ -111,20 +111,23 @@ async function boot() {
     audio.play();
   }
 
-  function frame() {
-    if (!audio.paused) {
-      const ms = audio.currentTime * 1000;
-      if (audio instanceof Clock && ms >= track.duration_ms) {
-        audio.pause();
-        audio.dispatch('ended');
-      }
-      paint(ms);
-      const due = clozeAt(clozes, ms);
-      if (due >= 0 && due !== announced) {
-        announced = due;
-        hold(due);
-      }
+  /** One frame's worth of work at `ms`. Separated from the rAF loop so it can
+   *  be driven directly — a hidden tab fires no animation frames at all. */
+  function step(ms) {
+    if (audio instanceof Clock && ms >= track.duration_ms) {
+      audio.pause();
+      audio.dispatch('ended');
     }
+    paint(ms);
+    const due = clozeAt(clozes, ms);
+    if (due >= 0 && due !== announced) {
+      announced = due;
+      hold(due);
+    }
+  }
+
+  function frame() {
+    if (!audio.paused) step(audio.currentTime * 1000);
     requestAnimationFrame(frame);
   }
 
@@ -169,8 +172,17 @@ async function boot() {
     layers.forEach((layer) => layer.clear());
   });
 
+  // Animation frames stop entirely while a tab is in the background, but audio
+  // keeps playing — so the mark would freeze mid-sentence and then jump when
+  // the reader came back. Repaint on return, at wherever the voice has got to.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !audio.paused) {
+      step(audio.currentTime * 1000);
+    }
+  });
+
   window.parodyReadAlong = {
-    audio, track, play, pause, resume,
+    audio, track, play, pause, resume, step,
     follow: (on) => { following = on; },
   };
 

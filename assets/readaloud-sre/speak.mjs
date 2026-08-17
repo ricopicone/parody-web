@@ -24,6 +24,7 @@ import { RegisterHTMLHandler } from 'mathjax-full/js/handlers/html.js';
 import { SerializedMmlVisitor } from 'mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js';
 import { AllPackages } from 'mathjax-full/js/input/tex/AllPackages.js';
 import { STATE } from 'mathjax-full/js/core/MathItem.js';
+import { SVG } from 'mathjax-full/js/output/svg.js';
 import SRE from 'speech-rule-engine';
 
 // bussproofs wants an output jax with getBBox(); we only ever go as far as
@@ -35,9 +36,16 @@ async function main() {
   for await (const chunk of process.stdin) chunks.push(chunk);
   const { items = [], macros = {} } = JSON.parse(chunks.join('') || '{}');
 
-  RegisterHTMLHandler(liteAdaptor());
-  const doc = mathjax.document('', {
+  const adaptor = liteAdaptor();
+  RegisterHTMLHandler(adaptor);
+  const input = new TeX({ packages: PACKAGES, macros });
+  const doc = mathjax.document('', { InputJax: input });
+  // A second document with an output jax, for the picture the reader sees.
+  // fontCache 'none' keeps each SVG self-contained, which it has to be: they
+  // are embedded one per blank as data URIs, with no shared defs to point at.
+  const svgDoc = mathjax.document('', {
     InputJax: new TeX({ packages: PACKAGES, macros }),
+    OutputJax: new SVG({ fontCache: 'none' }),
   });
   const visitor = new SerializedMmlVisitor();
   await SRE.setupEngine({ domain: 'mathspeak', style: 'default', locale: 'en' });
@@ -52,7 +60,21 @@ async function main() {
     }
   });
 
-  process.stdout.write(JSON.stringify({ texts }));
+  // Only clozes need a picture: a blank has to reveal the equation it hides,
+  // and the reader is looking at a PDF canvas with no MathJax on the page.
+  const svgs = items.map(({ latex, display, render }) => {
+    if (!render) return null;
+    try {
+      const node = svgDoc.convert(latex, { display: !!display });
+      const svg = adaptor.innerHTML(node);
+      const match = /<svg[\s\S]*<\/svg>/.exec(svg);
+      return match ? match[0] : null;
+    } catch (err) {
+      return null;
+    }
+  });
+
+  process.stdout.write(JSON.stringify({ texts, svgs }));
 }
 
 main().catch((err) => {

@@ -29,6 +29,9 @@ class SkipMath:
     def speak_all(self, items):
         return [None] * len(items)
 
+    def render_all(self, items):
+        return [None] * len(items)
+
 
 class SreMath:
     """Speak math via MathJax's Speech Rule Engine, through Node.
@@ -48,19 +51,29 @@ class SreMath:
         self.macros = macros or {}
 
     def speak_all(self, items):
+        return self._call(items)["texts"]
+
+    def render_all(self, items):
+        """SVG per expression, for the blanks that have to reveal one."""
+        return self._call(items, render=True)["svgs"]
+
+    def _call(self, items, render=False):
         if not items:
-            return []
-        payload = {"items": [{"latex": latex, "display": bool(display)}
+            return {"texts": [], "svgs": []}
+        payload = {"items": [{"latex": latex, "display": bool(display),
+                              "render": render}
                              for latex, display in items],
                    "macros": self.macros}
-        reply = self._invoke(payload)
-        if reply is None:
-            return [None] * len(items)
-        texts = reply.get("texts") or []
-        # Never let a short reply shift every later expression's narration.
-        if len(texts) != len(items):
-            return [None] * len(items)
-        return [(t or "").strip() or None for t in texts]
+        reply = self._invoke(payload) or {}
+        out = {}
+        for field in ("texts", "svgs"):
+            values = reply.get(field) or []
+            # Never let a short reply shift every later expression's narration.
+            if len(values) != len(items):
+                values = [None] * len(items)
+            out[field] = [(v or "").strip() or None if isinstance(v, str)
+                          else None for v in values]
+        return out
 
     def _invoke(self, payload):
         """Run the Node helper. Returns the parsed reply, or None if it failed.

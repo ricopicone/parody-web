@@ -35,9 +35,18 @@ export function toCss(box, scale) {
  * Where to put the plate, given the blank's box in PDF points.
  * `plate` is {width, height} in CSS px.
  */
-export function placeReveal(box, scale, plate) {
+export function placeReveal(box, scale, plate, pageWidth) {
   const { x0, y0, x1, y1 } = toCss(box, scale);
-  const left = (x0 + x1) / 2 - plate.width / 2;
+
+  let left = (x0 + x1) / 2 - plate.width / 2;
+  // Clamp into the page. A displayed equation revealed above a full-measure
+  // blank is easily wider than the measure, and centring alone put it off the
+  // paper and onto the viewer's background.
+  if (Number.isFinite(pageWidth)) {
+    left = Math.min(left, pageWidth - plate.width - GAP);
+  }
+  left = Math.max(left, GAP);
+
   let top = y0 - plate.height - GAP;
   // Flip below when there is no room above, so a blank on the first line
   // never renders off the top of the page.
@@ -60,15 +69,22 @@ export class Reveal {
   }
 
   _showText(cloze, page) {
-    this.el.dataset.kind = 'text';
-    this.el.textContent = cloze.answer;
+    // A maths cloze reveals a picture: the reader is on a pdf.js canvas with
+    // no MathJax near it, so the SVG was rendered at generation time.
+    if (cloze.svg) {
+      this.el.dataset.kind = 'maths';
+      this.el.innerHTML = cloze.svg;
+    } else {
+      this.el.dataset.kind = 'text';
+      this.el.textContent = cloze.answer;
+    }
     this.el.hidden = false;
     this.el.classList.remove('is-fading');
     page.el.appendChild(this.el);
     // Measure after attaching: the plate's width depends on the answer.
     const plate = { width: this.el.offsetWidth, height: this.el.offsetHeight };
     const at = placeReveal([cloze.x0, cloze.y0, cloze.x1, cloze.y1],
-                           page.scale, plate);
+                           page.scale, plate, page.el.offsetWidth);
     this.el.style.left = `${at.left}px`;
     this.el.style.top = `${at.top}px`;
     return this.el;
