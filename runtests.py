@@ -13,7 +13,8 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.settings")
 def main():
     django.setup()
     runner = get_runner(settings)()
-    sys.exit(bool(runner.run_tests(["parody_web", "parody_web_annotate"])))
+    sys.exit(bool(runner.run_tests(
+        ["parody_web", "parody_web_annotate", "parody_web_readaloud"])))
 
 
 if __name__ == "__main__":

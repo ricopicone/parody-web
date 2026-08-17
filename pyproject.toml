@@ -27,6 +27,15 @@ dependencies = ["Django>=5.0,<6.0"]
 print = [
     "pypdf>=4.0",
 ]
+# Read-along needs PyMuPDF to measure the typeset page (word boxes and the
+# vector rules that ARE the blanks) and boto3 to synthesise with Polly. Both
+# are generation-time concerns; a host that never runs `generate_readalong`
+# still serves whatever tracks it was given, because serving only reads the
+# database and a cached mp3.
+readalong = [
+    "boto3>=1.34",
+    "PyMuPDF>=1.24",
+]
 
 [project.urls]
 Homepage = "https://github.com/ricopicone/parody-web"

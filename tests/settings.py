@@ -10,7 +10,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # before parody_web: it shadows the PDF-view templates
+    # before parody_web: they shadow the PDF-view templates
+    "parody_web_readaloud",
     "parody_web_annotate",
     "parody_web",
 ]
