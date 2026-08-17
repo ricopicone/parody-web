@@ -6,9 +6,9 @@
  * annotate; otherwise it leaves the page alone and the server's fallback
  * stands.
  */
-import { PageView } from './pages.js';
+import { PageView, PAD_RATIO } from './pages.js';
 import { InkLayer } from './ink.js';
-import { InkStore } from './store.js';
+import { InkStore, PAD } from './store.js';
 import { InkApi } from './api.js';
 import { PointerGate } from './pointer-gate.js';
 import { isDark, themeColors } from './theme.js';
@@ -29,8 +29,13 @@ async function boot() {
 
   let saveTimer = null;
   const store = new InkStore(loaded.strokes, {
+    pads: loaded.pads || {},
     onChange: () => {
       root.dataset.dirty = '1';
+      // A margin that has just gained its first mark should stop looking empty.
+      layers.forEach((pair, number) => {
+        pair.pad.host.dataset.used = store.padUsed(number) ? '1' : '0';
+      });
       clearTimeout(saveTimer);
       saveTimer = setTimeout(save, SAVE_DEBOUNCE_MS);
     },
@@ -41,6 +46,7 @@ async function boot() {
     bookSha,
     pages: pages ? JSON.parse(pages) : null,
     strokes: store.toJSON(),
+    pads: store.padsToJSON(),
   });
 
   async function save() {
@@ -67,11 +73,21 @@ async function boot() {
 
   const view = new PageView(root.querySelector('[data-ink-pages]'), {
     onPageReady: (entry) => {
+      const padWidth = entry.viewport.width * PAD_RATIO;
       const existing = layers.get(entry.number);
-      // After a zoom the layer is still there but drawn at the old scale.
-      if (existing) existing.resize(entry.viewport);
-      else layers.set(entry.number,
-                      new InkLayer(entry, { store, tools, gate, theme: current }));
+      // After a zoom the layers are still there but drawn at the old scale.
+      if (existing) {
+        existing.page.resize(entry.viewport);
+        existing.pad.resize(entry.viewport, padWidth);
+      } else {
+        layers.set(entry.number, {
+          page: new InkLayer(entry, { store, tools, gate, theme: current }),
+          pad: new InkLayer(entry, { store, tools, gate, theme: current,
+                                     surface: PAD, host: entry.pad,
+                                     width: padWidth }),
+        });
+      }
+      entry.pad.dataset.used = store.padUsed(entry.number) ? '1' : '0';
     },
   });
 
@@ -80,10 +96,11 @@ async function boot() {
     // The page inverts through CSS; only the reader's own ink needs redrawing,
     // because its colour rule is applied when the strokes are painted.
     root.dataset.dark = current.dark ? '1' : '0';
-    layers.forEach((layer) => layer.setTheme(current));
+    eachLayer((l) => l.setTheme(current));
   }
 
-  const redrawAll = () => layers.forEach((layer) => layer.redraw());
+  const eachLayer = (fn) => layers.forEach((pair) => { fn(pair.page); fn(pair.pad); });
+  const redrawAll = () => eachLayer((l) => l.redraw());
   let chrome = null;
   const actions = {
     undo: () => { store.undo(); redrawAll(); },
@@ -110,10 +127,10 @@ async function boot() {
   // *drawn* light in dark mode, which on white paper is invisible. Repaint it
   // in the colours the reader actually chose for the duration of the print.
   window.addEventListener('beforeprint', () => {
-    if (current.dark) layers.forEach((l) => l.setTheme({ ...current, dark: false }));
+    if (current.dark) eachLayer((l) => l.setTheme({ ...current, dark: false }));
   });
   window.addEventListener('afterprint', () => {
-    if (current.dark) layers.forEach((l) => l.setTheme(current));
+    if (current.dark) eachLayer((l) => l.setTheme(current));
   });
 
   const toolbar = document.querySelector('[data-ink-toolbar]');

@@ -42,19 +42,20 @@ def _sections_by_key(book):
 def plan_book_overlay(request, book):
     """Where every note goes in the current book, and what had to be left out.
 
-    Returns ``(pages, skipped)``: pages maps an absolute 1-based book page to
-    the strokes drawn on it, and skipped names the sections whose notes could
-    not be placed.
+    Returns ``(pages, pads, skipped)``: pages and pads each map an absolute
+    1-based book page to what was drawn there — on the page and in the margin
+    beside it — and skipped names the sections whose notes could not be placed.
 
     Sections share a page where one ends and the next begins, and both sets of
     notes are drawn on it — they both genuinely belong there.
     """
     if not getattr(request.user, "is_authenticated", False):
-        return {}, []
+        return {}, {}, []
 
     policy = get_policy()
     sections = _sections_by_key(book)
     pages = {}
+    pads = {}
     skipped = []
 
     for key, layer in latest_layers(request.user, book).items():
@@ -83,17 +84,18 @@ def plan_book_overlay(request, book):
             skipped.append(Skipped(key, section.title, "relaid"))
             continue
 
-        for page_key, strokes in (layer.strokes or {}).items():
-            try:
-                offset = int(page_key)
-            except (TypeError, ValueError):
-                continue
-            if offset < 1 or offset > current_count or not strokes:
-                continue
-            book_page = current[0] + offset - 1
-            pages.setdefault(book_page, []).extend(strokes)
+        for target, source in ((pages, layer.strokes), (pads, layer.pads)):
+            for page_key, strokes in (source or {}).items():
+                try:
+                    offset = int(page_key)
+                except (TypeError, ValueError):
+                    continue
+                if offset < 1 or offset > current_count or not strokes:
+                    continue
+                book_page = current[0] + offset - 1
+                target.setdefault(book_page, []).extend(strokes)
 
-    return pages, skipped
+    return pages, pads, skipped
 
 
 def summary(request, book):
@@ -104,7 +106,7 @@ def summary(request, book):
     """
     from django.urls import reverse
 
-    pages, skipped = plan_book_overlay(request, book)
+    pages, pads, skipped = plan_book_overlay(request, book)
     sections = _sections_by_key(book)
     stale = []
     for item in skipped:
@@ -118,7 +120,7 @@ def summary(request, book):
             if section else "",
         })
     return {
-        "any": bool(pages),
-        "pages": len(pages),
+        "any": bool(pages or pads),
+        "pages": len(set(pages) | set(pads)),
         "stale": stale,
     }

@@ -5,6 +5,17 @@ function csrf() {
   return match ? decodeURIComponent(match[1]) : '';
 }
 
+/** The wire form of a reader's marks. One definition, used by both saves. */
+export function _body({ sliceKey, bookSha, pages, strokes, pads }) {
+  return {
+    slice_key: sliceKey,
+    book_sha256: bookSha,
+    pages,
+    strokes: strokes || {},
+    pads: pads || {},
+  };
+}
+
 export class InkApi {
   constructor(base) {
     this.base = base;            // e.g. /one/alpha/
@@ -18,12 +29,18 @@ export class InkApi {
     return resp.json();
   }
 
-  async save({ sliceKey, bookSha, pages, strokes }) {
+  /**
+   * Replace this reader's marks for one version.
+   *
+   * The body is built from one place — `_body` — rather than listed at each
+   * call site. Listing them twice is how the scratch pad came to be saved as
+   * nothing: the payload carried it and this method quietly dropped it.
+   */
+  async save(state) {
     const resp = await fetch(`${this.base}ink/`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
-      body: JSON.stringify({ slice_key: sliceKey, book_sha256: bookSha,
-                             pages, strokes }),
+      body: JSON.stringify(_body(state)),
     });
     return resp.ok;
   }
@@ -37,14 +54,13 @@ export class InkApi {
    * code path. Its payload limit is 64 KB, which a page of ink is nowhere
    * near.
    */
-  saveOnExit({ sliceKey, bookSha, pages, strokes }) {
+  saveOnExit(state) {
     try {
       fetch(`${this.base}ink/`, {
         method: 'PUT',
         keepalive: true,
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
-        body: JSON.stringify({ slice_key: sliceKey, book_sha256: bookSha,
-                               pages, strokes }),
+        body: JSON.stringify(_body(state)),
       });
     } catch (err) {
       /* the page is going away regardless */

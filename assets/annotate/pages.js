@@ -18,6 +18,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 
 export const ZOOM_STEPS = [0.6, 0.75, 0.9, 1, 1.15, 1.35, 1.6, 2, 2.5, 3];
 
+// The scratch pad's width, as a fraction of the page. Matches PAD_RATIO in
+// export.py — the strip on screen has to be the strip that gets glued on.
+export const PAD_RATIO = 0.5;
+
 export class PageView {
   constructor(container, { scale = 1.25, onPageReady, onPageGone } = {}) {
     this.container = container;
@@ -84,6 +88,8 @@ export class PageView {
       entry.viewport = entry.page.getViewport({ scale: this.scale });
       entry.el.style.width = `${entry.viewport.width}px`;
       entry.el.style.height = `${entry.viewport.height}px`;
+      entry.pad.style.width = `${entry.viewport.width * PAD_RATIO}px`;
+      entry.pad.style.height = `${entry.viewport.height}px`;
     }
   }
 
@@ -105,8 +111,20 @@ export class PageView {
       el.style.width = `${viewport.width}px`;
       el.style.height = `${viewport.height}px`;
       el.dataset.page = String(number);
-      this.container.appendChild(el);
-      this.entries.push({ number, page, viewport, el, canvas: null,
+
+      // The margin hangs off the page's right edge, the same width it will
+      // have if it is ever glued on.
+      const pad = document.createElement('div');
+      pad.className = 'ink-pad';
+      pad.style.width = `${viewport.width * PAD_RATIO}px`;
+      pad.style.height = `${viewport.height}px`;
+
+      const row = document.createElement('div');
+      row.className = 'ink-spread';
+      row.appendChild(el);
+      row.appendChild(pad);
+      this.container.appendChild(row);
+      this.entries.push({ number, page, viewport, el, pad, row, canvas: null,
                           layer: null,
                           // One slot per page: pages render independently, but
                           // a zoom invalidates all of them together.
@@ -118,7 +136,7 @@ export class PageView {
 
   /** Which pages should hold a canvas right now. */
   update() {
-    const tops = this.entries.map((e) => e.el.offsetTop);
+    const tops = this.entries.map((e) => e.row.offsetTop);
     const middle = this.container.scrollTop + this.container.clientHeight / 2;
     const keep = new Set(windowAround(pageAt(middle, tops), this.entries.length, 1));
     this.entries.forEach((entry, index) => {

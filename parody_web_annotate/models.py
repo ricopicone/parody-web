@@ -30,6 +30,11 @@ class InkLayer(models.Model):
     pages = models.JSONField()
 
     strokes = models.JSONField(default=dict, blank=True)
+    # The scratch pad beside each page, keyed the same way as `strokes`. Kept
+    # separate rather than mixed in under a special page key: the two live in
+    # different coordinate spaces, and the exporter has to widen a page for one
+    # and not the other.
+    pads = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -48,4 +53,6 @@ class InkLayer(models.Model):
 
     @property
     def stroke_count(self):
-        return sum(len(v) for v in (self.strokes or {}).values())
+        """Everything the reader drew, on the page and beside it."""
+        return (sum(len(v) for v in (self.strokes or {}).values())
+                + sum(len(v) for v in (self.pads or {}).values()))

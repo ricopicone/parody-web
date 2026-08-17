@@ -76,3 +76,53 @@ test('an existing layer loads as the starting state', () => {
   const s = new InkStore({ 4: [stroke('old')] });
   assert.equal(s.get(4).length, 1);
 });
+
+test('the margin is a separate surface from the page', () => {
+  const s = new InkStore();
+  s.add(1, stroke('page'));
+  s.add(1, stroke('margin'), 'pad');
+  assert.equal(s.get(1).length, 1);
+  assert.equal(s.get(1, 'pad').length, 1);
+  assert.equal(s.get(1)[0].d, 'page');
+  assert.equal(s.get(1, 'pad')[0].d, 'margin');
+});
+
+test('undo crosses the two surfaces in the order they were drawn', () => {
+  const s = new InkStore();
+  s.add(1, stroke('page'));
+  s.add(1, stroke('margin'), 'pad');
+  s.undo();
+  assert.equal(s.get(1, 'pad').length, 0);
+  assert.equal(s.get(1).length, 1);
+});
+
+test('each surface serialises on its own', () => {
+  const s = new InkStore();
+  s.add(2, stroke('page'));
+  s.add(3, stroke('margin'), 'pad');
+  assert.deepEqual(Object.keys(s.toJSON()), ['2']);
+  assert.deepEqual(Object.keys(s.padsToJSON()), ['3']);
+});
+
+test('a margin note alone counts as not empty', () => {
+  const s = new InkStore();
+  s.add(1, stroke('margin'), 'pad');
+  assert.equal(s.isEmpty, false);
+});
+
+test('existing margin notes load as the starting state', () => {
+  const s = new InkStore({ 1: [stroke('p')] }, { pads: { 1: [stroke('m')] } });
+  assert.equal(s.get(1).length, 1);
+  assert.equal(s.get(1, 'pad').length, 1);
+  assert.equal(s.padUsed(1), true);
+  assert.equal(s.padUsed(2), false);
+});
+
+test('erasing in the margin leaves the page alone', () => {
+  const s = new InkStore();
+  s.add(1, stroke('page'));
+  s.add(1, stroke('margin'), 'pad');
+  s.removeAt(1, [0], 'pad');
+  assert.equal(s.get(1, 'pad').length, 0);
+  assert.equal(s.get(1).length, 1);
+});

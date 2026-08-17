@@ -261,3 +261,144 @@ class OutlineSurvivesTests(TestCase):
                                            "opacity": 1}]}, self.out)
         page = PdfReader(str(self.out)).pages[1]
         self.assertIn(b"1 0 0 rg", page.get_contents().get_data())
+
+
+class ScratchPadTests(TestCase):
+    """The margin beside a page: extra room to write, glued on when used."""
+
+    def setUp(self):
+        from parody_web.tests_printing import make_pdf_with_content
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        self.src = make_pdf_with_content(self.dir / "src.pdf", 3)  # 200x200 pages
+        self.out = self.dir / "out.pdf"
+        self.note = {"d": "M5 5 L60 60 Z", "color": "#2563eb", "opacity": 1}
+
+    def _boxes(self, path):
+        from pypdf import PdfReader
+        return [(float(p.mediabox.width), float(p.mediabox.height))
+                for p in PdfReader(str(path)).pages]
+
+    def _content(self, path, index):
+        from pypdf import PdfReader
+        return PdfReader(str(path)).pages[index].get_contents().get_data()
+
+    def test_a_page_with_no_pad_keeps_its_size(self):
+        export.composite(self.src, {"1": [self.note]}, self.out)
+        self.assertEqual(self._boxes(self.out)[0], (200.0, 200.0))
+
+    def test_a_padded_page_gets_wider_by_half(self):
+        export.composite(self.src, {}, self.out, pads_by_page={"1": [self.note]})
+        self.assertEqual(self._boxes(self.out)[0], (300.0, 200.0))
+
+    def test_the_page_keeps_its_height(self):
+        export.composite(self.src, {}, self.out, pads_by_page={"1": [self.note]})
+        self.assertEqual(self._boxes(self.out)[0][1], 200.0)
+
+    def test_only_the_padded_pages_change(self):
+        """A book with three annotated margins must not become a book of
+        wide pages."""
+        export.composite(self.src, {}, self.out, pads_by_page={"2": [self.note]})
+        self.assertEqual(self._boxes(self.out), [(200.0, 200.0), (300.0, 200.0),
+                                                 (200.0, 200.0)])
+
+    def test_pad_ink_is_shifted_into_the_new_strip(self):
+        export.composite(self.src, {}, self.out, pads_by_page={"1": [self.note]})
+        content = self._content(self.out, 0)
+        # translated by the original page width before drawing
+        self.assertIn(b"1 0 0 1 200 0 cm", content)
+        self.assertIn(b"0.1451 0.3882 0.9216 rg", content)
+
+    def test_the_page_content_is_not_shifted(self):
+        """Only the pad moves; the book's own drawing stays where it was."""
+        before = self._content(self.src, 0)
+        export.composite(self.src, {}, self.out, pads_by_page={"1": [self.note]})
+        self.assertIn(before.strip(), self._content(self.out, 0))
+
+    def test_page_and_pad_notes_coexist_on_one_page(self):
+        export.composite(self.src, {"1": [{"d": "M1 1 L9 9 Z", "color": "#ff0000",
+                                           "opacity": 1}]},
+                         self.out, pads_by_page={"1": [self.note]})
+        content = self._content(self.out, 0)
+        self.assertIn(b"1 0 0 rg", content)                 # on the page
+        self.assertIn(b"0.1451 0.3882 0.9216 rg", content)  # in the pad
+        self.assertEqual(self._boxes(self.out)[0], (300.0, 200.0))
+
+    def test_an_empty_pad_list_widens_nothing(self):
+        export.composite(self.src, {"1": [self.note]}, self.out,
+                         pads_by_page={"1": []})
+        self.assertEqual(self._boxes(self.out)[0], (200.0, 200.0))
+
+    def test_pads_are_optional_for_every_existing_caller(self):
+        export.composite(self.src, {"1": [self.note]}, self.out)
+        self.assertEqual(len(self._boxes(self.out)), 3)
+
+    def test_a_translucent_pad_note_registers_its_graphics_state(self):
+        export.composite(self.src, {}, self.out,
+                         pads_by_page={"1": [{**self.note, "opacity": 0.35}]})
+        from pypdf import PdfReader
+        gs = PdfReader(str(self.out)).pages[0]["/Resources"]["/ExtGState"]
+        self.assertIn("/PdA35", gs)
+
+
+class GraphicsStateIsolationTests(TestCase):
+    """Ink must land where it was drawn, whatever the page did before it.
+
+    A PDF page's content stream can end with a transform still in effect.
+    Appending to it meant inheriting that transform, so every mark on such a
+    page was silently moved and rescaled — a margin note drawn at y=120
+    rendered at y=31, a third narrower than it should have been.
+    """
+
+    def setUp(self):
+        from pypdf import PdfWriter
+        from pypdf.generic import DecodedStreamObject, NameObject
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        self.src = self.dir / "src.pdf"
+        self.out = self.dir / "out.pdf"
+
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=200, height=200)
+        stream = DecodedStreamObject()
+        # ends mid-transform: scaled by a half and shifted, never restored
+        stream.set_data(b"0.5 0 0 0.5 40 40 cm 0 0 1 RG 0 0 m 10 10 l S")
+        page[NameObject("/Contents")] = writer._add_object(stream)
+        with open(self.src, "wb") as handle:
+            writer.write(handle)
+
+    def _content(self, index=0):
+        from pypdf import PdfReader
+        page = PdfReader(str(self.out)).pages[index]
+        parts = page.get_contents()
+        if hasattr(parts, "get_data"):
+            return parts.get_data()
+        return b"".join(s.get_object().get_data() for s in parts)
+
+    def test_the_page_drawing_is_fenced_before_ours_runs(self):
+        export.composite(self.src, {"1": [{"d": "M0 0 L9 9 Z", "color": "#000"}]},
+                         self.out)
+        content = self._content()
+        self.assertTrue(content.lstrip().startswith(b"q"),
+                        "the page's own stream must be opened inside q")
+        self.assertIn(b"Q", content)
+        # ours comes after the fence closes
+        self.assertGreater(content.rindex(b" f"), content.index(b"\nQ"))
+
+    def test_the_original_drawing_is_still_intact(self):
+        export.composite(self.src, {"1": [{"d": "M0 0 L9 9 Z", "color": "#000"}]},
+                         self.out)
+        self.assertIn(b"0.5 0 0 0.5 40 40 cm", self._content())
+
+    def test_a_page_with_no_content_still_takes_ink(self):
+        from pypdf import PdfWriter
+        blank = self.dir / "blank.pdf"
+        writer = PdfWriter()
+        writer.add_blank_page(width=200, height=200)
+        with open(blank, "wb") as handle:
+            writer.write(handle)
+        export.composite(blank, {"1": [{"d": "M0 0 L9 9 Z", "color": "#000"}]},
+                         self.out)
+        self.assertIn(b" f", self._content())

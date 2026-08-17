@@ -46,6 +46,55 @@
 
 .ink-page-canvas { display: block; }
 
+/* ---- the scratch pad ----------------------------------------------------
+   A margin beside each page for notes that will not fit on it. It is always
+   there rather than summoned: a scratch pad you have to remember to open is
+   one you forget you have.
+
+   Its width matches PAD_RATIO in both pages.js and export.py, because the
+   strip drawn here is the strip that gets glued on when the page is printed. */
+.ink-spread {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  margin: 0 auto 1rem;
+  width: max-content;
+}
+
+.ink-pad {
+  position: relative;
+  flex: none;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .35);
+  /* Faint rules, so it reads as paper to write on rather than dead space.
+     They are decoration only and never printed — the exported strip is blank
+     paper carrying the reader's marks. */
+  background-image: repeating-linear-gradient(
+    to bottom, transparent 0 31px, rgba(120, 120, 120, .085) 31px 32px);
+  border-left: 1px dashed rgba(120, 120, 120, .35);
+}
+
+/* Deliberately NOT dimmed with opacity when unused: over the dark backdrop
+   behind the pages that turns white paper into a grey striped panel. It is
+   paper either way; only the rules fade. */
+.ink-pad[data-used="0"] {
+  background-image: repeating-linear-gradient(
+    to bottom, transparent 0 31px, rgba(120, 120, 120, .05) 31px 32px);
+}
+
+.ink-root[data-dark="1"] .ink-pad {
+  background-color: var(--paper, #16171a);
+  background-image: repeating-linear-gradient(
+    to bottom, transparent 0 31px, rgba(160, 160, 160, .10) 31px 32px);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .6);
+}
+
+/* No room for a margin on a phone; the page comes first. */
+@media (max-width: 60rem) {
+  .ink-pad { display: none; }
+}
+
 .ink-layer { position: absolute; inset: 0; }
 .ink-layer canvas { touch-action: none; }
 
@@ -138,6 +187,12 @@
     padding: 0 !important;
     background: #fff !important;
   }
+
+  .ink-spread { display: block; break-after: page; page-break-after: always; }
+  .ink-spread:last-child { break-after: auto; page-break-after: auto; }
+  /* The margin is glued on by the exporter, not by the browser: printing the
+     DOM would put it on its own sheet. */
+  .ink-pad { display: none !important; }
 
   .ink-page {
     break-after: page;

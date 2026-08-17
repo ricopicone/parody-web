@@ -16,8 +16,10 @@ import { displayColor } from './theme.js';
 const ERASER_RADIUS = 6;   // PDF points
 
 export class InkLayer {
-  constructor(entry, { store, tools, gate, theme }) {
+  constructor(entry, { store, tools, gate, theme, surface = 'page',
+                       host: hostEl = null, width = null }) {
     this.entry = entry;
+    this.surface = surface;
     this.store = store;
     this.tools = tools;
     this.gate = gate;
@@ -26,14 +28,18 @@ export class InkLayer {
     this.theme = theme || { dark: false };
     this.page = entry.number;
 
-    const host = document.createElement('div');
-    host.className = 'ink-layer';
-    entry.el.appendChild(host);
+    let host = hostEl;
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'ink-layer';
+      entry.el.appendChild(host);
+    }
     this.host = host;
+    this.width = width || entry.viewport.width;
 
     this.stage = new Konva.Stage({
       container: host,
-      width: entry.viewport.width,
+      width: this.width,
       height: entry.viewport.height,
     });
     this.layer = new Konva.Layer({ listening: false });
@@ -102,11 +108,11 @@ export class InkLayer {
 
   _eraseAt(at) {
     const doomed = [];
-    this.store.get(this.page).forEach((stroke, index) => {
+    this.store.get(this.page, this.surface).forEach((stroke, index) => {
       if (hits(stroke, at.x, at.y, ERASER_RADIUS)) doomed.push(index);
     });
     if (doomed.length) {
-      this.store.removeAt(this.page, doomed);
+      this.store.removeAt(this.page, doomed, this.surface);
       this.redraw();
     }
   }
@@ -132,7 +138,7 @@ export class InkLayer {
   _commit() {
     const stroke = this._current();
     if (this.preview) { this.preview.destroy(); this.preview = null; }
-    if (stroke && stroke.d) this.store.add(this.page, stroke);
+    if (stroke && stroke.d) this.store.add(this.page, stroke, this.surface);
     this.points = [];
     this.to = null;
     this.redraw();
@@ -170,16 +176,17 @@ export class InkLayer {
    * in PDF points and are not touched — which is the reason zoom was cheap to
    * add at all.
    */
-  resize(viewport) {
+  resize(viewport, width = null) {
     this.scale = viewport.scale;
-    this.stage.width(viewport.width);
+    this.width = width || viewport.width;
+    this.stage.width(this.width);
     this.stage.height(viewport.height);
     this.redraw();
   }
 
   redraw() {
     this.layer.destroyChildren();
-    for (const stroke of this.store.get(this.page)) {
+    for (const stroke of this.store.get(this.page, this.surface)) {
       if (!stroke.d) continue;
       const node = new Konva.Path({ listening: false });
       this._style(node, stroke);

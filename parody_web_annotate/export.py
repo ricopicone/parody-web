@@ -126,6 +126,13 @@ def page_content(strokes, page_height):
     return " ".join(p for p in body if p)
 
 
+def _for_page(by_page, number):
+    """Strokes for a 1-based page, whichever way the key was stored."""
+    if not by_page:
+        return []
+    return by_page.get(str(number)) or by_page.get(number) or []
+
+
 def _alpha_states(strokes_by_page):
     """Every distinct translucency the ink uses, as ExtGState entries."""
     alphas = set()
@@ -137,11 +144,24 @@ def _alpha_states(strokes_by_page):
     return alphas
 
 
-def composite(src_path, strokes_by_page, dest_path):
+# How wide the scratch pad is, as a fraction of the page it hangs off.
+PAD_RATIO = 0.5
+
+
+def pad_width(page_width):
+    return page_width * PAD_RATIO
+
+
+def composite(src_path, strokes_by_page, dest_path, pads_by_page=None):
     """Write `src_path` with the ink drawn on top to `dest_path`.
 
     Page keys are 1-based and relative to the slice, matching how the viewer
     numbers the pages it showed.
+
+    `pads_by_page` is the scratch pad beside each page. A page whose pad has
+    anything on it is widened to make room and the notes are drawn in the new
+    strip; a page with an empty pad is left exactly the size it was, so a book
+    with three annotated margins does not become 118 wide pages.
     """
     from pypdf import PdfWriter
     from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject,
@@ -155,14 +175,33 @@ def composite(src_path, strokes_by_page, dest_path):
 
     alphas = _alpha_states(strokes_by_page)
 
+    alphas |= _alpha_states(pads_by_page)
+
     for index, page in enumerate(writer.pages):
-        strokes = (strokes_by_page or {}).get(str(index + 1)) \
-            or (strokes_by_page or {}).get(index + 1)
-        if not strokes:
+        strokes = _for_page(strokes_by_page, index + 1)
+        pad_strokes = _for_page(pads_by_page, index + 1)
+        if not strokes and not pad_strokes:
             continue
         box = page.mediabox
         height = float(box.top) - float(box.bottom)
         content = page_content(strokes, height)
+
+        if pad_strokes:
+            # Widen the page rather than build a new one and merge: the
+            # original content keeps its exact position, and the strip that
+            # appears to the right of it is simply empty paper.
+            right = float(box.right)
+            extra = pad_width(right - float(box.left))
+            page.mediabox.upper_right = (right + extra, float(box.top))
+            crop = page.get("/CropBox")
+            if crop is not None:
+                page.cropbox.upper_right = (float(page.cropbox.right) + extra,
+                                            float(page.cropbox.top))
+            pad = page_content(pad_strokes, height)
+            if pad:
+                # Pad coordinates start at the pad's own left edge, so the
+                # whole block is shifted across by the page width.
+                content = f"{content} q 1 0 0 1 {_fmt(right)} 0 cm {pad} Q"
         if not content:
             continue
 
@@ -186,10 +225,21 @@ def composite(src_path, strokes_by_page, dest_path):
         existing = page.get("/Contents")
         contents = ArrayObject()
         if existing is not None:
+            # Fence the page's own drawing inside q/Q. Appending to it meant
+            # inheriting whatever graphics state it happened to leave behind —
+            # a page that ends mid-transform silently moved and rescaled every
+            # mark drawn on it. Found when a note in the margin landed 90pt
+            # high and a third narrower than it was drawn.
+            opening = DecodedStreamObject()
+            opening.set_data(b"q\n")
+            contents.append(writer._add_object(opening))
             if isinstance(existing.get_object(), ArrayObject):
                 contents.extend(existing.get_object())
             else:
                 contents.append(existing)
+            closing = DecodedStreamObject()
+            closing.set_data(b"\nQ\n")
+            contents.append(writer._add_object(closing))
         contents.append(writer._add_object(stream))
         page[NameObject("/Contents")] = contents
 

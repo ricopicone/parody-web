@@ -85,6 +85,7 @@ def ink(request, chapter_slug, section_slug):
         return JsonResponse({
             "slice_key": key,
             "strokes": layer.strokes if layer else {},
+            "pads": layer.pads if layer else {},
             "versions": versions_for(request, book, section),
         })
 
@@ -99,6 +100,11 @@ def ink(request, chapter_slug, section_slug):
     strokes = payload.get("strokes")
     if not isinstance(strokes, dict):
         return JsonResponse({"error": "strokes must be an object"}, status=400)
+    pads = payload.get("pads")
+    if pads is None:
+        pads = {}
+    if not isinstance(pads, dict):
+        return JsonResponse({"error": "pads must be an object"}, status=400)
 
     # The page range and source version are recorded on write, while they are
     # still true: Section.print_pages is overwritten by the next import.
@@ -107,7 +113,7 @@ def ink(request, chapter_slug, section_slug):
         user=request.user, book_slug=book.slug,
         edition_id=book.edition_id or "", section_key=section.key,
         slice_key=key,
-        defaults={"strokes": strokes, "pages": pages,
+        defaults={"strokes": strokes, "pads": pads, "pages": pages,
                   "book_sha256": payload.get("book_sha256") or book.print_sha256})
     return JsonResponse({"saved": True, "slice_key": key})
 
@@ -186,7 +192,7 @@ def carry_forward(request, chapter_slug, section_slug):
         user=request.user, book_slug=book.slug,
         edition_id=book.edition_id or "", section_key=section.key,
         slice_key=target_key,
-        defaults={"strokes": source.strokes,
+        defaults={"strokes": source.strokes, "pads": source.pads,
                   "pages": section.print_pages or source.pages,
                   "book_sha256": book.print_sha256})
     return JsonResponse({"copied": source.stroke_count, "slice_key": target_key})
@@ -229,13 +235,14 @@ def annotated_section_pdf(request, chapter_slug, section_slug):
     # Keyed by the ink as well as the version, so editing a stroke produces a
     # new file rather than serving a stale composite.
     stamp = hashlib.sha256(
-        json.dumps(layer.strokes, sort_keys=True).encode()).hexdigest()[:12]
+        json.dumps([layer.strokes, layer.pads], sort_keys=True).encode()
+    ).hexdigest()[:12]
     dest = (cache / "annotated" / str(request.user.pk) / book.slug
             / f"{section.chapter.slug}-{section.slug}-{(key or '')[:12]}-{stamp}.pdf")
     if not dest.is_file():
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(f"{dest.name}.tmp")
-        export.composite(src, layer.strokes, tmp)
+        export.composite(src, layer.strokes, tmp, pads_by_page=layer.pads)
         tmp.replace(dest)
     name = _pdf_filename(book, section).replace(".pdf", "-annotated.pdf")
     return _pdf_response(dest, name, inline=bool(request.GET.get("inline")))
@@ -262,18 +269,19 @@ def annotated_book_pdf(request):
     if src is None or cache is None:
         raise Http404("no pdf for this book")
 
-    pages, _skipped = bookink.plan_book_overlay(request, book)
-    if not pages:
+    pages, pads, _skipped = bookink.plan_book_overlay(request, book)
+    if not pages and not pads:
         raise Http404("nothing annotated in this book")
 
     stamp = hashlib.sha256(
-        json.dumps(pages, sort_keys=True).encode()).hexdigest()[:12]
+        json.dumps([pages, pads], sort_keys=True).encode()).hexdigest()[:12]
     dest = (cache / "annotated-book" / str(request.user.pk) / book.slug
             / f"{(book.print_sha256 or 'nohash')[:12]}-{stamp}.pdf")
     if not dest.is_file():
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(f"{dest.name}.tmp")
-        export.composite(src, {str(k): v for k, v in pages.items()}, tmp)
+        export.composite(src, {str(k): v for k, v in pages.items()}, tmp,
+                         pads_by_page={str(k): v for k, v in pads.items()})
         tmp.replace(dest)
     name = _pdf_filename(book).replace(".pdf", "-annotated.pdf")
     return _pdf_response(dest, name, inline=bool(request.GET.get("inline")))
