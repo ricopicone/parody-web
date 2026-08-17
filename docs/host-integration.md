@@ -418,6 +418,85 @@ It ships inert. A host adding drawing or annotation keys its records to that
 `data-section-key` — the same join key described in §5 — and shadows the
 template to add its own layer and scripts.
 
+## 9. Read-along
+
+`parody_web_readaloud` reads a section aloud over its PDF, highlighting each
+word as it is spoken and pausing at each typeset blank so the student writes
+the answer in by hand with the annotator's pen. It is additive: without it, or
+without generated audio, the PDF view is exactly what it was.
+
+```python
+# settings.py — read-along and the annotator BOTH precede parody_web
+INSTALLED_APPS = [
+    "parody_web_readaloud",
+    "parody_web_annotate",
+    "parody_web",
+]
+
+# Where generated audio is cached. Serving reads only this and the database.
+PARODY_WEB_READALOUD_CACHE = "/var/lib/mysite/readalong"
+```
+
+```python
+# urls.py — alongside the others, under the same book prefix
+path("", include("parody_web_readaloud.urls")),
+path("", include("parody_web_annotate.urls")),
+path("", include("parody_web.urls")),
+```
+
+Install with the extra: `pip install "parody-web[print,readalong]"`. It pulls
+`PyMuPDF` (to measure the typeset page) and `boto3` (AWS Polly). Both are
+**generation-time** concerns — a host that never generates still serves
+whatever tracks it already has.
+
+### Two builds of every section
+
+The published artifact stays `--clozes blank`, unchanged. Read-along
+additionally needs a `--clozes key` render of the same source, which is
+**never served**: it is the only artifact that carries the answers, marks them
+as `<span class="cloze-key">`, and stages the complete figure artwork.
+
+Import it into `Section.key_html`. **That field does not exist yet** — it is
+host-side importer work. Until it does, `generate_readalong` skips every
+section with `no key-mode html imported`, rather than falling back to
+blank-mode HTML: that has no answers in it, so it would produce a track whose
+blanks reveal nothing, and the failure would surface in front of a student.
+
+### Generating
+
+```
+python manage.py generate_readalong <book_slug> [--section KEY] [--voice Matthew]
+                                    [--engine neural|standard] [--skip-math]
+                                    [--force] [--dry-run]
+```
+
+`--dry-run` reports the character count per section without calling Polly. Run
+it before committing to a voice: cost scales with characters × voices ×
+re-synthesis, and not at all with listeners.
+
+`--skip-math` leaves equations silent. Otherwise math is spoken through
+MathJax's Speech Rule Engine, which needs **Node on the generating machine**.
+If Node is missing, or an expression will not parse, that equation loses its
+narration and nothing else breaks.
+
+### Audio is serve-only
+
+Neither endpoint ever synthesises; a miss is a 404. This is deliberate. Lazy
+synthesis is the one path by which an anonymous visitor to a public book could
+mint new audio, and the only way cost starts tracking requests instead of
+content. Because one synthesis serves every listener, read-along needs no
+access tier of its own — it inherits the book's, asking the policy the same
+question the section PDF asks.
+
+### Template shadowing
+
+Read-along shadows `parody_web/_pdf_view_head.html` to load its assets, and
+that partial is also the annotator's. Django resolves app templates by
+`INSTALLED_APPS` order and only the first wins, so read-along's copy re-emits
+the annotator's stylesheet link too. A test pins the annotator's version, so
+if it ever changes the suite fails rather than the stylesheet silently
+vanishing.
+
 ## Settings reference
 
 | setting | default | meaning |
@@ -430,3 +509,4 @@ template to add its own layer and scripts.
 | `PARODY_WEB_PRINT_CACHE` | `<print root>/.cache` | where sliced section PDFs are cached; must be under the print root when X-Accel is used |
 | `PARODY_WEB_PRINT_XACCEL` | `""` (Django streams) | nginx `internal` location mapped to the print root |
 | `PARODY_WEB_PUBLIC_BOOK_PDF` | `True` | may the public download the whole book as one PDF; set `False` for any book that gates a section |
+| `PARODY_WEB_READALOUD_CACHE` | `""` (feature off) | directory holding generated read-along audio; required to generate or serve it |

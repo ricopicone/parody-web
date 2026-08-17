@@ -10,6 +10,29 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-17-read-along-design.md`
 
+## Corrections made at execution time
+
+Three defects found in this plan before any code was written. They are recorded
+here rather than silently worked around.
+
+1. **There is no pytest in this repo.** Tests are `django.test.SimpleTestCase`
+   / `TestCase` classes run by Django's own runner via `python runtests.py`
+   (see `parody_web_annotate/tests.py`). Every `python -m pytest …` command
+   below is wrong; the correct command is always `.venv/bin/python
+   runtests.py`. Every bare `def test_…()` below becomes a method on a
+   `SimpleTestCase` subclass — the assertions themselves are unchanged, using
+   `self.assertEqual` in place of bare `assert`.
+2. **Task 5 is a prerequisite, not the fifth step.** Django's runner discovers
+   tests by app label, so no test in Tasks 1–4 can run until
+   `parody_web_readaloud` exists and is in `INSTALLED_APPS`. **Execute Task 5
+   first**, then Tasks 1–4 in order, then 6 onward.
+3. **The `readalong` extra must be declared in Task 5, not Task 11.** Tasks
+   2, 3 and 7 import `fitz`, which is not currently a dependency of this
+   package at all. Add `[project.optional-dependencies] readalong =
+   ["boto3>=1.34", "PyMuPDF>=1.24"]` as part of Task 5 and run
+   `uv sync --extra print --extra readalong`; Task 11 then only adds the
+   package-data entries.
+
 ## Global Constraints
 
 - **Serve-only audio.** No request path may ever synthesise. A cache miss is a 404. Lazy synthesis is the one way cost starts tracking requests instead of content.

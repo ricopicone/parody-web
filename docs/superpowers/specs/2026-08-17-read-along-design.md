@@ -265,6 +265,30 @@ cloze items", which described an earlier design in which a word printed on the
 page dissolved. Nothing on the page fades now — a reveal fades in and out
 *above* the blank. Retitle the task to match the mode.
 
+## Measured: does the alignment actually work?
+
+Tested against real content before building the rest — 10 sections of rtc
+(120 in the artifact, those over 120 words), aligning each section's artifact
+HTML against the pages of the typeset PDF that hold it:
+
+| | placed |
+|---|---|
+| median | 99.9% |
+| mean | 98.4% |
+| worst | 93.9% |
+
+"Placed" means a speakable token (prose or math) that came away with a box.
+
+This is a harder test than production will be. The PDF is the *ancestor's*
+LaTeX build rather than parody's, and the harness over-grabs page ranges, so
+page words outnumber script words roughly 3:1 — every one of those extras is
+furniture the aligner had to reject. It still placed essentially everything.
+
+Worth stating precisely: this measures placement *rate*, not placement
+*correctness*. It shows the aligner is not dropping the stream on real prose;
+it does not prove every box is the right one. That needs eyes on a rendered
+page, which is the first thing to check once a track exists.
+
 ## Risks
 
 - **Float reordering** derailing the aligner. Absorbed as unmatched captions;
