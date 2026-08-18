@@ -93,20 +93,31 @@ export function skipTarget(regions, ms, words, reachMs = 1500) {
   return nextSentence(words, ms);
 }
 
-/** The start of the next sentence after `ms`, or null at the last one. */
-export function nextSentence(words, ms) {
+/**
+ * The start of the next sentence after `ms`.
+ *
+ * Falls back to a fixed jump when no sentence end can be found ahead. Polly's
+ * marks do not always carry the punctuation a sentence ends with, so relying
+ * on finding one made the skip control appear and disappear as the reader
+ * moved through a section — offered in some passages and simply missing in
+ * others, with no reason a reader could see.
+ *
+ * Null only at the very end, where there is genuinely nowhere to skip to.
+ */
+export function nextSentence(words, ms, fallbackMs = 6000) {
   const list = words || [];
-  let seenCurrent = false;
-  for (let i = 0; i < list.length; i += 1) {
-    if (!seenCurrent) {
-      if (list[i].end_ms > ms) seenCurrent = true;
-      else continue;
-    }
+  if (!list.length) return null;
+
+  // Nothing ahead at all — the genuine end, whatever the track's length.
+  const ahead = list.filter((w) => w.start_ms > ms);
+  if (!ahead.length) return null;
+
+  for (let i = 1; i < list.length; i += 1) {
+    if (list[i].start_ms <= ms) continue;
     // The word AFTER a sentence-ending one begins the next sentence.
-    if (i > 0 && /[.?!]["')\]]?$/.test(list[i - 1].word || '')
-        && list[i].start_ms > ms) {
-      return list[i].start_ms;
-    }
+    if (/[.?!]["')\]]?$/.test(list[i - 1].word || '')) return list[i].start_ms;
   }
-  return null;
+  // Clamped to where the audio ENDS, not to the last word's start — a long
+  // final word would otherwise pull every fallback jump back to it.
+  return Math.min(ms + fallbackMs, ahead[ahead.length - 1].end_ms);
 }

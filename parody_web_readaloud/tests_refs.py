@@ -38,3 +38,40 @@ class ResolveRefsTests(SimpleTestCase):
     def test_no_labels_means_no_rewriting(self):
         html = '<span class="citation" data-cites="eq:foo">[@eq:foo]</span>'
         self.assertEqual(resolve_refs(html, {}), html)
+
+
+class ReferenceCaseTests(SimpleTestCase):
+    """A reference at the start of a sentence is authored capitalised.
+
+    `[@Fig:opamp]` prints "Figure 4.11" where `[@fig:opamp]` prints "figure
+    4.11" — same target, and the map is keyed in lower case. An exact lookup
+    missed every capitalised one and read the key aloud.
+    """
+
+    def test_a_capitalised_key_resolves(self):
+        html = ('<span class="citation" data-cites="Fig:opamp">'
+                '[@Fig:opamp]</span>')
+        self.assertEqual(resolve_refs(html, {"fig:opamp": "Figure 4.11"}),
+                         "Figure 4.11")
+
+    def test_a_lower_case_key_still_resolves(self):
+        html = ('<span class="citation" data-cites="fig:opamp">'
+                '[@fig:opamp]</span>')
+        self.assertEqual(resolve_refs(html, {"fig:opamp": "Figure 4.11"}),
+                         "Figure 4.11")
+
+
+class BibliographyCitationTests(SimpleTestCase):
+    """A bib key is not a cross-reference and must not be read aloud."""
+
+    def test_an_unresolved_bib_key_is_dropped_not_spoken(self):
+        html = '<p>see <span class="citation" data-cites="Horowitz2015">[@Horowitz2015]</span> for more</p>'
+        out = resolve_refs(html, {"fig:a": "Figure 1"})
+        self.assertNotIn("Horowitz2015", out)
+        self.assertIn("see  for more", out)
+
+    def test_an_unresolved_CROSS_reference_is_still_left_visible(self):
+        """A missing fig:/eq: target is a real defect and should stay
+        conspicuous rather than vanish."""
+        html = '<span class="citation" data-cites="fig:missing">[@fig:missing]</span>'
+        self.assertEqual(resolve_refs(html, {"fig:a": "Figure 1"}), html)

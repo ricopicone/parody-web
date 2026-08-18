@@ -131,3 +131,27 @@ test('maths still wins when we are inside one', () => {
   const regions = [{ start_ms: 40, end_ms: 90 }];
   assert.equal(skipTarget(regions, 50, SENT), 90);
 });
+
+test('skip falls back to a fixed jump when no sentence end is ahead', () => {
+  // Polly's marks do not always carry the punctuation, which made the control
+  // appear in some passages and vanish in others for no visible reason.
+  const noPunct = [
+    { word: 'one', start_ms: 0, end_ms: 100 },
+    { word: 'two', start_ms: 100, end_ms: 200 },
+    { word: 'three', start_ms: 200, end_ms: 30000 },
+  ];
+  assert.equal(nextSentence(noPunct, 50, 6000), 6050);
+});
+
+test('skip is offered until the very end, then stops', () => {
+  const words = [{ word: 'a', start_ms: 0, end_ms: 5000 }];
+  assert.equal(nextSentence(words, 4500), null);
+});
+
+test('a real sentence end still wins over the fallback', () => {
+  const words = [
+    { word: 'end.', start_ms: 0, end_ms: 100 },
+    { word: 'Next', start_ms: 100, end_ms: 9000 },
+  ];
+  assert.equal(nextSentence(words, 50, 6000), 100);
+});

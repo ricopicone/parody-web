@@ -28,6 +28,26 @@ async function boot() {
   }
 
   const clozes = showable(track.clozes);
+
+  /**
+   * The book's body type, in PDF points, so the revealed answer is the size it
+   * would have been printed — at any zoom.
+   *
+   * Measured from the median word BOX, which spans ascender to descender and
+   * so runs about half again the type size; BOX_TO_TYPE brings it back. Using
+   * the box height raw made the reveal noticeably larger than the page.
+   */
+  const BOX_TO_TYPE = 0.66;
+  const bodyPt = (() => {
+    const heights = track.words
+      .filter((w) => Number.isFinite(w.y0))
+      .map((w) => w.y1 - w.y0)
+      .sort((a, b) => a - b);
+    const median = heights.length
+      ? heights[Math.floor(heights.length / 2)]
+      : 15;
+    return median * BOX_TO_TYPE;
+  })();
   const regions = track.regions || [];
   // A preview track has timings but no audio. A clock stands in for the
   // element so everything downstream — the frame loop, the holds, the
@@ -101,8 +121,8 @@ async function boot() {
     + '<span data-play-glyph>\u25b6</span> <span data-play-label>Read aloud</span>'
     + '</button>'
     + '<button type="button" data-here class="readalong-here">Read from\u2026</button>'
-    + '<button type="button" data-restart class="readalong-restart" '
-    + 'aria-label="Start over" title="Start over">\u21ba</button>';
+    + '<button type="button" data-speed class="readalong-speed" '
+    + 'aria-label="Reading speed" title="Reading speed">1\u00d7</button>';
   root.appendChild(nav);
   const playButton = nav.querySelector('[data-play]');
   const playGlyph = nav.querySelector('[data-play-glyph]');
@@ -138,7 +158,42 @@ async function boot() {
 
   showPlayState();
 
-  nav.querySelector('[data-restart]').addEventListener('click', () => restart());
+  /**
+   * Reading speed.
+   *
+   * Cycles rather than opening a menu: there are five sensible values and a
+   * reader picks one and leaves it. Remembered across sections — a pace that
+   * suits someone is a property of them, not of the section.
+   *
+   * playbackRate does not disturb the timings: the highlight is driven from
+   * audio.currentTime, which advances in real seconds whatever the rate.
+   */
+  const SPEEDS = [0.75, 0.9, 1, 1.15, 1.35, 1.6];
+  const SPEED_KEY = 'parody-readalong-speed';
+  const speedButton = nav.querySelector('[data-speed]');
+
+  function showSpeed() {
+    const rate = audio.playbackRate;
+    speedButton.textContent = `${rate === 1 ? '1' : String(rate)}\u00d7`;
+  }
+
+  function setSpeed(rate) {
+    audio.playbackRate = rate;
+    try { localStorage.setItem(SPEED_KEY, String(rate)); } catch (err) { /* ignore */ }
+    showSpeed();
+  }
+
+  let savedSpeed = 1;
+  try {
+    savedSpeed = parseFloat(localStorage.getItem(SPEED_KEY)) || 1;
+  } catch (err) { savedSpeed = 1; }
+  if (SPEEDS.includes(savedSpeed)) audio.playbackRate = savedSpeed;
+  showSpeed();
+
+  speedButton.addEventListener('click', () => {
+    const at = SPEEDS.indexOf(audio.playbackRate);
+    setSpeed(SPEEDS[(at + 1) % SPEEDS.length]);
+  });
 
   /**
    * "Read from here".
@@ -367,6 +422,23 @@ async function boot() {
       const active = current >= 0 ? (clozes[current] || {}).token : -1;
       mark.setActive(active);
     }
+    refitReveal();
+  }
+
+  /**
+   * Re-place a visible reveal at the page's CURRENT size.
+   *
+   * It is drawn once when its cloze comes up, so zooming afterwards left it at
+   * the old size and position while the page grew around it. Runs on the same
+   * timer and scroll signal as the markers.
+   */
+  function refitReveal() {
+    const at = holding >= 0 ? holding : shown;
+    if (at < 0 || reveal.el.hidden) return;
+    const cloze = clozes[at];
+    if (!cloze) return;
+    const page = pageAt(root, cloze.page, track.pages);
+    if (page) reveal.show(cloze, page, bodyPt * page.scale);
   }
 
   function clearOthers(keep) {
@@ -404,7 +476,8 @@ async function boot() {
     current = index;
     root.dataset.readalong = 'holding';
     showPlayState();
-    if (page) reveal.show(cloze, page);   // already up; re-place after any scroll
+    // already up; re-placed here after any scroll
+    if (page) reveal.show(cloze, page, bodyPt * page.scale);
   }
 
   function resume() {
@@ -438,7 +511,7 @@ async function boot() {
       current = speaking;
       const cloze = clozes[speaking];
       const page = pageAt(root, cloze.page, track.pages);
-      if (page) reveal.show(cloze, page);
+      if (page) reveal.show(cloze, page, bodyPt * page.scale);
       syncMarks();
     }
 

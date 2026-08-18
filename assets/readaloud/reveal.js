@@ -1,11 +1,12 @@
 /**
  * The answer, shown so it can be copied.
  *
- * ABOVE the blank, never in it. The blank is where the student writes and the
+ * BELOW the blank, never in it. The blank is where the student writes and the
  * annotation canvas is live over it, so a plate in the blank would simply be
- * drawn on top of. Above rather than below because a stylus hand rests below
- * the line being written, so a plate below is the one that ends up under the
- * palm — and because reading up then writing down is the movement you want.
+ * drawn on top of.
+ *
+ * Below rather than above: above covers the sentence that leads INTO the
+ * blank, which is exactly the context needed to know what belongs in it.
  *
  * It holds until the student continues rather than fading on a timer: this is
  * the board in class, and it stays up while you write it down.
@@ -35,7 +36,7 @@ export function toCss(box, scale) {
  * Where to put the plate, given the blank's box in PDF points.
  * `plate` is {width, height} in CSS px.
  */
-export function placeReveal(box, scale, plate, pageWidth) {
+export function placeReveal(box, scale, plate, pageWidth, pageHeight) {
   const { x0, y0, x1, y1 } = toCss(box, scale);
 
   let left = (x0 + x1) / 2 - plate.width / 2;
@@ -47,10 +48,12 @@ export function placeReveal(box, scale, plate, pageWidth) {
   }
   left = Math.max(left, GAP);
 
-  let top = y0 - plate.height - GAP;
-  // Flip below when there is no room above, so a blank on the first line
-  // never renders off the top of the page.
-  if (top < 0) top = y1 + GAP;
+  let top = y1 + GAP;
+  // Flip above only when there is no room below, so a blank at the foot of a
+  // page still shows its answer.
+  if (Number.isFinite(pageHeight) && top + plate.height > pageHeight) {
+    top = Math.max(0, y0 - plate.height - GAP);
+  }
   return { left, top };
 }
 
@@ -62,13 +65,20 @@ export class Reveal {
   }
 
   /** `page` is {el, pad, scale} — see pageview.js. */
-  show(cloze, page) {
+  show(cloze, page, typePx) {
     return cloze.kind === 'figure_cloze'
       ? this._showFigure(cloze, page)
-      : this._showText(cloze, page);
+      : this._showText(cloze, page, typePx);
   }
 
-  _showText(cloze, page) {
+  /**
+   * `typePx` is the page's body type at the current zoom, so the revealed
+   * answer is the size it would have been printed. Without it the plate stayed
+   * at browser-default size while the page around it grew, and a zoomed-in
+   * reader got a tiny answer over enormous text.
+   */
+  _showText(cloze, page, typePx) {
+    this.el.style.fontSize = typePx ? `${typePx}px` : '';
     // A maths cloze reveals a picture: the reader is on a pdf.js canvas with
     // no MathJax near it, so the SVG was rendered at generation time.
     if (cloze.svg) {
@@ -84,7 +94,8 @@ export class Reveal {
     // Measure after attaching: the plate's width depends on the answer.
     const plate = { width: this.el.offsetWidth, height: this.el.offsetHeight };
     const at = placeReveal([cloze.x0, cloze.y0, cloze.x1, cloze.y1],
-                           page.scale, plate, page.el.offsetWidth);
+                           page.scale, plate, page.el.offsetWidth,
+                           page.el.offsetHeight);
     this.el.style.left = `${at.left}px`;
     this.el.style.top = `${at.top}px`;
     return this.el;

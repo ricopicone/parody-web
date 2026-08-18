@@ -36,7 +36,11 @@ def label_map(data):
     target map is used, and the caller's data is never touched.
     """
     targets = _number(copy.deepcopy(data))
-    return {key: (value or {}).get("label") or ""
+    # Keyed in lower case. A reference at the start of a sentence is authored
+    # `[@Fig:opamp]` so the printed label capitalises, and the target map is
+    # lower case — an exact lookup missed every one of those and read the key
+    # aloud instead. Case is inaudible, so folding is all that is needed.
+    return {key.lower(): (value or {}).get("label") or ""
             for key, value in (targets or {}).items()}
 
 
@@ -53,12 +57,19 @@ def _speak(keys, labels):
         key = key.lstrip("@").strip()
         if not key:
             continue
-        label = labels.get(key)
+        label = labels.get(key.lower())
         if not label:
-            return None                # unknown: leave the text as authored
+            # A bibliography key ("Horowitz2015") has no prefix and no target
+            # here — read-along is given no references map. Saying the key
+            # aloud is worse than saying nothing, so the marker is dropped;
+            # a cross-reference (fig:, eq:, sec:, tbl:) is left as authored so
+            # a genuinely missing target stays visible.
+            if ":" in key:
+                return None
+            continue
         said.append(label)
     if not said:
-        return None
+        return ""                      # every key was a dropped bib marker
     if len(said) == 1:
         return said[0]
     return ", ".join(said[:-1]) + " and " + said[-1]
@@ -74,12 +85,14 @@ def resolve_refs(html, labels):
     if not html or not labels:
         return html
 
+    # None means "leave it as authored"; "" means "drop it" (a bibliography
+    # marker). They are different outcomes and `if said` conflates them.
     def citation(match):
         said = _speak(match.group(1), labels)
-        return said if said else match.group(0)
+        return match.group(0) if said is None else said
 
     def hashref(match):
         said = _speak(_TAGS.sub("", match.group(1)), labels)
-        return said if said else match.group(0)
+        return match.group(0) if said is None else said
 
     return _HASHREF.sub(hashref, _CITATION.sub(citation, html))
