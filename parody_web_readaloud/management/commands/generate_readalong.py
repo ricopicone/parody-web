@@ -31,33 +31,24 @@ def key_html_index(path):
     here, at generation time, on the machine doing the generating. Nothing
     about it is ever served.
 
-**Numbered first**, on a COPY. A raw artifact carries cross-references
-    unresolved — `<span class="hashref">eq:v_plus_minus</span>` — because
-    numbering runs at import, not at build, so read-along would otherwise read
-    the LABEL aloud instead of "equation (4.1)". Measured on the primer's opamp
-    section: raw speaks "[@ eq:v_plus_minus]", numbered speaks "equation
-    (4.1)", and the numbered text is slightly LONGER (1670 words vs 1638), so
-    nothing is lost by doing it.
+NOT numbered, deliberately — see below.
 
-    The copy is the point. `number_artifact` mutates in place, so an exception
-    part-way through leaves the artifact half-rewritten — and a first attempt
-    that swallowed the error shipped exactly that to production, cutting the
-    opamp section to 541 spoken words. Numbering a copy means a failure costs
-    the cross-references and nothing else, and it says so rather than being
-    silent about it.
+    A raw artifact carries cross-references unresolved
+    (`<span class="hashref">eq:v_plus_minus</span>`) because numbering runs at
+    import, so read-along reads the LABEL aloud instead of "equation (4.1)".
+
+    Running `parody_web.numbering.number_artifact` here fixes that ON A LOCAL
+    MACHINE — measured on the primer's opamp section, twice: 891 -> 902 parsed
+    words, 1638 -> 1670 spoken, clean text, correct references. It has now been
+    shipped TWICE and produced a corrupted section BOTH times: 541 spoken words
+    ending in "while opamp adapt opamp opamp still in detail". The same code,
+    the same parody-web version and a byte-identical artifact behave
+    differently on the deployment, and that difference is not yet understood.
+
+    Reading a bare label is the lesser bug, and it is not worth a third
+    regression. Reproduce the box's behaviour before turning this back on.
     """
-    from parody_web.numbering import number_artifact
-
-    data = json.loads(path.read_text())
-    try:
-        numbered = copy.deepcopy(data)
-        number_artifact(numbered)
-        return _index_sections(numbered)
-    except Exception as err:                       # noqa: BLE001 - see above
-        sys.stderr.write(
-            f"warning: could not number {path.name} ({err}); cross-references "
-            "will be read aloud as their labels\n")
-    return _index_sections(data)
+    return _index_sections(json.loads(path.read_text()))
 
 
 def _index_sections(data):

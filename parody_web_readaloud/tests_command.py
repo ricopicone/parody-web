@@ -54,53 +54,17 @@ class GenerateReadalongTests(TestCase):
         self.assertEqual(list(Path(self.cache.name).iterdir()), [])
 
 
-class KeyArtifactNumberingTests(TestCase):
-    """Cross-references are resolved before the text is read.
+class KeyArtifactTests(TestCase):
+    """The key artifact is read as-is; see key_html_index for why it is not
+    numbered, and what has to be understood before it can be."""
 
-    Unresolved, read-along speaks the LABEL — "[@ eq:v_plus_minus]" — instead
-    of "equation (4.1)".
-    """
-
-    def _artifact(self, tmp):
-        art = {"chapters": [{"slug": "ch", "sections": [
-            {"slug": "s1", "html": "<p>hello world</p>"}]}]}
-        path = Path(tmp) / "key.json"
-        path.write_text(json.dumps(art))
-        return path
-
-    def test_a_numbering_failure_falls_back_to_the_ORIGINAL_artifact(self):
-        """number_artifact mutates in place, so a half-finished pass must not
-        be what gets read. Swallowing the error and using the mutated data
-        shipped a section cut to a third of its length."""
-        from unittest.mock import patch
-
-        from parody_web_readaloud.management.commands import generate_readalong
-
+    def test_sections_are_indexed_by_both_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = self._artifact(tmp)
-
-            def explode(data, *a, **kw):
-                data["chapters"] = []          # the damage a real failure does
-                raise RuntimeError("boom")
-
-            with patch("parody_web.numbering.number_artifact", explode):
-                index = generate_readalong.key_html_index(path)
-
-        self.assertIn("ch/s1", index)
-        self.assertIn("hello world", index["ch/s1"])
-
-    def test_the_numbered_artifact_is_used_when_numbering_works(self):
-        from unittest.mock import patch
-
-        from parody_web_readaloud.management.commands import generate_readalong
-
-        with tempfile.TemporaryDirectory() as tmp:
-            path = self._artifact(tmp)
-
-            def number(data, *a, **kw):
-                data["chapters"][0]["sections"][0]["html"] = "<p>numbered</p>"
-
-            with patch("parody_web.numbering.number_artifact", number):
-                index = generate_readalong.key_html_index(path)
-
-        self.assertEqual(index["ch/s1"], "<p>numbered</p>")
+            from parody_web_readaloud.management.commands import generate_readalong
+            art = {"chapters": [{"slug": "ch", "sections": [
+                {"slug": "s1", "hash": "ab", "html": "<p>hello world</p>"}]}]}
+            path = Path(tmp) / "key.json"
+            path.write_text(json.dumps(art))
+            index = generate_readalong.key_html_index(path)
+        self.assertEqual(index["ab"], "<p>hello world</p>")
+        self.assertEqual(index["ch/s1"], "<p>hello world</p>")
