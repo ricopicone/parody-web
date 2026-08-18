@@ -6,6 +6,20 @@ The text comes from a `--clozes key` render of the section, which the host
 imports alongside the published `--clozes blank` artifact and never serves. Key
 mode is the one that carries the answers, marks them, and stages the complete
 figure artwork; blank mode strips all three on purpose.
+
+Three things can happen to a section, and only one of them costs money:
+
+  same pages, same words   -> `have`, nothing done
+  new pages, same words    -> `moved`, re-aligned for free and the mp3 kept
+  new words                -> `made`, synthesised
+
+That middle case is why editing chapter 1 no longer re-buys chapter 12. Reflow
+cascades through a book, so `printing.slice_key_for` moves for nearly every
+later section; `generate.text_key_for` does not, and the audio is keyed on it.
+
+Which is also why `--force` should NOT be the habit. It re-buys everything,
+including the sections whose text is untouched, and is for when the generator
+itself changed. To redo one section after editing it, name it: `--section`.
 """
 
 import copy
@@ -18,7 +32,8 @@ from parody_web import printing
 from parody_web.models import Book, Section
 
 from ... import refs
-from ...generate import EstimatedSynth, PollySynth, build_track
+from ...generate import (EstimatedSynth, PollySynth, cloze_count, prepare,
+                         reuse, synthesise, text_key_for)
 from ...models import ReadAlongTrack
 from ...speech import SkipMath, SreMath, sre_available
 from ...storage import write_audio
@@ -104,7 +119,9 @@ class Command(BaseCommand):
         parser.add_argument("--skip-math", action="store_true",
                             help="Do not shell out to SRE; leave math silent.")
         parser.add_argument("--force", action="store_true",
-                            help="Re-synthesise even if a track exists.")
+                            help="Re-synthesise even where the words are "
+                                 "unchanged. For when the generator changed; "
+                                 "an edit needs only --section.")
         parser.add_argument("--key-artifact", default=None,
                             help="Path to a `--clozes key` artifact to take "
                                  "section text from, instead of "
@@ -117,7 +134,8 @@ class Command(BaseCommand):
         parser.add_argument("--wpm", type=int, default=150,
                             help="Reading pace for --no-audio.")
         parser.add_argument("--dry-run", action="store_true",
-                            help="Report what would be synthesised, and the "
+                            help="Report what would be synthesised and what "
+                                 "would merely be re-aligned, with the "
                                  "character count, without calling Polly.")
 
     def handle(self, *args, **options):
@@ -160,78 +178,155 @@ class Command(BaseCommand):
                     "dependencies resolve (see docs/host-integration.md), or "
                     "pass --skip-math to accept silent equations.")
             math = SreMath()
-        if options["dry_run"]:
-            synth = _counting_synth()
-        elif options["no_audio"]:
+        synth = None
+        if options["no_audio"]:
             synth = EstimatedSynth(wpm=options["wpm"])
-        else:
+        elif not options["dry_run"]:
             synth = PollySynth(voice_id=options["voice"],
                                engine=options["engine"])
 
-        made = skipped = 0
+        made = moved = skipped = 0
         for section in sections:
-            slice_key = printing.slice_key_for(book, section)
-            if not slice_key:
-                self.stderr.write(f"skip {section.key}: no section pdf")
+            outcome = self._one(book, section, keys, synth, math, options)
+            if outcome == "made":
+                made += 1
+            elif outcome == "moved":
+                moved += 1
+            else:
                 skipped += 1
-                continue
 
-            exists = ReadAlongTrack.objects.filter(
-                book_slug=book.slug, edition_id=book.edition_id or "",
-                section_key=section.key, slice_key=slice_key,
-                voice_id=options["voice"]).exists()
-            if exists and not options["force"]:
-                self.stdout.write(f"have {section.key}")
-                skipped += 1
-                continue
+        self.stdout.write(f"{made} made, {moved} moved, {skipped} skipped")
 
-            html = keys.get(section.key) or key_mode_html(section)
-            if not html:
-                self.stderr.write(
-                    f"skip {section.key}: no key-mode html imported "
-                    "(build the artifact with --clozes key)")
-                skipped += 1
-                continue
+    def _one(self, book, section, keys, synth, math, options):
+        """Bring one section up to date. Returns made | moved | skipped."""
+        voice, engine = options["voice"], options["engine"]
 
-            pdf_path = printing.section_pdf_path(book, section)
-            if pdf_path is None or not pdf_path.exists():
-                self.stderr.write(f"skip {section.key}: section pdf missing")
-                skipped += 1
-                continue
+        slice_key = printing.slice_key_for(book, section)
+        if not slice_key:
+            self.stderr.write(f"skip {section.key}: no section pdf")
+            return "skipped"
 
-            track = build_track(html, pdf_path.read_bytes(), synth, math=math)
+        rows = ReadAlongTrack.objects.filter(
+            book_slug=book.slug, edition_id=book.edition_id or "",
+            section_key=section.key, voice_id=voice)
 
-            if options["dry_run"]:
+        # The cheap exit, and the common one: this exact pagination is already
+        # done and already carries a text key, so there is nothing to learn by
+        # parsing the section. A row with no text key predates the split and is
+        # worth preparing for, to stamp one on.
+        exact = rows.filter(slice_key=slice_key).first()
+        if exact is not None and exact.text_key and not options["force"]:
+            self.stdout.write(f"have {section.key}")
+            return "skipped"
+
+        html = keys.get(section.key) or key_mode_html(section)
+        if not html:
+            self.stderr.write(
+                f"skip {section.key}: no key-mode html imported "
+                "(build the artifact with --clozes key)")
+            return "skipped"
+
+        pdf_path = printing.section_pdf_path(book, section)
+        if pdf_path is None or not pdf_path.exists():
+            self.stderr.write(f"skip {section.key}: section pdf missing")
+            return "skipped"
+
+        prep = prepare(html, pdf_path.read_bytes(), math=math)
+        text_key = text_key_for(prep.text, voice, engine)
+
+        if exact is not None and not options["force"]:
+            # Nothing moved and nothing changed; the row simply never learned
+            # its own text key. Stamp it so the NEXT reflow can reuse it.
+            if not options["dry_run"]:
+                exact.text_key = text_key
+                exact.token_count = len(prep.tokens)
+                exact.save(update_fields=["text_key", "token_count"])
+            self.stdout.write(f"have {section.key} (text key recorded)")
+            return "skipped"
+
+        # A preview track (--no-audio) and a bought one are different products
+        # that hash alike: same words, same voice, same engine. Reusing one for
+        # the other would quietly hand a class estimated timings and no sound,
+        # or hand a preview run audio it did not ask for.
+        wants_audio = not options["no_audio"]
+        prior = (None if options["force"]
+                 else self._prior(rows, text_key, wants_audio, prep, section))
+
+        if options["dry_run"]:
+            if prior is not None:
                 self.stdout.write(
-                    f"would make {section.key}: {len(track['text'])} chars, "
-                    f"{len(track['clozes'])} blanks")
-                continue
+                    f"would move {section.key}: same words, re-align only")
+            else:
+                self.stdout.write(
+                    f"would make {section.key}: {len(prep.text)} chars, "
+                    f"{cloze_count(prep)} blanks")
+            return "skipped"
 
+        track = reuse(prep, prior.words) if prior is not None else None
+        if track is None:
+            if prior is not None:
+                # Belt and braces behind the token-count guard: a stored token
+                # that does not index this script would silently box words in
+                # the wrong place, which is worse than paying for the audio.
+                self.stderr.write(
+                    f"{section.key}: stored timings do not fit this script; "
+                    "synthesising")
+                prior = None
+            track = synthesise(prep, synth)
+
+        if prior is not None:
+            # The audio is byte-identical to what it was, so it keeps its file.
+            audio_name, duration = prior.audio_name, prior.duration_ms
+        else:
             # No audio means no file: the endpoint 404s and the client falls
             # back to its clock, which is exactly what a preview should do.
-            name = ""
+            #
+            # Named from the TEXT key, not the slice key: the file is the same
+            # recording whatever page it now sits on, and two paginations of
+            # one section share it rather than storing it twice.
+            audio_name, duration = "", track["duration_ms"]
             if track["audio_bytes"]:
-                name = f"{slice_key}-{options['voice']}.mp3"
-                write_audio(name, track["audio_bytes"])
-            ReadAlongTrack.objects.update_or_create(
-                book_slug=book.slug, edition_id=book.edition_id or "",
-                section_key=section.key, slice_key=slice_key,
-                voice_id=options["voice"],
-                defaults={"engine": options["engine"], "audio_name": name,
-                          "duration_ms": track["duration_ms"],
-                          "words": track["words"], "clozes": track["clozes"],
-                          "pages": track["pages"],
-                          "regions": track["regions"]})
-            made += 1
+                audio_name = f"{text_key}-{voice}.mp3"
+                write_audio(audio_name, track["audio_bytes"])
+
+        ReadAlongTrack.objects.update_or_create(
+            book_slug=book.slug, edition_id=book.edition_id or "",
+            section_key=section.key, slice_key=slice_key, voice_id=voice,
+            defaults={"engine": engine, "audio_name": audio_name,
+                      "text_key": text_key,
+                      "token_count": track["token_count"],
+                      "duration_ms": duration,
+                      "words": track["words"], "clozes": track["clozes"],
+                      "pages": track["pages"],
+                      "regions": track["regions"]})
+
+        if prior is not None:
             self.stdout.write(
-                f"made {section.key}: {len(track['words'])} words, "
-                f"{len(track['clozes'])} blanks")
+                f"moved {section.key}: {len(track['words'])} words re-boxed, "
+                "audio reused")
+            return "moved"
+        self.stdout.write(
+            f"made {section.key}: {len(track['words'])} words, "
+            f"{len(track['clozes'])} blanks")
+        return "made"
 
-        self.stdout.write(f"{made} made, {skipped} skipped")
+    def _prior(self, rows, text_key, wants_audio, prep, section):
+        """A previous track of these exact words, if one survives a check.
 
-
-def _counting_synth():
-    """A stand-in that produces no audio and no marks, for --dry-run."""
-    def synth(text):
-        return b"", []
-    return synth
+        The words were spoken in the order the script fixes and every stored
+        word carries the token that said it, so timings and geometry separate
+        cleanly. What that rests on is a stable parse: same text in, same token
+        indices out. `text_key` IS the hash of that text, so it holds by
+        construction — but a figure cloze is never spoken, so a token stream
+        CAN move underneath identical spoken text. Check rather than trust.
+        """
+        for row in rows.filter(text_key=text_key):
+            if not row.words or bool(row.audio_name) != wants_audio:
+                continue
+            if row.token_count == len(prep.tokens):
+                return row
+            self.stderr.write(
+                f"{section.key}: a track with the same words parsed to "
+                f"{row.token_count} tokens, not {len(prep.tokens)}; "
+                "synthesising rather than reusing its timings")
+        return None

@@ -6,9 +6,19 @@ mint new audio, and the only way cost starts tracking requests instead of
 content.
 
 `synth` is injected so the whole pipeline is testable without AWS.
+
+A track has TWO identities, and confusing them is what makes editing a book
+expensive. Its geometry — the boxes, the page sizes — is true of one
+pagination, and `printing.slice_key_for` is right to invalidate on any reflow.
+Its audio and timings are true only of the spoken text, the voice and the
+engine, which `text_key_for` hashes and pagination does not enter. `prepare`
+does everything the first identity needs, for free; `synthesise` and `reuse`
+are the two ways to arrive at the second, one of which costs money.
 """
 
+import hashlib
 import json
+from dataclasses import dataclass
 
 from .align import align
 from .geometry import extract_blanks, extract_words, page_sizes
@@ -70,38 +80,144 @@ def chunk_text(text: str, limit: int = CHUNK_LIMIT) -> list:
     return chunks
 
 
-def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
-    tokens = parse_script(html)
-    svg_by_index = _render_cloze_maths(tokens, math)
-    placed = align(tokens, extract_words(pdf_bytes), extract_blanks(pdf_bytes))
-    text, owners = build_speech(tokens, math=math)
+@dataclass
+class Prepared:
+    """Everything a track needs that costs nothing: script, geometry, text.
 
-    audio_bytes, marks = synth(text)
+    Separated out because the two halves have different lifetimes. Repaginate
+    the book and the geometry here is stale while `text` is not, which is the
+    whole basis on which audio survives a reflow.
+    """
+
+    tokens: list
+    placed: list
+    pages: list
+    svgs: dict
+    text: str
+    owners: list
+
+
+def text_key_for(text: str, voice_id: str, engine: str) -> str:
+    """Identity of the AUDIO: what is said, by whom, on which engine.
+
+    Pagination is deliberately absent, and that absence is the point. Moving a
+    section to a different page changes every box on it and not one syllable,
+    so this key holds while `printing.slice_key_for` moves — and the mp3, which
+    is the only part anyone pays for, is reused.
+
+    Voice and engine are in the key because they change the recording without
+    changing a word of the text, so a track made with one must never be handed
+    to a run asking for the other.
+    """
+    digest = hashlib.sha256()
+    digest.update(f"{voice_id}\x00{engine}\x00".encode("utf-8"))
+    digest.update(text.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def prepare(html: str, pdf_bytes: bytes, math=None) -> Prepared:
+    """Parse the script, align it to the page, and work out what to say.
+
+    Costs a maths-engine subprocess and a PDF parse — about a second, and no
+    API call. Everything after this either spends money or reuses what a
+    previous run already spent.
+    """
+    tokens = parse_script(html)
+    text, owners = build_speech(tokens, math=math)
+    return Prepared(
+        tokens=tokens,
+        placed=align(tokens, extract_words(pdf_bytes),
+                     extract_blanks(pdf_bytes)),
+        # [[widthPt, heightPt], ...]. The client divides the rendered page
+        # width by this to recover the zoom scale, which is how it converts a
+        # PDF box to CSS pixels without holding the annotator's viewport.
+        pages=[list(size) for size in page_sizes(pdf_bytes)],
+        svgs=_render_cloze_maths(tokens, math),
+        text=text,
+        owners=owners,
+    )
+
+
+def cloze_count(prep: Prepared) -> int:
+    """How many blanks this section would store — known before synthesis."""
+    return sum(1 for spot in prep.placed
+               if spot.token.kind in ("cloze", "figure_cloze") and spot.box)
+
+
+def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
+    """Prepare and synthesise in one call. The path that costs money."""
+    return synthesise(prepare(html, pdf_bytes, math=math), synth)
+
+
+def synthesise(prep: Prepared, synth) -> dict:
+    """Buy the audio, and derive every timing from the marks it comes with."""
+    audio_bytes, marks = synth(prep.text)
 
     # Polly's marks are character offsets into exactly the text we sent, so the
     # offset of each space-joined word maps straight onto `owners`.
     offsets, cursor = {}, 0
-    for position, word in enumerate(text.split()):
+    for position, word in enumerate(prep.text.split()):
         offsets[cursor] = position
         cursor += len(word) + 1
 
     words = []
     for mark in marks:
         position = offsets.get(mark.get("start"))
-        if position is None or position >= len(owners):
+        if position is None or position >= len(prep.owners):
             continue                     # Polly split inside a word; skip it
-        spot = placed[owners[position]]
-        entry = {"word": mark.get("value", ""), "start_ms": mark.get("time", 0),
-                 "token": spot.index}
-        if spot.box:
-            entry.update(page=spot.page, x0=spot.box[0], y0=spot.box[1],
-                         x1=spot.box[2], y1=spot.box[3])
-        words.append(entry)
+        index = prep.owners[position]
+        words.append(_boxed({"word": mark.get("value", ""),
+                             "start_ms": mark.get("time", 0), "token": index},
+                            prep.placed[index]))
 
     for i, entry in enumerate(words):
         entry["end_ms"] = (words[i + 1]["start_ms"] if i + 1 < len(words)
                            else entry["start_ms"] + TAIL_MS)
 
+    return _assemble(prep, words, audio_bytes)
+
+
+def reuse(prep: Prepared, prior_words: list) -> "dict | None":
+    """Re-box a previous run's timings against this pagination. Free.
+
+    The words were spoken in an order the script fixes, and every stored word
+    carries the `token` that said it, so a word's timing and a word's box are
+    separable: keep the first, look the second up afresh. Nothing is asked of
+    the TTS engine and nothing is asked of AWS.
+
+    Returns None if the stored tokens do not index this script — the caller
+    must then synthesise rather than place words by an index that has moved.
+    """
+    words = []
+    for prior in prior_words:
+        index = prior.get("token")
+        if not isinstance(index, int) or not 0 <= index < len(prep.placed):
+            return None
+        words.append(_boxed({"word": prior.get("word", ""),
+                             "start_ms": prior.get("start_ms", 0),
+                             "end_ms": prior.get("end_ms", 0),
+                             "token": index},
+                            prep.placed[index]))
+    # None, not b"": there is no new audio, and the caller keeps the file the
+    # timings were made from rather than writing a second copy of it.
+    return _assemble(prep, words, None)
+
+
+def _boxed(entry: dict, spot) -> dict:
+    """Attach this pagination's box for the token, if it has one."""
+    if spot.box:
+        entry.update(page=spot.page, x0=spot.box[0], y0=spot.box[1],
+                     x1=spot.box[2], y1=spot.box[3])
+    return entry
+
+
+def _assemble(prep: Prepared, words: list, audio_bytes) -> dict:
+    """Everything downstream of "when was each word said, and where is it".
+
+    Shared by both routes on purpose: a reused track must be assembled by the
+    same code as a synthesised one, or the two would drift apart in exactly the
+    place nobody would look.
+    """
     # When each token stops being spoken — the moment a cloze becomes due.
     window = {}
     for entry in words:
@@ -111,7 +227,7 @@ def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
         span[1] = max(span[1], entry["end_ms"])
 
     clozes = []
-    for spot in placed:
+    for spot in prep.placed:
         if spot.token.kind not in ("cloze", "figure_cloze"):
             continue
         if not spot.box:
@@ -120,7 +236,7 @@ def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
         clozes.append({
             "token": spot.index, "kind": spot.token.kind,
             "answer": "" if spot.token.latex else spot.token.text,
-            "svg": svg_by_index.get(spot.index) or "",
+            "svg": prep.svgs.get(spot.index) or "",
             "src": spot.token.src,
             "page": spot.page, "x0": spot.box[0], "y0": spot.box[1],
             "x1": spot.box[2], "y1": spot.box[3],
@@ -130,14 +246,14 @@ def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
     # A figure cloze is never spoken, so it has no window of its own. Make it
     # due when the word before it finishes, or it would sit at 0 and fire at
     # the very start of the section.
-    _time_silent_clozes(placed, clozes, window)
+    _time_silent_clozes(prep.placed, clozes, window)
 
     # Timed maths regions, so a reader can skip the rest of a long expression.
     # SRE is verbose by necessity — a modest integral becomes a long sentence —
     # and a student who has understood it should not have to sit through it.
     # Clozes are deliberately excluded: their narration IS the answer.
     regions = []
-    for spot in placed:
+    for spot in prep.placed:
         if spot.token.kind != "math":
             continue
         span = window.get(spot.index)
@@ -149,11 +265,9 @@ def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
     duration = words[-1]["end_ms"] if words else 0
     return {"words": words, "clozes": clozes, "regions": regions,
             "audio_bytes": audio_bytes,
-            "duration_ms": duration, "text": text,
-            # [[widthPt, heightPt], ...]. The client divides the rendered page
-            # width by this to recover the zoom scale, which is how it converts
-            # a PDF box to CSS pixels without holding the annotator's viewport.
-            "pages": [list(size) for size in page_sizes(pdf_bytes)]}
+            "duration_ms": duration, "text": prep.text,
+            "token_count": len(prep.tokens),
+            "pages": prep.pages}
 
 
 def _render_cloze_maths(tokens, math):

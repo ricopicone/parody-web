@@ -476,9 +476,42 @@ python manage.py generate_readalong <book_slug> [--section KEY] [--voice Matthew
                                     [--force] [--dry-run]
 ```
 
-`--dry-run` reports the character count per section without calling Polly. Run
-it before committing to a voice: cost scales with characters × voices ×
-re-synthesis, and not at all with listeners.
+`--dry-run` reports, per section, whether it would be synthesised and at what
+character count or merely re-aligned, without calling Polly. Run it before
+committing to a voice: cost scales with characters × voices × re-synthesis, and
+not at all with listeners.
+
+### Re-running it after an edit
+
+Just run it again, over the whole book, with no flags. Three things can happen
+to a section and only the last costs anything:
+
+| Output  | Meaning                                                    | Cost |
+| ------- | ---------------------------------------------------------- | ---- |
+| `have`  | same pages, same words — nothing done                       | none |
+| `moved` | the section moved on the page; boxes re-derived, mp3 kept   | ~1 s |
+| `made`  | the words changed — synthesised                             | Polly |
+
+`moved` is why editing chapter 1 does not re-buy chapter 12. A track has two
+identities and they invalidate independently: `slice_key` is the identity of
+its **boxes**, and must move whenever the page does, because a reader's ink is
+pinned to the same geometry. `text_key` — sha256 of the spoken text, the voice
+and the engine — is the identity of its **audio and timings**, and pagination
+cannot enter it. Reflow cascades, so a one-word fix early in a book changes the
+slice key of nearly every section after it; the text key of none of them.
+
+Reused timings assume a stable parse: same text in, same token indices out.
+That holds by construction, since the text key *is* the hash of that text, but
+it is checked anyway against the stored token count — a figure cloze is never
+spoken, so a token stream can shift underneath identical narration. A
+disagreement synthesises rather than places words by an index that has moved.
+
+**`--force` is not the tool for a content edit.** It re-buys every section,
+including the ones whose text is untouched, and exists for when the *generator*
+changed. To redo one section, name it: `--section <key>`.
+
+Audio files are named from the text key, so two paginations of one section
+share one recording rather than storing it twice.
 
 `--no-audio` estimates word timings at reading pace and stores no file, so the
 pacing and the reveals can be judged before a voice is chosen or paid for; the

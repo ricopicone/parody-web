@@ -2,7 +2,9 @@
 import fitz
 from django.test import SimpleTestCase
 
-from parody_web_readaloud.generate import build_track, chunk_text
+from parody_web_readaloud.generate import (build_track, chunk_text,
+                                          prepare, reuse, synthesise,
+                                          text_key_for)
 from parody_web_readaloud.speech import SkipMath
 
 
@@ -17,13 +19,19 @@ def fake_synth(text):
     return b"ID3-fake-audio", marks
 
 
-def _page_pdf():
-    """A page reading `at a fixed ______, which sets` with a real rule."""
+def _page_pdf(drop=0):
+    """A page reading `at a fixed ______, which sets` with a real rule.
+
+    `drop` shifts everything down the page, standing in for a repagination:
+    the same words, typeset somewhere else. Every box moves; not a syllable of
+    the narration does.
+    """
     doc = fitz.open()
     page = doc.new_page(width=300, height=100)
-    page.insert_text((10, 20), "at a fixed", fontsize=10)
-    page.insert_text((95, 20), ", which sets", fontsize=10)
-    page.draw_line(fitz.Point(58, 22), fitz.Point(92, 22), width=0.6)
+    page.insert_text((10, 20 + drop), "at a fixed", fontsize=10)
+    page.insert_text((95, 20 + drop), ", which sets", fontsize=10)
+    page.draw_line(fitz.Point(58, 22 + drop), fitz.Point(92, 22 + drop),
+                   width=0.6)
     out = doc.tobytes()
     doc.close()
     return out
@@ -77,6 +85,92 @@ class BuildTrackTests(SimpleTestCase):
                             math=SkipMath())
         self.assertEqual(track["clozes"], [])
         self.assertTrue(track["words"])
+
+
+class TextKeyTests(SimpleTestCase):
+    """The key that pagination is not allowed to touch."""
+
+    def test_the_same_words_in_the_same_voice_key_the_same(self):
+        self.assertEqual(text_key_for("hello there", "Matthew", "neural"),
+                         text_key_for("hello there", "Matthew", "neural"))
+
+    def test_repagination_cannot_reach_it(self):
+        """The whole point: a text key is computed from text, so there is
+        nowhere for a page number to enter it."""
+        moved = prepare(HTML, _page_pdf(drop=40), math=SkipMath())
+        still = prepare(HTML, _page_pdf(), math=SkipMath())
+        self.assertNotEqual([s.box for s in moved.placed],
+                            [s.box for s in still.placed])
+        self.assertEqual(text_key_for(moved.text, "Matthew", "neural"),
+                         text_key_for(still.text, "Matthew", "neural"))
+
+    def test_a_different_voice_is_a_different_recording(self):
+        self.assertNotEqual(text_key_for("hello", "Matthew", "neural"),
+                            text_key_for("hello", "Joanna", "neural"))
+
+    def test_a_different_engine_is_a_different_recording(self):
+        self.assertNotEqual(text_key_for("hello", "Matthew", "neural"),
+                            text_key_for("hello", "Matthew", "standard"))
+
+    def test_changing_a_word_changes_the_key(self):
+        self.assertNotEqual(text_key_for("hello there", "Matthew", "neural"),
+                            text_key_for("hello here", "Matthew", "neural"))
+
+
+class ReuseTests(SimpleTestCase):
+    """Repaginating must move the boxes and leave the timings alone.
+
+    This is the whole cost argument: reflow cascades through a book, so editing
+    chapter 1 changes the slice key of nearly every section after it. If the
+    audio were keyed on that, a typo would re-buy the book.
+    """
+
+    def setUp(self):
+        self.original = build_track(HTML, _page_pdf(), fake_synth,
+                                    math=SkipMath())
+        self.moved = prepare(HTML, _page_pdf(drop=40), math=SkipMath())
+        self.track = reuse(self.moved, self.original["words"])
+
+    def test_every_timing_survives_untouched(self):
+        before = [(w["word"], w["start_ms"], w["end_ms"], w["token"])
+                  for w in self.original["words"]]
+        after = [(w["word"], w["start_ms"], w["end_ms"], w["token"])
+                 for w in self.track["words"]]
+        self.assertEqual(before, after)
+
+    def test_the_boxes_are_taken_from_the_new_pagination(self):
+        was = [w["y0"] for w in self.original["words"] if "y0" in w]
+        now = [w["y0"] for w in self.track["words"] if "y0" in w]
+        self.assertTrue(was and now)
+        self.assertNotEqual(was, now)
+        self.assertEqual(len(was), len(now))
+
+    def test_the_cloze_moves_with_its_rule_and_keeps_its_window(self):
+        was, now = self.original["clozes"][0], self.track["clozes"][0]
+        self.assertEqual(was["answer"], now["answer"])
+        self.assertEqual((was["start_ms"], was["end_ms"]),
+                         (now["start_ms"], now["end_ms"]))
+        self.assertGreater(now["y0"], was["y0"])
+
+    def test_no_audio_comes_back_because_none_was_bought(self):
+        """None, not b"" — the caller must keep the file it already has
+        rather than write a second copy of the same recording."""
+        self.assertIsNone(self.track["audio_bytes"])
+        self.assertEqual(self.track["duration_ms"],
+                         self.original["duration_ms"])
+
+    def test_a_token_index_off_the_end_refuses_rather_than_guessing(self):
+        """Boxing a word by an index that has moved would put the karaoke mark
+        somewhere arbitrary. Paying for the audio again is the lesser harm."""
+        stale = [dict(self.original["words"][0], token=9999)]
+        self.assertIsNone(reuse(self.moved, stale))
+
+    def test_it_agrees_with_synthesising_the_same_page_afresh(self):
+        """Both routes assemble through the same code, so a reused track and a
+        freshly bought one of the same words on the same page must match."""
+        fresh = synthesise(self.moved, fake_synth)
+        for field in ("words", "clozes", "regions", "pages"):
+            self.assertEqual(fresh[field], self.track[field])
 
 
 class ChunkTextTests(SimpleTestCase):

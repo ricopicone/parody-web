@@ -18,13 +18,34 @@ class ReadAlongTrack(models.Model):
     edition_id = models.CharField(max_length=50, blank=True, default="")
     section_key = models.CharField(max_length=200)
 
-    # Which version of the section's PDF these boxes are true of. The same key
-    # InkLayer uses, so a reader's notes and their audio go stale together
-    # rather than drifting into disagreement.
+    # Which version of the section's PDF these BOXES are true of. The same key
+    # InkLayer uses, so a reader's notes and the geometry of their audio go
+    # stale together rather than drifting into disagreement. It says nothing
+    # about the audio itself — see `text_key`.
     slice_key = models.CharField(max_length=64)
 
     voice_id = models.CharField(max_length=50)
     engine = models.CharField(max_length=20, default="neural")
+
+    # What was SAID, and by whom: sha256 of the spoken text, the voice and the
+    # engine. The audio and every timing below depend on this and on nothing
+    # else — pagination is not in it, because moving a section to another page
+    # changes no syllable of it.
+    #
+    # So the two keys invalidate independently, which is the point. Reflow the
+    # book and `slice_key` moves while this holds: the boxes are re-derived
+    # from the new PDF in about a second, and the mp3 — the only part anyone
+    # pays for — is reused untouched.
+    #
+    # Blank on rows written before the split; such a row is simply never reused
+    # as a source, and the next run over it stamps one on.
+    text_key = models.CharField(max_length=64, blank=True, default="")
+
+    # How many script tokens that text parsed into, and the guard on reuse.
+    # Timings are indexed BY token, and a figure cloze is never spoken at all,
+    # so a token stream CAN shift underneath identical spoken text. When these
+    # disagree the timings are re-synthesised rather than trusted.
+    token_count = models.PositiveIntegerField(default=0)
 
     # Filename within PARODY_WEB_READALOUD_CACHE, not a path: the cache root is
     # a setting and may move between deploys.
@@ -51,6 +72,7 @@ class ReadAlongTrack(models.Model):
         indexes = [
             models.Index(fields=["book_slug", "section_key"]),
             models.Index(fields=["slice_key"]),
+            models.Index(fields=["text_key"]),
         ]
         ordering = ["-updated_at"]
 
