@@ -52,6 +52,12 @@ window.MathJax = {
     mat: ['{\\boldsymbol{#1}}', 1],
     vec: ['{\\boldsymbol{#1}}', 1],
     bnot: ['{\\overline{#1}}', 1],
+    /* Paired delimiters. An undefined macro is NOT a red error in this
+       configuration — MathJax typesets the macro NAME into the sentence, so
+       System Dynamics read "the magnitude \abs H(j\omega)" on the live site
+       and nothing anywhere said so. The math notes use \norm the same way. */
+    abs: ['{\\left\\lvert #1 \\right\\rvert}', 1],
+    norm: ['{\\left\\lVert #1 \\right\\rVert}', 1],
     bigcdot: '{\\cdot}',
     band: ['{#1\\cdot #2}', 2],
     bor: ['{#1+#2}', 2],

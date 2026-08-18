@@ -2211,6 +2211,15 @@ class ClozeAssetsTests(TestCase):
         packages = base.split("packages:")[1].split("}")[0]
         self.assertIn("'html'", packages)
 
+    def test_paired_delimiter_macros_are_declared(self):
+        # \abs and \norm are the book vocabulary this config has always been
+        # the home for (\bm, \diff, \sgn and friends are already here). They
+        # are pinned because their failure is silent: MathJax renders an
+        # unknown macro as its own name, mid-sentence, with no error anywhere.
+        base = self.BASE.read_text(encoding="utf-8")
+        for name in ("abs", "norm"):
+            self.assertIn(f"{name}: [", base, f"\\{name} is not declared")
+
     def test_cloze_classes_are_styled(self):
         css = (self.STATIC / "content.css").read_text(encoding="utf-8")
         for cls in (".cloze-blank", ".cloze-key", ".cloze-key-block",
