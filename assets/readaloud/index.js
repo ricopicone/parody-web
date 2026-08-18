@@ -37,6 +37,34 @@ async function boot() {
     : new Clock(track.duration_ms);
   if (track.audio_url) audio.preload = 'auto';
 
+  /**
+   * Seek, even if the audio has not loaded yet.
+   *
+   * Setting `currentTime` before the element has metadata is SILENTLY
+   * DISCARDED and playback then starts at zero. These files are megabytes, so
+   * every seek a reader makes in the first seconds — tapping "read from here",
+   * or the position restored at boot — was being thrown away, which is exactly
+   * what "no matter where you click it starts at the beginning" was.
+   */
+  let pendingSeek = null;
+
+  function seekTo(seconds, thenPlay) {
+    const at = Math.max(0, seconds || 0);
+    const apply = () => {
+      audio.currentTime = at;
+      pendingSeek = null;
+      if (thenPlay) play();
+    };
+    if (audio.readyState >= 1) {          // HAVE_METADATA or better
+      apply();
+      return;
+    }
+    pendingSeek = at;
+    audio.addEventListener('loadedmetadata', () => {
+      if (pendingSeek === at) apply();    // unless something seeked since
+    }, { once: true });
+  }
+
   const scroller = root.querySelector('[data-ink-pages]');
   const reveal = new Reveal();
   const layers = new Map();             // page index -> Highlight
@@ -159,11 +187,10 @@ async function boot() {
     }
     if (best < 0) return false;
     const at = track.words[best].start_ms;
-    audio.currentTime = at / 1000;
     announced = clozeAt(clozes, at);
     shown = -1;
     reveal.fade();
-    play();
+    seekTo(at / 1000, true);
     return true;
   }
 
@@ -181,6 +208,7 @@ async function boot() {
    * arrive within a few milliseconds and must seek once.
    */
   let handled = 0;
+  let lastTap = null;                   // what the last tap resolved to
 
   function takeTap(event) {
     if (!arming) return;
@@ -196,10 +224,16 @@ async function boot() {
     const index = Number(pageEl.dataset.page) - 1;
     const page = pageAt(root, index, track.pages);
     let ok = false;
+    lastTap = { type: event.type, page: index, hadPage: !!page };
     if (page) {
       const box = pageEl.getBoundingClientRect();
-      ok = readFrom(index, (event.clientX - box.left) / page.scale,
-                    (event.clientY - box.top) / page.scale);
+      const xPt = (event.clientX - box.left) / page.scale;
+      const yPt = (event.clientY - box.top) / page.scale;
+      Object.assign(lastTap, { xPt: Math.round(xPt), yPt: Math.round(yPt),
+                               scale: page.scale });
+      ok = readFrom(index, xPt, yPt);
+      lastTap.ok = ok;
+      lastTap.seekedTo = pendingSeek === null ? audio.currentTime : pendingSeek;
     }
     // Say what happened, either way. A silent miss is what made this look
     // like it "always starts at the beginning": the tap did nothing, and
@@ -227,6 +261,9 @@ async function boot() {
     pageSizes: track.pages,
     wordsWithBoxes: track.words.filter((w) => Number.isFinite(w.x0)).length,
     currentTime: audio.currentTime,
+    readyState: audio.readyState,
+    pendingSeek,
+    lastTap,
   });
 
   /**
@@ -260,7 +297,9 @@ async function boot() {
 
   const resumeAt = savedPosition();
   if (resumeAt) {
-    audio.currentTime = resumeAt;
+    // Deferred: at boot the audio has no metadata yet, so this seek would be
+    // discarded and "Resume at 2:31" would quietly start from the top.
+    seekTo(resumeAt);
     announced = clozeAt(clozes, resumeAt * 1000);
     root.dataset.readalongResume = '1';
   }
@@ -448,11 +487,10 @@ async function boot() {
   function restart() {
     delete root.dataset.readalongResume;
     try { localStorage.removeItem(RESUME_KEY); } catch (err) { /* ignore */ }
-    audio.currentTime = 0;
     announced = -1;
     shown = -1;
     reveal.fade();
-    play();
+    seekTo(0, true);
   }
 
   /**

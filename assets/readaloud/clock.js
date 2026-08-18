@@ -19,6 +19,11 @@ export class Clock {
     return this._startedAt === null;
   }
 
+  /** Always ready: there is no media to load, so a seek never needs deferring. */
+  get readyState() {
+    return 4;
+  }
+
   get currentTime() {
     const running = this._startedAt === null
       ? 0

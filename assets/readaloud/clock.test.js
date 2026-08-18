@@ -33,3 +33,9 @@ test('ended listeners fire when dispatched', () => {
   c.dispatch('ended');
   assert.equal(fired, 1);
 });
+
+test('a clock is always ready to seek', () => {
+  // The audio element defers seeks until metadata arrives; the stand-in has no
+  // media, so it must not pretend to be unready or every seek would hang.
+  assert.ok(new Clock(1000).readyState >= 1);
+});
