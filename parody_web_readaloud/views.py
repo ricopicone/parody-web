@@ -9,7 +9,10 @@ anonymous visitor to a public book could mint new audio, and the only way cost
 starts tracking requests instead of content.
 """
 
-from django.http import FileResponse, Http404, JsonResponse
+import re
+
+from django.http import (FileResponse, Http404, HttpResponse, JsonResponse,
+                         HttpResponseNotModified)
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
@@ -67,7 +70,71 @@ def track(request, chapter_slug, section_slug):
     })
 
 
-@require_http_methods(["GET"])
+_RANGE = re.compile(r"bytes=(\d*)-(\d*)$")
+
+
+def _ranged(request, path):
+    """Serve `path` honouring HTTP Range.
+
+    Without this the browser CANNOT SEEK. It has to fetch the file linearly
+    from the start, so jumping to 4 minutes into a 4 MB track silently snaps
+    back to the beginning — which is what made "read from here", resume and
+    skip-ahead all appear to "start at the beginning" no matter what.
+
+    Django's FileResponse does not do this for us here: a Range request came
+    back 200 with the whole file, no Content-Range and no Accept-Ranges.
+    """
+    size = path.stat().st_size
+    header = request.headers.get("Range", "")
+    match = _RANGE.match(header.strip()) if header else None
+
+    if not match:
+        response = FileResponse(path.open("rb"), content_type="audio/mpeg")
+        response["Accept-Ranges"] = "bytes"
+        response["Content-Length"] = str(size)
+        return response
+
+    start_raw, end_raw = match.groups()
+    if start_raw:
+        start = int(start_raw)
+        end = int(end_raw) if end_raw else size - 1
+    else:
+        # `bytes=-N` — the LAST n bytes, which is how some players probe a file.
+        if not end_raw:
+            return HttpResponse(status=416)
+        start = max(0, size - int(end_raw))
+        end = size - 1
+
+    end = min(end, size - 1)
+    if start > end or start >= size:
+        response = HttpResponse(status=416)
+        response["Content-Range"] = f"bytes */{size}"
+        return response
+
+    handle = path.open("rb")
+    handle.seek(start)
+    length = end - start + 1
+    response = FileResponse(handle, content_type="audio/mpeg", status=206)
+    response["Content-Range"] = f"bytes {start}-{end}/{size}"
+    response["Content-Length"] = str(length)
+    response["Accept-Ranges"] = "bytes"
+    # FileResponse would otherwise stream to EOF, past the requested range.
+    response.streaming_content = _chunks(handle, length)
+    return response
+
+
+def _chunks(handle, length, size=64 * 1024):
+    remaining = length
+    while remaining > 0:
+        data = handle.read(min(size, remaining))
+        if not data:
+            break
+        remaining -= len(data)
+        yield data
+    handle.close()
+
+
+@require_http_methods(["GET", "HEAD"])
 def audio(request, chapter_slug, section_slug):
     _, _, row = _track_or_404(request, chapter_slug, section_slug)
     try:
@@ -78,4 +145,4 @@ def audio(request, chapter_slug, section_slug):
         raise Http404("read-along audio is not configured")
     if not path.exists():
         raise Http404("read-along audio has not been generated")
-    return FileResponse(path.open("rb"), content_type="audio/mpeg")
+    return _ranged(request, path)

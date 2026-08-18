@@ -99,3 +99,57 @@ class ReadAlongEndpointTests(TestCase):
         with self._settings():
             response = self.client.post(self.url)
         self.assertEqual(response.status_code, 405)
+
+
+class AudioRangeTests(ReadAlongEndpointTests):
+    """The browser cannot seek without byte ranges.
+
+    Served as one 200, a jump to four minutes into a 4 MB track snaps back to
+    the start — which is what made "read from here", resume and skip-ahead all
+    appear to begin at the beginning, whatever was clicked.
+    """
+
+    def _serve(self, **headers):
+        self._make_track()
+        Path(self.cache.name, "track.mp3").write_bytes(bytes(range(256)) * 40)
+        with self._settings():
+            return self.client.get(self.audio_url, **headers)
+
+    def test_a_plain_request_advertises_range_support(self):
+        response = self._serve()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Accept-Ranges"], "bytes")
+        self.assertEqual(int(response["Content-Length"]), 10240)
+
+    def test_a_range_request_returns_exactly_that_range(self):
+        response = self._serve(HTTP_RANGE="bytes=100-199")
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response["Content-Range"], "bytes 100-199/10240")
+        self.assertEqual(int(response["Content-Length"]), 100)
+        self.assertEqual(len(b"".join(response.streaming_content)), 100)
+
+    def test_an_open_ended_range_runs_to_the_end(self):
+        response = self._serve(HTTP_RANGE="bytes=10140-")
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response["Content-Range"], "bytes 10140-10239/10240")
+        self.assertEqual(len(b"".join(response.streaming_content)), 100)
+
+    def test_a_suffix_range_returns_the_last_bytes(self):
+        """`bytes=-N` is how some players probe the tail of a file."""
+        response = self._serve(HTTP_RANGE="bytes=-50")
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response["Content-Range"], "bytes 10190-10239/10240")
+
+    def test_a_range_past_the_end_is_refused_properly(self):
+        response = self._serve(HTTP_RANGE="bytes=99999-")
+        self.assertEqual(response.status_code, 416)
+        self.assertEqual(response["Content-Range"], "bytes */10240")
+
+    def test_head_is_allowed(self):
+        """Players HEAD a media URL before fetching it; 405 looks like a dead
+        endpoint."""
+        self._make_track()
+        Path(self.cache.name, "track.mp3").write_bytes(b"x" * 10)
+        with self._settings():
+            response = self.client.head(self.audio_url)
+        self.assertEqual(response.status_code, 200)
