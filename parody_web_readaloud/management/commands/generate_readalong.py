@@ -8,7 +8,9 @@ mode is the one that carries the answers, marks them, and stages the complete
 figure artwork; blank mode strips all three on purpose.
 """
 
+import copy
 import json
+import sys
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -29,18 +31,37 @@ def key_html_index(path):
     here, at generation time, on the machine doing the generating. Nothing
     about it is ever served.
 
-    NOT numbered. A raw artifact carries cross-references unresolved —
-    `<span class="hashref">eq:v_plus_minus</span>` — because numbering happens
-    at import, so read-along reads the LABEL aloud instead of "equation 4.1".
+**Numbered first**, on a COPY. A raw artifact carries cross-references
+    unresolved — `<span class="hashref">eq:v_plus_minus</span>` — because
+    numbering runs at import, not at build, so read-along would otherwise read
+    the LABEL aloud instead of "equation (4.1)". Measured on the primer's opamp
+    section: raw speaks "[@ eq:v_plus_minus]", numbered speaks "equation
+    (4.1)", and the numbered text is slightly LONGER (1670 words vs 1638), so
+    nothing is lost by doing it.
 
-    Running `number_artifact` here to fix that was tried and REVERTED: it is
-    the whole import pass, and it injects index anchors and a references list
-    while restructuring the html enough that the parser lost content — the
-    opamp section went from 1171 spoken words to 541, ending in fragments.
-    Resolving cross-references ALONE, without the rest of that pass, is the
-    fix; reading the label is the lesser bug.
+    The copy is the point. `number_artifact` mutates in place, so an exception
+    part-way through leaves the artifact half-rewritten — and a first attempt
+    that swallowed the error shipped exactly that to production, cutting the
+    opamp section to 541 spoken words. Numbering a copy means a failure costs
+    the cross-references and nothing else, and it says so rather than being
+    silent about it.
     """
+    from parody_web.numbering import number_artifact
+
     data = json.loads(path.read_text())
+    try:
+        numbered = copy.deepcopy(data)
+        number_artifact(numbered)
+        return _index_sections(numbered)
+    except Exception as err:                       # noqa: BLE001 - see above
+        sys.stderr.write(
+            f"warning: could not number {path.name} ({err}); cross-references "
+            "will be read aloud as their labels\n")
+    return _index_sections(data)
+
+
+def _index_sections(data):
+    """section key -> html, for whichever artifact we ended up with."""
     index = {}
 
     def walk(node, chapter=None):

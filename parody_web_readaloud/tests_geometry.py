@@ -68,24 +68,38 @@ class PageSizesTests(SimpleTestCase):
 class BlankGroupingTests(SimpleTestCase):
     """A cloze block is blanked to its own height: one blank, several rules."""
 
-    def _blanks(self, lines, width=180.0):
+    def _blanks(self, lines, width=180.0, gap=18):
         doc = fitz.open()
-        page = doc.new_page(width=220, height=300)
+        page = doc.new_page(width=220, height=600)
         # Text defines the measure a full-width rule is judged against.
         page.insert_text((20, 30), "a b c d e f g h i j k l m n o p q r s t",
                          fontsize=9)
         for n in range(lines):
-            y = 60 + n * 18
+            y = 60 + n * gap
             page.draw_line(fitz.Point(20, y), fitz.Point(20 + width, y),
                            width=0.4)
         data = doc.tobytes()
         doc.close()
         return extract_blanks(data)
 
-    def test_stacked_full_measure_rules_are_one_blank(self):
-        blanks = self._blanks(3)
+    def test_a_pair_of_full_measure_rules_is_one_blank(self):
+        """A framed blank reaches us as its top and bottom rule."""
+        blanks = self._blanks(2)
         self.assertEqual(len(blanks), 1)
-        self.assertEqual(blanks[0]["lines"], 3)
+        self.assertEqual(blanks[0]["lines"], 2)
+
+    def test_two_adjacent_boxes_stay_two_blanks(self):
+        """Four rules are two boxes, not one. Grouping them by distance
+        swallowed both into a single blank and lost a cloze."""
+        blanks = self._blanks(4)
+        self.assertEqual(len(blanks), 2)
+        self.assertTrue(all(b["lines"] == 2 for b in blanks))
+
+    def test_a_tall_box_is_still_one_blank(self):
+        """The rules of one box can be far apart — it is as tall as the passage
+        it hides — so distance cannot be what groups them."""
+        blanks = self._blanks(2, gap=160)
+        self.assertEqual(len(blanks), 1)
 
     def test_one_rule_is_one_blank(self):
         self.assertEqual(len(self._blanks(1)), 1)

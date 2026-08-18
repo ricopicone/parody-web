@@ -28,11 +28,14 @@ import fitz
 # 0.905 of its page's text block — close enough to the threshold to be luck.
 MIN_RULE_WIDTH = 8.0
 MAX_RULE_HEIGHT = 2.5
-FULL_MEASURE_RATIO = 0.8
+FULL_MEASURE_RATIO = 0.65
 
-# The gap between a box's top and bottom rule. Generous enough for a tall
-# equation, tight enough that two separate blanks do not merge.
-MAX_LINE_GAP = 40.0
+# A box's top and bottom rule can be far apart — the box is as tall as the
+# passage it hides — so distance cannot decide what belongs together. Pairing
+# does: a blanked block is exactly TWO full-measure rules with the same
+# x-extent. Grouping by distance merged two adjacent boxes into one blank and
+# lost a cloze.
+MAX_BOX_HEIGHT = 400.0
 SAME_COLUMN_TOL = 3.0
 
 
@@ -96,25 +99,26 @@ def extract_rules(pdf_bytes: bytes) -> list:
 
 
 def group_rules(rules: list) -> list:
-    """Rules sharing a column and close together are ONE blank.
+    """PAIR the rules a framed blank is drawn from.
 
-    A blanked block is a framed box the height of the passage it hides, and TeX
-    emits that as a top and a bottom rule with the same x-extent. Ungrouped,
-    the bottom rule would be handed to the NEXT cloze and every blank after it
-    would land in the wrong place.
+    A blanked block is a box the height of the passage it hides, and TeX emits
+    it as a top and a bottom rule with the same x-extent. Unpaired, the bottom
+    rule would be handed to the NEXT cloze and every blank after it would land
+    in the wrong place.
 
-    (This also handled the earlier rendering, where a block was a stack of one
-    rule per line — same grouping, more rules.)
+    Strictly two, never three: two adjacent boxes are four rules, and grouping
+    them by distance swallowed both into one blank and lost a cloze.
     """
     groups = []
     for rule in rules:
         last = groups[-1] if groups else None
         if (last
+                and last["lines"] == 1              # pairs, never triples
                 and last.get("full") and rule.get("full")
                 and last["page"] == rule["page"]
                 and abs(last["x0"] - rule["x0"]) <= SAME_COLUMN_TOL
                 and abs(last["x1"] - rule["x1"]) <= SAME_COLUMN_TOL
-                and 0 <= rule["y0"] - last["y1"] <= MAX_LINE_GAP):
+                and 0 <= rule["y0"] - last["y1"] <= MAX_BOX_HEIGHT):
             last["y1"] = rule["y1"]
             last["lines"] += 1
         else:
