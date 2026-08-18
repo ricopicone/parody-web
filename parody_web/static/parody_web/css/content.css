@@ -273,10 +273,10 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
     border-left: 3px solid var(--accent-soft); padding-left: var(--s4);
     margin: var(--s4) 0; }
 
-/* Ruled writing space (::: {.blank lines=6}, or a hidden ::: {.cloze} block).
-   The rule count comes from --cloze-lines: CSS cannot read the data-lines
-   attribute into a length. Each band is one writing line with a rule at its
-   foot, so the block is exactly as tall as the space it offers. */
+/* Ruled writing space (::: {.blank lines=6}). The rule count comes from
+   --cloze-lines: CSS cannot read the data-lines attribute into a length. Each
+   band is one writing line with a rule at its foot, so the block is exactly as
+   tall as the space it offers. */
 .cloze-lines { --cloze-line-h: 2.1em;
     height: calc(var(--cloze-lines, 4) * var(--cloze-line-h));
     margin: var(--s5) 0;
@@ -284,6 +284,14 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
       transparent 0, transparent calc(var(--cloze-line-h) - 1px),
       var(--rule-mid) calc(var(--cloze-line-h) - 1px),
       var(--rule-mid) var(--cloze-line-h)); }
+
+/* A HIDDEN passage is one box, not a stack of rules — the same way print draws
+   it. Ruled lines read as several separate answers, and on a page already full
+   of rules they are hard to pick out at all. Only .cloze-box gets this;
+   ::: {.blank lines=6} above stays ruled, because there it is the writing
+   space itself rather than something withheld. */
+.cloze-box { background-image: none;
+    border: 1px solid var(--rule-mid); border-radius: 2px; }
 
 a.xref { text-decoration: none; color: var(--accent-ink); white-space: nowrap; }
 a.xref:hover { text-decoration: underline; }

@@ -134,6 +134,8 @@ async function boot() {
 
   function setArmed(on) {
     arming = on;
+    armBanner.textContent =
+      'Tap anywhere in the text to read from there \u2014 Esc to cancel';
     hereButton.textContent = on ? 'Tap a word\u2026' : 'Read from\u2026';
     armBanner.hidden = !on;
     if (on) root.dataset.readalongArming = '1';
@@ -165,21 +167,67 @@ async function boot() {
     return true;
   }
 
-  root.addEventListener('pointerdown', (event) => {
+  /**
+   * Take the tap, whatever kind of tap it is.
+   *
+   * THREE event types, all in the capture phase, because one is not enough:
+   * the ink layer owns the page with `touch-action: none` and pointer capture,
+   * a stylus and a mouse do not produce the same sequence, and some pointers
+   * never surface a `pointerdown` here at all — which is why listening only
+   * for that did nothing on a real click while working perfectly on a
+   * synthesised one.
+   *
+   * `handled` collapses the duplicates: down and click for the same gesture
+   * arrive within a few milliseconds and must seek once.
+   */
+  let handled = 0;
+
+  function takeTap(event) {
     if (!arming) return;
-    const pageEl = event.target.closest && event.target.closest('.ink-page');
+    const now = Date.now();
+    if (now - handled < 400) return;          // same gesture, second event
+    const pageEl = event.target && event.target.closest
+      && event.target.closest('.ink-page');
     if (!pageEl) return;
+    handled = now;
     event.preventDefault();
     event.stopPropagation();
+
     const index = Number(pageEl.dataset.page) - 1;
     const page = pageAt(root, index, track.pages);
+    let ok = false;
     if (page) {
       const box = pageEl.getBoundingClientRect();
-      readFrom(index, (event.clientX - box.left) / page.scale,
-               (event.clientY - box.top) / page.scale);
+      ok = readFrom(index, (event.clientX - box.left) / page.scale,
+                    (event.clientY - box.top) / page.scale);
     }
-    setArmed(false);
-  }, true);                               // capture: before the ink layer
+    // Say what happened, either way. A silent miss is what made this look
+    // like it "always starts at the beginning": the tap did nothing, and
+    // pressing play afterwards started from the top.
+    if (ok) {
+      armBanner.textContent = `Reading from ${clock(audio.currentTime)}`;
+      setTimeout(() => setArmed(false), 900);
+    } else {
+      armBanner.textContent = page
+        ? 'No words there \u2014 tap on some text'
+        : 'That page is not ready yet \u2014 scroll to it and try again';
+    }
+  }
+
+  for (const type of ['pointerdown', 'mousedown', 'click']) {
+    root.addEventListener(type, takeTap, true);   // capture: before the ink
+  }
+
+  // Leaves a trail when it goes wrong, so a report can say WHICH part missed
+  // rather than only "it starts at the beginning".
+  window.parodyReadAlongDebug = () => ({
+    armed: arming,
+    pagesInDom: [...root.querySelectorAll('.ink-page')].map(
+      (el) => el.dataset.page),
+    pageSizes: track.pages,
+    wordsWithBoxes: track.words.filter((w) => Number.isFinite(w.x0)).length,
+    currentTime: audio.currentTime,
+  });
 
   /**
    * Where the reader got to last time.

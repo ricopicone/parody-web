@@ -17,6 +17,7 @@ from django.core.management.base import BaseCommand, CommandError
 from parody_web import printing
 from parody_web.models import Book, Section
 
+from ... import refs
 from ...generate import EstimatedSynth, PollySynth, build_track
 from ...models import ReadAlongTrack
 from ...speech import SkipMath, SreMath, sre_available
@@ -31,24 +32,28 @@ def key_html_index(path):
     here, at generation time, on the machine doing the generating. Nothing
     about it is ever served.
 
-NOT numbered, deliberately — see below.
+Cross-references are resolved to the text a reader would SEE — "Equation
+    (4.1)", not "eq:v_plus_minus" — but ONLY the reference spans are rewritten.
 
-    A raw artifact carries cross-references unresolved
-    (`<span class="hashref">eq:v_plus_minus</span>`) because numbering runs at
-    import, so read-along reads the LABEL aloud instead of "equation (4.1)".
-
-    Running `parody_web.numbering.number_artifact` here fixes that ON A LOCAL
-    MACHINE — measured on the primer's opamp section, twice: 891 -> 902 parsed
-    words, 1638 -> 1670 spoken, clean text, correct references. It has now been
-    shipped TWICE and produced a corrupted section BOTH times: 541 spoken words
-    ending in "while opamp adapt opamp opamp still in detail". The same code,
-    the same parody-web version and a byte-identical artifact behave
-    differently on the deployment, and that difference is not yet understood.
-
-    Reading a bare label is the lesser bug, and it is not worth a third
-    regression. Reproduce the box's behaviour before turning this back on.
+    Running the whole numbering pass and reading its output was tried twice and
+    corrupted the section in production both times, on evidence that looked
+    clean locally (see the numbering note in project memory). So the pass is
+    still run, on a throwaway copy, purely to obtain its map of keys to printed
+    labels; the html actually read is the html that was built, with reference
+    spans swapped for their labels and nothing else touched.
     """
-    return _index_sections(json.loads(path.read_text()))
+    data = json.loads(path.read_text())
+    try:
+        labels = refs.label_map(data)
+    except Exception as err:                       # noqa: BLE001
+        sys.stderr.write(
+            f"warning: could not resolve references in {path.name} ({err}); "
+            "they will be read aloud as their keys\n")
+        labels = {}
+
+    index = _index_sections(data)
+    return {key: refs.resolve_refs(html, labels)
+            for key, html in index.items()}
 
 
 def _index_sections(data):
