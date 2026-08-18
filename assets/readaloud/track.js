@@ -68,18 +68,45 @@ export function regionAt(regions, ms) {
 }
 
 /**
- * Where skipping should land: the end of the maths being spoken now, or the
- * start of the next one if we are between them and it is close enough to be
- * what the reader meant. Null when there is nothing to skip.
+ * Where skipping should land, from `ms`.
+ *
+ * Inside a spoken equation, the end of it — SRE is verbose by necessity and a
+ * reader who has taken the point should not have to sit through the rest.
+ * Anywhere else, the start of the next sentence. Skip is offered ALWAYS, not
+ * only over maths: wanting to move on is not a thing that only happens during
+ * an equation.
  */
-export function skipTarget(regions, ms, reachMs = 1500) {
+export function skipTarget(regions, ms, words, reachMs = 1500) {
   const here = regionAt(regions, ms);
   if (here) return here.end_ms;
-  let best = null;
+
+  // A maths region about to start counts as "here" — pressing skip as the
+  // equation begins is the common case.
+  let soon = null;
   for (const region of regions || []) {
     if (region.start_ms >= ms && region.start_ms - ms <= reachMs) {
-      if (!best || region.start_ms < best.start_ms) best = region;
+      if (!soon || region.start_ms < soon.start_ms) soon = region;
     }
   }
-  return best ? best.end_ms : null;
+  if (soon) return soon.end_ms;
+
+  return nextSentence(words, ms);
+}
+
+/** The start of the next sentence after `ms`, or null at the last one. */
+export function nextSentence(words, ms) {
+  const list = words || [];
+  let seenCurrent = false;
+  for (let i = 0; i < list.length; i += 1) {
+    if (!seenCurrent) {
+      if (list[i].end_ms > ms) seenCurrent = true;
+      else continue;
+    }
+    // The word AFTER a sentence-ending one begins the next sentence.
+    if (i > 0 && /[.?!]["')\]]?$/.test(list[i - 1].word || '')
+        && list[i].start_ms > ms) {
+      return list[i].start_ms;
+    }
+  }
+  return null;
 }

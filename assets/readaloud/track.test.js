@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { clozeAt, regionAt, revealAt, showable, skipTarget, wordAt } from './track.js';
+import { clozeAt, nextSentence, regionAt, revealAt, showable, skipTarget, wordAt } from './track.js';
 
 const WORDS = [
   { start_ms: 0, end_ms: 100 },
@@ -101,4 +101,33 @@ test('the reveal follows the voice, not the pause', () => {
 test('nothing is revealed in open prose', () => {
   assert.equal(revealAt([{ start_ms: 0, end_ms: 10 }], 500), -1);
   assert.equal(revealAt([], 5), -1);
+});
+
+const SENT = [
+  { word: 'The',    start_ms: 0,    end_ms: 100 },
+  { word: 'first.', start_ms: 100,  end_ms: 200 },
+  { word: 'A',      start_ms: 200,  end_ms: 300 },
+  { word: 'second.',start_ms: 300,  end_ms: 400 },
+  { word: 'Third',  start_ms: 400,  end_ms: 500 },
+];
+
+test('skip lands on the start of the next sentence', () => {
+  assert.equal(nextSentence(SENT, 50), 200);
+  assert.equal(nextSentence(SENT, 250), 400);
+});
+
+test('there is nothing to skip to in the last sentence', () => {
+  assert.equal(nextSentence(SENT, 450), null);
+  assert.equal(nextSentence([], 0), null);
+});
+
+test('skip works in open prose, not only over maths', () => {
+  // The whole point of the change: wanting to move on is not something that
+  // only happens during an equation.
+  assert.equal(skipTarget([], 50, SENT), 200);
+});
+
+test('maths still wins when we are inside one', () => {
+  const regions = [{ start_ms: 40, end_ms: 90 }];
+  assert.equal(skipTarget(regions, 50, SENT), 90);
 });

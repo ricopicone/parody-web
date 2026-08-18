@@ -179,3 +179,22 @@
 
 [data-dark='1'] .readalong-bar button:hover { background: rgb(255 255 255 / 12%); }
 [data-dark='1'] .readalong-here { border-left-color: rgb(242 238 228 / 20%); }
+
+/* Armed for "read from here". The gesture is two-step on a page where a bare
+   tap draws, so the state says so rather than relying on a changed label. */
+.readalong-arm-banner {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 4.5rem;
+  z-index: 7;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  background: rgb(66 133 244 / 92%);
+  color: #fff;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 28%);
+  pointer-events: none;
+}
+
+.readalong-arm-banner[hidden] { display: none; }

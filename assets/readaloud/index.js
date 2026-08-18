@@ -55,7 +55,7 @@ async function boot() {
   const skipButton = document.createElement('button');
   skipButton.type = 'button';
   skipButton.className = 'readalong-skip';
-  skipButton.textContent = 'Skip the equation';
+  skipButton.textContent = 'Skip ahead';
   skipButton.hidden = true;
   root.appendChild(skipButton);
   skipButton.addEventListener('click', () => skip());
@@ -123,11 +123,21 @@ async function boot() {
   const hereButton = nav.querySelector('[data-here]');
   let arming = false;
 
+  // Armed state has to be unmistakable: it is a two-step gesture (press, then
+  // tap) on a page where a bare tap normally draws, and a reader who does not
+  // notice the first step just taps, draws a dot, and concludes it is broken.
+  const armBanner = document.createElement('div');
+  armBanner.className = 'readalong-arm-banner';
+  armBanner.textContent = 'Tap anywhere in the text to read from there — Esc to cancel';
+  armBanner.hidden = true;
+  root.appendChild(armBanner);
+
   function setArmed(on) {
     arming = on;
-    root.dataset.readalongArming = on ? '1' : '';
     hereButton.textContent = on ? 'Tap a word\u2026' : 'Read from\u2026';
-    if (!on) delete root.dataset.readalongArming;
+    armBanner.hidden = !on;
+    if (on) root.dataset.readalongArming = '1';
+    else delete root.dataset.readalongArming;
   }
   hereButton.addEventListener('click', () => setArmed(!arming));
 
@@ -328,7 +338,10 @@ async function boot() {
       audio.dispatch('ended');
     }
     paint(ms);
-    skipButton.hidden = skipTarget(regions, ms) === null || holding >= 0;
+    // Offered always, not only over maths: wanting to move on is not
+    // something that only happens during an equation.
+    skipButton.hidden = holding >= 0
+      || skipTarget(regions, ms, track.words) === null;
 
     // The answer appears WHILE it is read, not after. Hearing a term and only
     // then seeing it made the two feel unconnected.
@@ -402,7 +415,7 @@ async function boot() {
    * losing their place in the prose.
    */
   function skip() {
-    const target = skipTarget(regions, audio.currentTime * 1000);
+    const target = skipTarget(regions, audio.currentTime * 1000, track.words);
     if (target === null) return false;
     audio.currentTime = target / 1000;
     // Anything already passed must not fire on the way through.
@@ -412,6 +425,10 @@ async function boot() {
   }
 
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && arming) {
+      setArmed(false);
+      return;
+    }
     if (event.key === 'ArrowRight' && holding < 0) {
       if (skip()) event.preventDefault();
       return;

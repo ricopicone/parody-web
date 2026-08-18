@@ -28,8 +28,22 @@ def key_html_index(path):
     database at all: the file is built alongside the published one and read
     here, at generation time, on the machine doing the generating. Nothing
     about it is ever served.
+
+    **Numbered first.** A raw artifact carries cross-references unresolved —
+    `<span class="hashref">eq:v_plus_minus</span>` — because numbering happens
+    at import, not at build. Parsed as-is, read-along reads the LABEL aloud
+    ("eq colon v underscore plus...") instead of "equation 4.1". `number_artifact`
+    is the same pass import runs, so the text read matches the text printed.
     """
+    from parody_web.numbering import number_artifact
+
     data = json.loads(path.read_text())
+    try:
+        number_artifact(data)
+    except Exception:
+        # Numbering is a nicety for the SPOKEN text; a section whose numbering
+        # fails is still worth reading, just with bare labels.
+        pass
     index = {}
 
     def walk(node, chapter=None):
