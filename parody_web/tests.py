@@ -1962,6 +1962,149 @@ class BookIndexTests(TestCase):
         self.assertIn('id="ix-', r.content.decode())
 
 
+class SolutionSeriesNumberingTests(SimpleTestCase):
+    """Labelled items inside a solution number on their own S-series.
+
+    They used to have no target at all: the html a section ships has the
+    solutions stripped out, so a figure that lives in one could never be
+    referenced — 27 of System Dynamics' unresolved references pointed at one,
+    most of them from inside another solution.
+    """
+
+    def _book(self):
+        return {"chapters": [{
+            "title": "Four", "slug": "four", "hash": "c4", "sections": [{
+                "title": "Problems", "slug": "problems", "hash": "p1",
+                "anchors": [
+                    {"id": "fig:in-section", "type": "figure"},
+                    {"id": "fig:worked", "type": "figure", "solution": "alpha"},
+                    {"id": "eq:worked", "type": "equation", "solution": "alpha"},
+                ],
+                "html": '<p>see <span class="hashref">fig:worked</span> and '
+                        '<span class="hashref">fig:in-section</span></p>'
+                        '<figure id="fig:in-section"><figcaption>A</figcaption></figure>',
+                "solutions": {"alpha": {"content":
+                    '<p>as <span class="hashref">fig:worked</span> shows</p>'
+                    '<figure id="fig:worked"><figcaption>B</figcaption></figure>'
+                    '<span class="math display">\\[x = 1\\]</span>'
+                    '<span id="eq:worked"></span>'}},
+            }]}]}
+
+    def test_a_reference_reads_the_S_series(self):
+        data = self._book()
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn("figure S1.1", html)
+        self.assertNotIn('class="hashref"', html)
+
+    def test_the_reference_links_to_the_solutions_page(self):
+        data = self._book()
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('href="/four/problems/solutions/alpha/#fig:worked"', html)
+
+    def test_the_section_series_is_not_consumed_by_the_solution(self):
+        # A reader without the solutions must not see the figures skip a number.
+        data = self._book()
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn("figure 1.1", html)          # the in-section one
+        self.assertIn("Figure 1.1:", html)         # and its caption
+
+    def test_the_solution_caption_carries_the_number(self):
+        data = self._book()
+        number_artifact(data)
+        body = data["chapters"][0]["sections"][0]["solutions"]["alpha"]["content"]
+        self.assertIn("Figure S1.1:", body)
+
+    def test_a_reference_inside_the_solution_resolves_too(self):
+        data = self._book()
+        number_artifact(data)
+        body = data["chapters"][0]["sections"][0]["solutions"]["alpha"]["content"]
+        self.assertIn("figure S1.1", body)
+        self.assertNotIn('class="hashref"', body)
+
+    def test_an_equation_in_a_solution_is_tagged_on_the_S_series(self):
+        data = self._book()
+        number_artifact(data)
+        body = data["chapters"][0]["sections"][0]["solutions"]["alpha"]["content"]
+        self.assertIn(r"\tag{S1.1}", body)
+
+    def test_a_solution_heading_does_not_renumber_the_section(self):
+        data = self._book()
+        sec = data["chapters"][0]["sections"][0]
+        sec["anchors"].insert(0, {"id": "part-b", "type": "heading",
+                                  "level": 2, "solution": "alpha"})
+        number_artifact(data)
+        self.assertIn("figure 1.1", sec["html"])
+
+
+class KeywordIndexFallbackTests(TestCase):
+    """A book with no .index spans indexes its KEYWORDS instead.
+
+    Print has always done this — parody's \\keyword indexes as well as
+    emphasises — so three of the four books had a full printed index and an
+    Index page reading "No index entries".
+    """
+
+    def setUp(self):
+        art = {
+            "schema_version": 2, "slug": "kwbook", "title": "Kw Book",
+            "book": {"name": "Kw", "editions": [{"id": "0"}]},
+            "chapters": [{"title": "Ch", "slug": "ch", "hash": "h1", "sections": [
+                {"title": "One", "slug": "one", "hash": "a1", "online_only": True,
+                 "html": '<p>a <span class="keyword">linear graph</span> and a '
+                         '<span class="keyword">Normal tree</span></p>'},
+                {"title": "Two", "slug": "two", "hash": "a2", "online_only": True,
+                 "html": '<p><span class="keyword">normal tree</span> again, '
+                         'plus a <span class="keyword">state variable</span></p>'},
+            ]}],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "a.json"); p.write_text(json.dumps(art))
+            call_command("import_artifact", str(p), "--slug", "kwbook")
+        self.client = Client()
+
+    def test_keywords_become_index_entries(self):
+        r = self.client.get("/index/")
+        self.assertEqual(r.status_code, 200)
+        body = r.content.decode()
+        self.assertNotIn("No index entries", body)
+        for term in ("linear graph", "state variable"):
+            self.assertIn(term, body)
+
+    def test_case_is_folded_so_one_term_is_one_entry(self):
+        # "Normal tree" opens a sentence in one section and not in the other.
+        body = self.client.get("/index/").content.decode()
+        self.assertEqual(body.count('class="index-term">Normal tree<')
+                         + body.count('class="index-term">normal tree<'), 1)
+
+    def test_a_folded_entry_still_lists_both_sections(self):
+        body = self.client.get("/index/").content.decode()
+        block = re.search(r'index-term">[Nn]ormal tree<.*?</p>', body, re.S)
+        self.assertIsNotNone(block)
+        self.assertEqual(block.group(0).count('class="xref"'), 2)
+
+    def test_a_book_with_real_index_spans_ignores_its_keywords(self):
+        # The fallback must not dilute a book that indexes deliberately.
+        art = {
+            "schema_version": 2, "slug": "bothbook", "title": "Both",
+            "book": {"name": "Both", "editions": [{"id": "0"}]},
+            "chapters": [{"title": "Ch", "slug": "ch", "hash": "h1", "sections": [
+                {"title": "One", "slug": "one", "hash": "a1", "online_only": True,
+                 "html": '<p><span class="index">Chosen</span>'
+                         '<span class="keyword">incidental</span></p>'},
+            ]}],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d, "b.json"); p.write_text(json.dumps(art))
+            call_command("import_artifact", str(p), "--slug", "bothbook")
+        with override_settings(BOOK_SLUG="bothbook"):
+            body = self.client.get("/index/").content.decode()
+        self.assertIn("Chosen", body)
+        self.assertNotIn("incidental", body)
+
+
 class SearchInsideTests(TestCase):
     def setUp(self):
         art = {

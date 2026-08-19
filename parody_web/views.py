@@ -178,33 +178,60 @@ def index(request):
 
 _INDEX_SPAN_RE = re.compile(
     r'<span ([^>]*\bclass="[^"]*\bindex\b[^"]*"[^>]*)>(.*?)</span>', re.S)
+# The fallback source, for books that never wrote .index spans — see book_index.
+_KEYWORD_SPAN_RE = re.compile(
+    r'<span ([^>]*\bclass="[^"]*\bkeyword\b[^"]*"[^>]*)>(.*?)</span>', re.S)
 
 
 def book_index(request):
-    """Alphabetical subject index built from the .index spans across every
-    section (an "Entry!Subentry" hierarchy; deduped per section). Links point at
-    the section that mentions the term — public, like the table of contents."""
+    """Alphabetical subject index, from the .index spans across every section
+    (an "Entry!Subentry" hierarchy; deduped per section). Links point at the
+    section that mentions the term — public, like the table of contents.
+
+    Books that never wrote .index spans fall back to their **keywords**. Print
+    has always done this: parody's \\keyword indexes as well as emphasises, so
+    System Dynamics' 467 keyword spans produce a 378-entry printed index while
+    this page said "No index entries" — and the same was true of the electronics
+    primer and the math notes, three books out of four. A keyword has no
+    Entry!Subentry hierarchy and no id of its own, so entries are flat and link
+    to the section, exactly as the printed index points at a page.
+
+    Case is folded in the fallback only: a keyword is prose emphasis, so the
+    same term is capitalised at the start of a sentence and not in the middle,
+    and "Input variables" and "input variables" are one entry. An .index span is
+    authored deliberately, and its case is left alone.
+    """
     book, editions = _resolve_book(request)
     edq = _ed_query(book)
     root = {}  # name -> {"locs": {section_key: (label, href)}, "subs": {…}}
-    for s in _all_sections_ordered(book):
-        num = (s.number or "").strip()
-        label = num if re.match(r"^[A-Za-z]?\d", num) else \
-            (s.chapter.number or s.chapter.title or "").strip()
-        section_key = (s.chapter.order, s.order)
-        section_url = reverse("parody_web:section", args=[s.chapter.slug, s.slug]) + edq
-        for m in _INDEX_SPAN_RE.finditer(s.html or ""):
-            attrs, inner = m.group(1), m.group(2)
-            text = _unescape(re.sub(r"\s+", " ", strip_tags(inner))).strip()
-            parts = [p.strip() for p in text.split("!") if p.strip()]
-            idm = re.search(r'\bid="([^"]+)"', attrs)
-            href = section_url + ("#" + idm.group(1) if idm else "")
-            node = root
-            for i, p in enumerate(parts):
-                node = node.setdefault(p, {"locs": {}, "subs": {}})
-                if i == len(parts) - 1:  # first occurrence per section wins
-                    node["locs"].setdefault(section_key, (label, href))
-                node = node["subs"]
+
+    def harvest(pattern, fold_case=False):
+        canon = {}  # lower-cased name -> the spelling to display
+        for s in _all_sections_ordered(book):
+            num = (s.number or "").strip()
+            label = num if re.match(r"^[A-Za-z]?\d", num) else \
+                (s.chapter.number or s.chapter.title or "").strip()
+            section_key = (s.chapter.order, s.order)
+            section_url = reverse(
+                "parody_web:section", args=[s.chapter.slug, s.slug]) + edq
+            for m in pattern.finditer(s.html or ""):
+                attrs, inner = m.group(1), m.group(2)
+                text = _unescape(re.sub(r"\s+", " ", strip_tags(inner))).strip()
+                parts = [p.strip() for p in text.split("!") if p.strip()]
+                idm = re.search(r'\bid="([^"]+)"', attrs)
+                href = section_url + ("#" + idm.group(1) if idm else "")
+                node = root
+                for i, p in enumerate(parts):
+                    if fold_case:
+                        p = canon.setdefault(p.lower(), p)
+                    node = node.setdefault(p, {"locs": {}, "subs": {}})
+                    if i == len(parts) - 1:  # first occurrence per section wins
+                        node["locs"].setdefault(section_key, (label, href))
+                    node = node["subs"]
+
+    harvest(_INDEX_SPAN_RE)
+    if not root:
+        harvest(_KEYWORD_SPAN_RE, fold_case=True)
 
     entries = []
 

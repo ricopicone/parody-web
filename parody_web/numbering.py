@@ -911,6 +911,100 @@ def _section_kind(sec):
     return "normal"
 
 
+# ---------------------------------------------------------------------------
+# Number injection, shared by a section's html and by a solution's
+# ---------------------------------------------------------------------------
+#
+# A labelled item inside a solution is numbered too (the S-series — figure S4.1)
+# and its caption has to say so, or a cross-reference lands on a page where
+# nothing carries the number it just named. These three are called once for the
+# section html and once per solution entry, so both routes number the same way.
+
+def _inject_figure_numbers(html, fc):
+    """Prefix each float caption with "Figure C.n:" (word and number per id)."""
+    if not fc:
+        return html
+
+    def num_fig(mo):
+        fid = mo.group("id")
+        block = mo.group(0)
+        if fid in fc:
+            word, num = fc[fid]
+            block = _FIGCAP_RE.sub(
+                r'\1<span class="fignum">' + word + " " + num
+                + r':</span> ', block, count=1)
+        return block
+    html = _FIG_RE.sub(num_fig, html)
+
+    # a caption-less standalone figure renders as a bare <img id="fig:x">
+    # (no <figure>/<figcaption> for num_fig to hit) — promote it to a
+    # numbered <figure> so the ref lands and the number shows.
+    for fid, (word, num) in fc.items():
+        if f'id="{fid}"' in html and f'<figure id="{fid}"' not in html:
+            def promote(mo, fid=fid, word=word, num=num):
+                img = re.sub(r'\s*\bid="[^"]*"', '', mo.group(0))
+                return (f'<figure id="{fid}" class="figure">{img}'
+                        f'<figcaption class="figure-caption">'
+                        f'<span class="fignum">{word} {num}:</span>'
+                        f'</figcaption></figure>')
+            html = re.sub(r'<img\b[^>]*\bid="' + re.escape(fid)
+                          + r'"[^>]*>', promote, html, count=1)
+    return html
+
+
+def _inject_table_numbers(html, tc):
+    """"Table C.n:" into the <caption> of <table id="tbl:…">, or into the
+    <figcaption> when the table was rendered as an image."""
+    for tid, num in (tc or {}).items():
+        label = '<span class="fignum">Table ' + num + ':</span> '
+        new = re.sub(
+            r'(<table\b[^>]*\bid="' + re.escape(tid)
+            + r'"[^>]*>\s*<caption[^>]*>)', r'\1' + label, html, count=1)
+        if new == html:
+            new = re.sub(
+                r'(<figure\b[^>]*\bid="' + re.escape(tid)
+                + r'"[^>]*>.*?<figcaption[^>]*>)', r'\1' + label,
+                html, count=1, flags=re.S)
+        html = new
+    return html
+
+
+def _inject_equation_tags(html, eq_nums):
+    """Show each numbered equation's number as a MathJax \tag."""
+    if not eq_nums:
+        return html
+
+    def _tag_math(mo):
+        body, anchors = mo.group(1), mo.group(2)
+        if r"\label{eq:" in body:
+            body = re.sub(
+                r'\\label\{(eq:[^}]+)\}',
+                lambda m: (r"\tag{" + eq_nums[m.group(1)] + "}"
+                           if m.group(1) in eq_nums else ""),
+                body)
+        else:
+            ids = re.findall(r'<span id="(eq:[^"]+)"></span>', anchors)
+            if len(ids) == 1 and ids[0] in eq_nums:
+                close = body.rfind(r"\]")
+                if close != -1:
+                    body = (body[:close] + r"\tag{" + eq_nums[ids[0]]
+                            + "}" + body[close:])
+        return '<span class="math display">' + body + "</span>" + anchors
+    return re.sub(
+        r'<span class="math display">((?:(?!</span>).)*)</span>'
+        r'((?:\s*<span id="eq:[^"]+"></span>)*)',
+        _tag_math, html, flags=re.S)
+
+
+def _promote_tagged_math(html):
+    """Every \tag must sit in a tag-permitting environment: promote inner
+    aligned/gathered blocks that carry one."""
+    return re.sub(
+        r'(<span class="math display">)((?:(?!</span>).)*)(</span>)',
+        lambda m: m.group(1) + _promote_tagged_aligned(m.group(2))
+        + m.group(3), html, flags=re.S)
+
+
 def number_artifact(data, references=None, edition_query=""):
     """Mutate `data` in place: set chapter['number'] / section['number'] and
     rewrite section['html'] with numbered headings/figures and resolved refs.
@@ -932,6 +1026,7 @@ def number_artifact(data, references=None, edition_query=""):
     subeq_caps = {}       # per-section: subequations parent-id -> group number N
     example_caps = {}     # per-section: example div-id -> number N.n (label inject)
     problem_caps = {}     # per-section: exercise div-id -> (heading label, is_lab)
+    sol_caps = {}         # (section slug, exercise id) -> {"fig"/"tbl"/"eq": …}
     env_caps = {}         # per-section: boxed-env div-id -> "Theorem 4.1"
     # chapter_start: the number the first (non-appendix) chapter takes. The
     # artifact omits it at the default of 1; RTC sets 0 ("Chapter 0").
@@ -952,6 +1047,11 @@ def number_artifact(data, references=None, edition_query=""):
                                    "chapter": ch}
         sec_m = 0
         type_counters = {}  # per-chapter counters for figure/table/equation/…
+        # Labelled items inside a SOLUTION run on their own per-chapter series,
+        # prefixed S — figure S4.1 — the way a solutions manual numbers. They
+        # cannot share the book's series: solutions are gated, so a reader
+        # without them would see the section's figures skip numbers.
+        sol_counters = {}
         for sec in ch.get("sections", []):
             kind = _section_kind(sec)
             url = f"/{ch['slug']}/{sec['slug']}/{edition_query}"
@@ -996,7 +1096,7 @@ def number_artifact(data, references=None, edition_query=""):
 
             # headings (anchors are in document order): h1 = the section itself
             for a in sec.get("anchors", []):
-                if a.get("type") != "heading":
+                if a.get("type") != "heading" or a.get("solution"):
                     continue
                 lvl = a.get("level", 1)
                 # The writer synthesizes the section's own cross-reference anchor
@@ -1104,6 +1204,35 @@ def number_artifact(data, references=None, edition_query=""):
                 if (a.get("id") in sf_subids or a.get("id") in st_subids
                         or a.get("id") in subeq_subids):
                     continue  # a sub-panel / subequation row; numbered below
+                if a.get("solution"):
+                    # A labelled item inside a solution: its own S-series, and a
+                    # link to the solution's page rather than the section's.
+                    # Without this it had no target at all — the html the section
+                    # ships has the solutions stripped out — so every reference to
+                    # one rendered as its raw key, including the references from
+                    # inside other solutions, which is where most of them are.
+                    sol_counters[t] = sol_counters.get(t, 0) + 1
+                    snum = f"S{cnum}.{sol_counters[t]}"
+                    sdisp = f"({snum})" if t == "equation" else snum
+                    sol_url = (f"/{ch['slug']}/{sec['slug']}/solutions/"
+                               f"{a['solution']}/{edition_query}")
+                    entry = {"label": f"{_TYPE_LABELS[t]} {sdisp}",
+                             "url": f"{sol_url}#{a.get('id', '')}"}
+                    if a.get("id"):
+                        targets[a["id"]] = entry
+                    if a.get("hash"):
+                        targets[a["hash"]] = entry
+                    if a.get("id"):
+                        caps = sol_caps.setdefault(
+                            (sec["slug"], a["solution"]),
+                            {"fig": {}, "tbl": {}, "eq": {}})
+                        if t == "figure":
+                            caps["fig"][a["id"]] = ("Figure", snum)
+                        elif t == "table":
+                            caps["tbl"][a["id"]] = snum
+                        elif t == "equation":
+                            caps["eq"][a["id"]] = snum
+                    continue
                 type_counters[t] = type_counters.get(t, 0) + 1
                 num = f"{cnum}.{type_counters[t]}"
                 # equations are referenced with the number in parentheses,
@@ -1210,10 +1339,20 @@ def number_artifact(data, references=None, edition_query=""):
                 entries = sec.get(bucket)
                 if not isinstance(entries, dict):
                     continue
-                for entry in entries.values():
-                    if isinstance(entry, dict) and entry.get("content"):
-                        entry["content"] = _HASHREF_RE.sub(
-                            _resolve_bucket_ref, entry["content"])
+                for ex_id, entry in entries.items():
+                    if not (isinstance(entry, dict) and entry.get("content")):
+                        continue
+                    body = _HASHREF_RE.sub(_resolve_bucket_ref,
+                                           entry["content"])
+                    # and the S-numbers themselves, so a reference to
+                    # "figure S4.1" lands on something that says S4.1
+                    caps = sol_caps.get((sec["slug"], ex_id))
+                    if caps:
+                        body = _inject_figure_numbers(body, caps["fig"])
+                        body = _inject_table_numbers(body, caps["tbl"])
+                        body = _inject_equation_tags(body, caps["eq"])
+                        body = _promote_tagged_math(body)
+                    entry["content"] = body
 
             html = sec.get("html") or ""
             if not html:
@@ -1241,46 +1380,11 @@ def number_artifact(data, references=None, edition_query=""):
                 return full
             html = _HEADING_RE.sub(num_heading, html)
 
-            fc = float_caps.get(sec["slug"], {})
-            if fc:
-                def num_fig(mo):
-                    fid = mo.group("id")
-                    block = mo.group(0)
-                    if fid in fc:
-                        word, num = fc[fid]
-                        block = _FIGCAP_RE.sub(
-                            r'\1<span class="fignum">' + word + " " + num
-                            + r':</span> ', block, count=1)
-                    return block
-                html = _FIG_RE.sub(num_fig, html)
+            html = _inject_figure_numbers(
+                html, float_caps.get(sec["slug"], {}))
 
-                # a caption-less standalone figure renders as a bare <img id="fig:x">
-                # (no <figure>/<figcaption> for num_fig to hit) — promote it to a
-                # numbered <figure> so the ref lands and the number shows.
-                for fid, (word, num) in fc.items():
-                    if f'id="{fid}"' in html and f'<figure id="{fid}"' not in html:
-                        def promote(mo, fid=fid, word=word, num=num):
-                            img = re.sub(r'\s*\bid="[^"]*"', '', mo.group(0))
-                            return (f'<figure id="{fid}" class="figure">{img}'
-                                    f'<figcaption class="figure-caption">'
-                                    f'<span class="fignum">{word} {num}:</span>'
-                                    f'</figcaption></figure>')
-                        html = re.sub(r'<img\b[^>]*\bid="' + re.escape(fid)
-                                      + r'"[^>]*>', promote, html, count=1)
-
-            # tables: "Table C.n:" prefix into the <caption> of <table id="tbl:…">
-            for tid, num in table_caps.get(sec["slug"], {}).items():
-                label = '<span class="fignum">Table ' + num + ':</span> '
-                new = re.sub(
-                    r'(<table\b[^>]*\bid="' + re.escape(tid)
-                    + r'"[^>]*>\s*<caption[^>]*>)', r'\1' + label, html, count=1)
-                if new == html:
-                    # a table rendered as an image (<figure id="tbl:…"> … <figcaption>)
-                    new = re.sub(
-                        r'(<figure\b[^>]*\bid="' + re.escape(tid)
-                        + r'"[^>]*>.*?<figcaption[^>]*>)', r'\1' + label,
-                        html, count=1, flags=re.S)
-                html = new
+            html = _inject_table_numbers(
+                html, table_caps.get(sec["slug"], {}))
 
             # sub-table floats: shared "Table C.n:" in the main caption, "(a)" …
             # in each panel <table>'s own <caption>.
@@ -1368,28 +1472,8 @@ def number_artifact(data, references=None, edition_query=""):
             #     each \label for the matching \tag so every row gets its number.
             # Trailing anchors stay put as scroll / cross-ref targets. \label is a
             # no-op macro in the MathJax config, so an unmatched one never chokes.
-            eq_nums = eq_caps.get(sec["slug"], {})
-            if eq_nums:
-                def _tag_math(mo):
-                    body, anchors = mo.group(1), mo.group(2)
-                    if r"\label{eq:" in body:
-                        body = re.sub(
-                            r'\\label\{(eq:[^}]+)\}',
-                            lambda m: (r"\tag{" + eq_nums[m.group(1)] + "}"
-                                       if m.group(1) in eq_nums else ""),
-                            body)
-                    else:
-                        ids = re.findall(r'<span id="(eq:[^"]+)"></span>', anchors)
-                        if len(ids) == 1 and ids[0] in eq_nums:
-                            close = body.rfind(r"\]")
-                            if close != -1:
-                                body = (body[:close] + r"\tag{" + eq_nums[ids[0]]
-                                        + "}" + body[close:])
-                    return '<span class="math display">' + body + "</span>" + anchors
-                html = re.sub(
-                    r'<span class="math display">((?:(?!</span>).)*)</span>'
-                    r'((?:\s*<span id="eq:[^"]+"></span>)*)',
-                    _tag_math, html, flags=re.S)
+            html = _inject_equation_tags(
+                html, eq_caps.get(sec["slug"], {}))
 
             if subeq_stash:  # restore the numbered subequations <div>s
                 html = re.sub(r'\x00SUBEQ(\d+)\x00',
@@ -1400,10 +1484,7 @@ def number_artifact(data, references=None, edition_query=""):
             # aligned/gathered blocks. Runs for every section — author tags need
             # this even where no equation is numbered — and only rewrites math
             # spans whose block actually carries a \tag.
-            html = re.sub(
-                r'(<span class="math display">)((?:(?!</span>).)*)(</span>)',
-                lambda m: m.group(1) + _promote_tagged_aligned(m.group(2))
-                + m.group(3), html, flags=re.S)
+            html = _promote_tagged_math(html)
 
             # the build emits an equation's scroll/cross-ref anchor as a trailing
             # <span id="eq:..."></span> AFTER the math, so jumping to it lands just
