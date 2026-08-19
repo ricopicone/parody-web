@@ -2977,6 +2977,18 @@ style="min-width: 120px; width: 120px;" value="{% get_cell "test-observations" 2
 """
 
 
+class PageAnchorTextTests(TestCase):
+    """The margin rail's subsection list."""
+
+    def test_an_entity_in_a_heading_is_not_double_escaped(self):
+        from parody_web.views import _page_anchors
+
+        anchors = _page_anchors(
+            '<h2 id="reading-writing">Reading &amp; Writing</h2>')
+        self.assertEqual(anchors, [{"id": "reading-writing",
+                                    "text": "Reading & Writing"}])
+
+
 class EditableTableTests(TestCase):
     """A lab manual's data-entry table, on a parody-web site."""
 

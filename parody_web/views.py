@@ -118,7 +118,10 @@ def _page_anchors(html):
     linked, so they are skipped rather than guessed at."""
     out = []
     for mo in _H2_ID_RE.finditer(html or ""):
-        text = " ".join(strip_tags(mo.group("text")).split())
+        # Unescape as well as strip: the heading's html says "Reading &amp;
+        # Writing", and the template escapes what it is given — so the rail
+        # read "Reading &amp; Writing" literally, ampersand entity and all.
+        text = " ".join(_unescape(strip_tags(mo.group("text"))).split())
         if text:
             out.append({"id": mo.group("id"), "text": text})
     return out
