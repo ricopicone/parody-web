@@ -428,3 +428,53 @@ figure.subfigures, figure.subtables { max-width: 100%; }
 figure { margin-inline: 0; }
 figure img, img.figure-img {
     zoom: var(--fig-scale); max-width: 100%; height: auto; }
+
+/* ── Data-entry tables ────────────────────────────────────────────────────
+   A lab manual's observation table: the reader types readings into the page
+   and they are still there next week. The build emits it with Tailwind /
+   daisyUI class names (`table table-zebra`, `input input-bordered`,
+   `btn btn-primary`) because ricopic.one is a Tailwind site — none of them
+   mean anything here, so the table arrived unstyled and the inputs looked
+   like naked boxes. Style the structural hooks instead: the anchor div, the
+   wrapper form, and the input/button elements inside it. */
+.editable-table-anchor { margin: var(--s5) 0; }
+.editable-table-anchor .table-caption {
+    font-size: var(--fs-sm); color: var(--ink-muted); margin-bottom: var(--s2); }
+.editable-table-wrapper table {
+    margin: 0; width: 100%; border-collapse: collapse; }
+.editable-table-wrapper thead th {
+    text-align: left; font-size: var(--fs-sm); font-weight: 600;
+    border-top: 1.5px solid var(--rule-strong);
+    border-bottom: 1px solid var(--rule-mid); }
+.editable-table-wrapper tbody tr:last-child > td {
+    border-bottom: 1.5px solid var(--rule-strong); }
+.editable-table-wrapper tbody tr:nth-child(even) { background: var(--paper-sunk); }
+.editable-table-wrapper td { vertical-align: middle; }
+/* The build hard-codes min-width/width on each input; let it size to the
+   column on a narrow screen rather than pushing the row into a scroll. */
+.editable-table-wrapper input[type="text"] {
+    width: 100% !important; min-width: 0 !important;
+    font: inherit; font-size: var(--fs-sm);
+    padding: .2rem .4rem; color: var(--ink);
+    /* --paper, not --paper-panel: the panel token deliberately stays white in
+       dark mode (it backs figures), which made every input a white slab. */
+    background: var(--paper);
+    border: 1px solid var(--rule-mid); border-radius: 4px; }
+.editable-table-wrapper input[type="text"]:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px; }
+.editable-table-wrapper input[type="text"]:disabled {
+    background: var(--paper-sunk); color: var(--ink-faint); }
+.editable-table-wrapper .overflow-x-auto { overflow-x: auto; }
+.editable-table-wrapper .flex {
+    display: flex; gap: var(--s2); margin-top: var(--s3); }
+.editable-table-wrapper button,
+.editable-table-wrapper .flex a {
+    font: inherit; font-size: var(--fs-sm); cursor: pointer;
+    padding: .3rem .8rem; border-radius: 5px;
+    border: 1px solid var(--accent); text-decoration: none; }
+.editable-table-wrapper button {
+    background: var(--accent); color: #fff; }
+.editable-table-wrapper .flex a {
+    background: transparent; color: var(--accent-ink); }
+.editable-table-note {
+    font-size: var(--fs-sm); color: var(--ink-muted); margin-top: var(--s3); }

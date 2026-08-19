@@ -2936,3 +2936,185 @@ def fake_avatar(user):
 
 def exploding_avatar(user):
     raise RuntimeError("the profile service is down")
+
+
+# The build's markup for `::: {.editable-table}`, verbatim from the
+# mechatronics lab manual's artifact — Tailwind classes, Django tags naming
+# ricopic.one's own route, and all. It is frozen upstream (golden artifacts pin
+# it), so these tests pin OUR side of the contract.
+FROZEN_TABLE = """<h2 id="observations">Observations</h2>
+<div id="test-observations" class="editable-table-anchor scroll-mt-20" \
+data-column-headers='{"1":"Task","2":"Observation","3":"Notes"}' \
+data-row-headers='{"1":"LabVIEW Setup","2":"myRIO Connection"}'>
+
+<form method="POST" class="editable-table-wrapper">
+  {% csrf_token %}
+  <input type="hidden" name="table_id" value="test-observations">
+  <input type="hidden" name="anchor" value="test-observations">
+  <div class="overflow-x-auto">
+    <table class="table table-zebra w-full">
+      <thead><tr><th>Task</th><th>Observation</th><th>Notes</th></tr></thead>
+      <tbody><tr><td>LabVIEW Setup</td>\
+<td><input name="cell-1-2" type="text" class="input input-bordered text-sm" \
+style="min-width: 120px; width: 120px;" value="{% get_cell "test-observations" 1 2 %}" /></td>\
+<td><input name="cell-1-3" type="text" class="input input-bordered text-sm" \
+style="min-width: 120px; width: 120px;" value="{% get_cell "test-observations" 1 3 %}" /></td></tr>\
+<tr><td>myRIO Connection</td>\
+<td><input name="cell-2-2" type="text" class="input input-bordered text-sm" \
+style="min-width: 120px; width: 120px;" value="{% get_cell "test-observations" 2 2 %}" /></td>\
+<td><input name="cell-2-3" type="text" class="input input-bordered text-sm" \
+style="min-width: 120px; width: 120px;" value="{% get_cell "test-observations" 2 3 %}" /></td></tr></tbody>
+    </table>
+  </div>
+  <div class="flex gap-2 mt-2">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a href="{% url 'teaching:export_table_data' notebook.slug chapter.slug section.slug 'test-observations' %}"
+       class="btn btn-outline"
+       download="test-observations-data.json">Download JSON</a>
+  </div>
+</form>
+</div>
+"""
+
+
+class EditableTableTests(TestCase):
+    """A lab manual's data-entry table, on a parody-web site."""
+
+    def setUp(self):
+        from parody_web.models import Chapter
+
+        self.book = Book.objects.create(slug="lab", title="Lab Manual")
+        chapter = Chapter.objects.create(book=self.book, slug="intro",
+                                         title="Introduction", order=0)
+        self.section = Section.objects.create(
+            book=self.book, chapter=chapter, slug="lab", title="Lab",
+            order=0, hash="lb", html=FROZEN_TABLE, online_only=True)
+        self.user = get_user_model().objects.create_user("student", password="pw")
+        self.other = get_user_model().objects.create_user("other", password="pw")
+        self.anon = Client()
+        self.client_in = Client()
+        self.client_in.force_login(self.user)
+        self.url = "/intro/lab/"
+
+    # ---- rendering ------------------------------------------------------
+
+    def test_no_template_tags_or_broken_attributes_survive(self):
+        # The stub get_cell tag used to return a <span>, INSIDE value="…" —
+        # ending the attribute at its first quote and spilling markup into
+        # every cell of every table on the site.
+        html = self.client_in.get(self.url).content.decode()
+        self.assertNotIn("{%", html)
+        self.assertNotIn('value="<span', html)
+        self.assertNotIn("get-cell-placeholder", html)
+        self.assertIn('name="cell-1-2"', html)
+
+    def test_signed_in_form_can_post(self):
+        html = self.client_in.get(self.url).content.decode()
+        self.assertIn('name="csrfmiddlewaretoken"', html)
+        self.assertIn('<form method="post" class="editable-table-wrapper">', html)
+        self.assertNotIn("disabled", html.split("cell-1-2")[0][-200:])
+
+    def test_anonymous_sees_the_table_but_cannot_save(self):
+        html = self.anon.get(self.url).content.decode()
+        self.assertIn("Observations", html)
+        self.assertIn('<input disabled name="cell-1-2"', html)
+        self.assertIn("Sign in to fill this table in", html)
+        self.assertNotIn("csrfmiddlewaretoken", html.split("editable-table-wrapper")[1])
+
+    def test_export_link_points_at_this_site(self):
+        # The frozen href names 'teaching:export_table_data', which exists only
+        # in homepage-django; unresolved it degraded to href="#".
+        html = self.client_in.get(self.url).content.decode()
+        self.assertIn("/intro/lab/table/test-observations.json", html)
+
+    # ---- saving ---------------------------------------------------------
+
+    def _post(self, client=None, **cells):
+        data = {"table_id": "test-observations", "anchor": "test-observations"}
+        data.update(cells)
+        return (client or self.client_in).post(self.url, data)
+
+    def test_post_saves_and_redirects_to_the_table(self):
+        from parody_web.models import TableEntry
+
+        r = self._post(**{"cell-1-2": "3.2 V", "cell-1-3": "steady"})
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(r["Location"].endswith("/intro/lab/#test-observations"))
+        self.assertEqual(TableEntry.objects.count(), 2)
+        entry = TableEntry.objects.get(row=1, column="2")
+        self.assertEqual(entry.value, "3.2 V")
+        self.assertEqual(entry.section_key, "lb")
+
+    def test_saved_values_come_back_on_the_next_visit(self):
+        self._post(**{"cell-1-2": "3.2 V"})
+        html = self.client_in.get(self.url).content.decode()
+        self.assertIn('value="3.2 V"', html)
+
+    def test_saving_again_updates_rather_than_duplicates(self):
+        from parody_web.models import TableEntry
+
+        self._post(**{"cell-1-2": "3.2 V"})
+        self._post(**{"cell-1-2": "3.4 V"})
+        self.assertEqual(TableEntry.objects.count(), 1)
+        self.assertEqual(TableEntry.objects.get().value, "3.4 V")
+
+    def test_a_value_cannot_break_out_of_its_attribute(self):
+        self._post(**{"cell-1-2": '"><script>alert(1)</script>'})
+        html = self.client_in.get(self.url).content.decode()
+        self.assertNotIn("<script>alert(1)", html)
+        self.assertIn("&quot;&gt;&lt;script&gt;", html)
+
+    def test_one_reader_never_sees_another_readers_values(self):
+        self._post(**{"cell-1-2": "mine"})
+        theirs = Client()
+        theirs.force_login(self.other)
+        self.assertNotIn('value="mine"', theirs.get(self.url).content.decode())
+
+    def test_anonymous_post_saves_nothing(self):
+        from parody_web.models import TableEntry
+
+        self._post(client=self.anon, **{"cell-1-2": "3.2 V"})
+        self.assertEqual(TableEntry.objects.count(), 0)
+
+    def test_a_table_id_not_in_this_section_is_ignored(self):
+        from parody_web.models import TableEntry
+
+        self.client_in.post(self.url, {"table_id": "someone-elses",
+                                       "cell-1-2": "x"})
+        self.assertEqual(TableEntry.objects.count(), 0)
+
+    # ---- export ---------------------------------------------------------
+
+    def test_export_returns_named_columns_and_values(self):
+        self._post(**{"cell-1-2": "3.2 V", "cell-2-3": "warm"})
+        r = self.client_in.get("/intro/lab/table/test-observations.json")
+        self.assertEqual(r.status_code, 200)
+        payload = json.loads(r.content)
+        self.assertEqual(payload["book"], "lab")
+        # The first column holds the row names ("LabVIEW Setup"), not data —
+        # it is each row's `name`, not an empty cell called "Task".
+        self.assertEqual([c["name"] for c in payload["columns"]],
+                         ["Observation", "Notes"])
+        first = next(row for row in payload["rows"] if row["index"] == 1)
+        self.assertEqual(first["name"], "LabVIEW Setup")
+        self.assertEqual(first["cells"]["Observation"], "3.2 V")
+        self.assertEqual(first["cells"]["Notes"], "")
+        self.assertNotIn("Task", first["cells"])
+        self.assertIn("attachment", r["Content-Disposition"])
+
+    def test_export_needs_a_reader(self):
+        self.assertEqual(
+            self.anon.get("/intro/lab/table/test-observations.json").status_code,
+            401)
+
+    def test_export_of_an_unknown_table_is_404(self):
+        self.assertEqual(
+            self.client_in.get("/intro/lab/table/nope.json").status_code, 404)
+
+    def test_a_book_without_tables_is_untouched(self):
+        from parody_web import editable_tables
+
+        html = "<p>Ordinary prose.</p>"
+        self.assertIs(
+            editable_tables.materialise(html, request=None, book=self.book,
+                                        section=self.section), html)

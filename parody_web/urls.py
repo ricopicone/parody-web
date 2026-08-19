@@ -39,6 +39,10 @@ urlpatterns = [
     # so the reserved "pdf" segment reads first.
     path("<slug:chapter_slug>/<slug:section_slug>/pdf/", views.section_pdf,
          name="section_pdf"),
+    # One data-entry table's saved values, as JSON. Before the bare section
+    # pattern so the reserved "table" segment reads first.
+    path("<slug:chapter_slug>/<slug:section_slug>/table/<str:table_id>.json",
+         views.table_export, name="table_export"),
     path("<slug:chapter_slug>/<slug:section_slug>/", views.section_detail,
          name="section"),
     # Chapter landing page (lead-in + contents). A code with a trailing slash

@@ -55,6 +55,18 @@ your project), and the rendering template tags. Reads `settings.BOOK_SLUG`,
 A ready-to-copy thin project — settings, urls, Procfile, and AWS/SSM deploy glue
 — lives in [`example_site/`](example_site/); generate a new book site from it.
 
+## Data-entry tables
+
+A lab manual authors an observation table as `::: {.editable-table}`. On the
+site a signed-in reader types their readings into it, **Save** keeps them, and
+they are still there next visit; **Download JSON** hands back the whole table
+with its column names, for a spreadsheet or a plotting script. A reader who is
+not signed in sees the table with its inputs disabled and a line saying why.
+
+Values are stored per cell, keyed to the reader and to `Section.key` rather
+than to a row that re-import would delete — a term's measurements outlive the
+book being rebuilt. Nothing is needed from the host but `migrate`.
+
 ## Serving a book from your own project
 
 A host project (a course site, say) can serve a parody book while keeping its

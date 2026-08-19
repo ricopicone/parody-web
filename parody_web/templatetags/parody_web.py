@@ -128,10 +128,16 @@ def systems_url(book, version):
 
 @register.simple_tag
 def get_cell(*args, **kwargs):
-    return mark_safe(
-        '<span class="get-cell-placeholder" '
-        'title="interactive table cell (site-only feature)">—</span>'
-    )
+    """A data-entry cell's stored value, when nothing resolved it first.
+
+    parody_web.editable_tables.materialise() replaces these tags with the
+    reader's own values before the html reaches the template engine, so this
+    fires only where no reader is known (a host rendering a section outside
+    the section view). It MUST return plain text: the tag sits inside
+    ``value="…"``, and the markup this used to return ended the attribute at
+    its first quote and spilled into the row.
+    """
+    return ""
 
 
 @register.simple_tag

@@ -36,7 +36,8 @@ the page reads "Voltage dividers" while the contents beside it read
   </div>
 {% else %}
   {% if section.html %}
-    {{ section.html|render_book }}
+    {# section_html: section.html with any data-entry table filled in for this reader #}
+    {{ section_html|default:section.html|render_book }}
   {% endif %}
   {% if section.online_resources %}
     <section class="online-resources">

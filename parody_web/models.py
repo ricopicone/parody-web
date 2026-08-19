@@ -4,6 +4,7 @@ are ricopic.one concerns). A Book holds the bibliographic/web metadata; a
 Section stores the rendered (Django-template-flavored) html and any per-section
 online-resources addenda."""
 
+from django.conf import settings
 from django.db import models
 
 
@@ -176,3 +177,43 @@ class BookPrintVersion(models.Model):
 
     def __str__(self):
         return f"{self.book.slug}@{self.sha256[:12]}"
+
+
+class TableEntry(models.Model):
+    """One reader's value in one cell of one data-entry table.
+
+    A lab manual's tables are the lab notebook: the student records readings
+    into the page and comes back to them. Stored per cell rather than per
+    table so a saved row survives the table growing a column, and keyed by
+    slug/edition/section_key + table id rather than a Section foreign key —
+    sections are deleted and recreated on every import, and a FK would cascade
+    a term's measurements away with them (same reasoning as
+    parody_web_annotate.InkLayer and docs/host-integration.md section 5).
+
+    `column` is a string because the build emits column *indices* today but the
+    export keys tables by header name, and a future named-column table must not
+    need a migration.
+    """
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name="parody_table_entries")
+    book_slug = models.CharField(max_length=100)
+    edition_id = models.CharField(max_length=50, blank=True, default="")
+    section_key = models.CharField(max_length=200)
+    table_id = models.CharField(max_length=120)
+    row = models.PositiveIntegerField()
+    column = models.CharField(max_length=64)
+    value = models.CharField(max_length=255, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "book_slug", "edition_id", "section_key",
+                           "table_id", "row", "column")
+        indexes = [
+            models.Index(fields=["user", "book_slug", "section_key"]),
+        ]
+        ordering = ["table_id", "row", "column"]
+
+    def __str__(self):
+        return (f"{self.user} · {self.book_slug}/{self.section_key}"
+                f"#{self.table_id}[{self.row},{self.column}]")

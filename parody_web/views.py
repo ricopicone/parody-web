@@ -10,12 +10,13 @@ import re
 from html import unescape as _unescape
 from pathlib import Path
 
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.html import escape, strip_tags
 from django.utils.safestring import mark_safe
 
+from . import editable_tables
 from .access import get_policy
 from .books import resolve_slug
 from .models import Book, Chapter, Section
@@ -336,6 +337,16 @@ def section_detail(request, chapter_slug, section_slug):
     # teaser + sign-in; everything else is full. The owner sees all full.
     preview = policy.section_is_preview(request, section)
 
+    # A data-entry table posts to its own page. Save, then redirect to the
+    # table's anchor so a refresh cannot re-submit and the reader lands back on
+    # the row they were filling in.
+    if request.method == "POST" and not preview:
+        table_id = editable_tables.save_post(
+            request.POST, user=request.user, book=book, section=section)
+        target = reverse("parody_web:section", args=[chapter_slug, section_slug])
+        return redirect(f"{target}{_ed_query(book)}"
+                        + (f"#{table_id}" if table_id else ""))
+
     flat = _all_sections_ordered(book)
     idx = next((i for i, s in enumerate(flat) if s.pk == section.pk), None)
     prev_s = flat[idx - 1] if idx else None
@@ -343,6 +354,11 @@ def section_detail(request, chapter_slug, section_slug):
     return render(request, "parody_web/section.html", {
         "book": book, "editions": editions,
         "section": section, "chapter": section.chapter,
+        # The reader's own copy of the section: data-entry tables carry what
+        # they saved. Identical to section.html for every other book.
+        "section_html": editable_tables.materialise(
+            section.html, request=request, book=book, section=section,
+            export_url=lambda tid: _table_url(book, chapter_slug, section_slug, tid)),
         "chapter_nav": _chapter_nav(book, section.chapter, current=section),
         "page_anchors": [] if preview else _page_anchors(section.html),
         "prev": prev_s, "next": next_s,
@@ -489,6 +505,39 @@ def book_pdf(request):
     if path is None:
         raise Http404("no pdf for this book")
     return _pdf_response(path, _pdf_filename(book))
+
+
+def _table_url(book, chapter_slug, section_slug, table_id):
+    """Download URL for one data-entry table's saved values."""
+    return (reverse("parody_web:table_export",
+                    args=[chapter_slug, section_slug, table_id])
+            + _ed_query(book))
+
+
+def table_export(request, chapter_slug, section_slug, table_id):
+    """One data-entry table as JSON, for the reader who filled it in.
+
+    Their measurements, in a shape a spreadsheet or a plotting script can read
+    — the point of typing them into the page rather than onto paper. Nobody
+    else's values are reachable: the query is keyed to request.user.
+    """
+    book, _editions = _resolve_book(request)
+    section = get_object_or_404(
+        Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
+    if not get_policy().can_view_section(request, section):
+        raise Http404("section not available")
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "sign in to download your table"}, status=401)
+    if table_id not in editable_tables.table_ids(section.html or ""):
+        raise Http404("no such table in this section")
+    values = editable_tables.stored_values(request.user, book, section)
+    payload = editable_tables.export(section.html or "", values, table_id)
+    payload["book"] = book.slug
+    payload["section"] = section.key
+    response = JsonResponse(payload)
+    response["Content-Disposition"] = (
+        f'attachment; filename="{table_id}-data.json"')
+    return response
 
 
 def solution_detail(request, chapter_slug, section_slug, exercise_id):
