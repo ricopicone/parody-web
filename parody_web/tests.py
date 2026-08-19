@@ -3240,27 +3240,83 @@ class EditableTableTests(TestCase):
 
     # ---- export ---------------------------------------------------------
 
-    def test_export_returns_named_columns_and_values(self):
+    def test_export_is_the_table_as_it_appears_on_the_page(self):
         self._post(**{"cell-1-2": "3.2 V", "cell-2-3": "warm"})
         r = self.client_in.get("/intro/lab/table/test-observations.json")
         self.assertEqual(r.status_code, 200)
         payload = json.loads(r.content)
-        self.assertEqual(payload["book"], "lab")
-        # The first column holds the row names ("LabVIEW Setup"), not data —
-        # it is each row's `name`, not an empty cell called "Task".
-        self.assertEqual([c["name"] for c in payload["columns"]],
-                         ["Observation", "Notes"])
-        first = next(row for row in payload["rows"] if row["index"] == 1)
-        self.assertEqual(first["name"], "LabVIEW Setup")
-        self.assertEqual(first["cells"]["Observation"], "3.2 V")
-        self.assertEqual(first["cells"]["Notes"], "")
-        self.assertNotIn("Task", first["cells"])
+        self.assertEqual(payload["format"], "parody-table/1")
+        self.assertEqual(payload["book"]["slug"], "lab")
+        self.assertEqual(payload["section"]["title"], "Lab")
+        self.assertTrue(payload["section"]["url"].endswith("/intro/lab/"))
+        self.assertTrue(payload["exported_at"])
+        # One flat record per row, keyed by the header row — including the
+        # column the row LABELS live in, which used to sit beside the data as
+        # a separate "name" and so fell out of every dataframe built from it.
+        self.assertEqual(payload["columns"], ["Task", "Observation", "Notes"])
+        self.assertEqual(payload["rows"][0], {"Task": "LabVIEW Setup",
+                                              "Observation": "3.2 V",
+                                              "Notes": ""})
+        self.assertEqual(payload["rows"][1], {"Task": "myRIO Connection",
+                                              "Observation": "",
+                                              "Notes": "warm"})
+        # Rectangular: an empty row still carries every column.
+        self.assertEqual(sorted(payload["rows"][-1]), sorted(payload["columns"]))
         self.assertIn("attachment", r["Content-Disposition"])
+
+    def test_two_columns_with_the_same_heading_stay_distinct(self):
+        from parody_web import editable_tables
+
+        html = FROZEN_TABLE.replace(
+            '{"1":"Task","2":"Observation","3":"Notes"}',
+            '{"1":"Task","2":"Notes","3":"Notes"}')
+        payload = editable_tables.table_payload(
+            html, {"test-observations": {(1, "2"): "a", (1, "3"): "b"}},
+            "test-observations")
+        self.assertEqual(payload["columns"], ["Task", "Notes", "Notes (2)"])
+        self.assertEqual(payload["rows"][0]["Notes"], "a")
+        self.assertEqual(payload["rows"][0]["Notes (2)"], "b")
 
     def test_export_needs_a_reader(self):
         self.assertEqual(
             self.anon.get("/intro/lab/table/test-observations.json").status_code,
             401)
+
+    # ---- the whole book in one file --------------------------------------
+
+    def test_book_export_gathers_every_table_the_reader_filled_in(self):
+        self._post(**{"cell-1-2": "3.2 V"})
+        r = self.client_in.get("/tables.json")
+        self.assertEqual(r.status_code, 200)
+        payload = json.loads(r.content)
+        self.assertEqual(payload["format"], "parody-tables/1")
+        self.assertEqual(payload["book"]["title"], "Lab Manual")
+        self.assertEqual(len(payload["tables"]), 1)
+        table = payload["tables"][0]
+        self.assertEqual(table["table"]["id"], "test-observations")
+        self.assertEqual(table["section"]["title"], "Lab")
+        self.assertEqual(table["rows"][0]["Observation"], "3.2 V")
+        self.assertIn("lab-tables.json", r["Content-Disposition"])
+
+    def test_book_export_leaves_out_tables_with_nothing_in_them(self):
+        payload = json.loads(self.client_in.get("/tables.json").content)
+        self.assertEqual(payload["tables"], [])
+
+    def test_book_export_is_one_readers_data_only(self):
+        self._post(**{"cell-1-2": "mine"})
+        theirs = Client()
+        theirs.force_login(self.other)
+        payload = json.loads(theirs.get("/tables.json").content)
+        self.assertEqual(payload["tables"], [])
+
+    def test_book_export_needs_a_reader(self):
+        self.assertEqual(self.anon.get("/tables.json").status_code, 401)
+
+    def test_the_page_offers_the_whole_book_download(self):
+        html = self.client_in.get(self.url).content.decode()
+        self.assertIn('href="/tables.json"', html)
+        self.assertIn("All my tables", html)
+        self.assertNotIn("All my tables", self.anon.get(self.url).content.decode())
 
     def test_export_of_an_unknown_table_is_404(self):
         self.assertEqual(

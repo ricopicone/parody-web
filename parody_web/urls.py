@@ -27,6 +27,9 @@ urlpatterns = [
     # policy: print PDFs are never served off disk by nginx, because that tree
     # has no auth and the PDF holds the full text of gated sections.
     path("pdf/", views.book_pdf, name="book_pdf"),
+    # /tables.json — every data-entry table this reader has filled in, book-wide
+    # (reserved segment, like "pdf" and "index").
+    path("tables.json", views.tables_export, name="tables_export"),
     # One exercise's worked solution, gated by the access policy. <str:> not
     # <slug:> because exercise ids carry a colon ("exe:z3-agent"). Listed before
     # the bare section pattern so the reserved "solutions" segment reads first.

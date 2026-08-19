@@ -59,9 +59,28 @@ A ready-to-copy thin project — settings, urls, Procfile, and AWS/SSM deploy gl
 
 A lab manual authors an observation table as `::: {.editable-table}`. On the
 site a signed-in reader types their readings into it, **Save** keeps them, and
-they are still there next visit; **Download JSON** hands back the whole table
-with its column names, for a spreadsheet or a plotting script. A reader who is
-not signed in sees the table with its inputs disabled and a line saying why.
+they are still there next visit. A reader who is not signed in sees the table
+with its inputs disabled and a line saying why.
+
+**Download JSON** gives back that one table; **All my tables** (`/tables.json`)
+gives every table in the book the reader has put something in — a term's
+measurements in one file instead of a scavenger hunt through a dozen labs.
+
+The file is the table as it appears on the page: a `columns` header row, and
+`rows` as one flat record per row keyed by those headers, including the column
+the row labels live in. Empty cells are `""` rather than missing, so a
+half-filled table still loads as a table:
+
+```python
+import json, pandas as pd
+d = json.load(open("mechatronics-lab-manual-lab-test-observations.json"))
+df = pd.DataFrame(d["rows"], columns=d["columns"])
+```
+
+Each file also carries which book, which section (title, number and URL) and
+when it was exported, and names its shape in `format` (`parody-table/1`,
+`parody-tables/1`) so a later change to that shape is a new number rather than
+a silent break.
 
 Values are stored per cell, keyed to the reader and to `Section.key` rather
 than to a row that re-import would delete — a term's measurements outlive the

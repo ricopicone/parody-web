@@ -118,44 +118,83 @@ def save_post(post, *, user, book, section):
     return table_id
 
 
-def export(html, values, table_id):
-    """One table as a JSON-able dict: headers, cells, and what is still empty.
+def caption(html, table_id):
+    """The table's caption text, if the build gave it one."""
+    for m in ANCHOR_RE.finditer(html or ""):
+        if m.group("id") != table_id:
+            continue
+        after = html[m.end():m.end() + 2000]
+        cap = re.search(r'<div class="table-caption">(.*?)</div>', after, re.DOTALL)
+        return " ".join(re.sub(r"<[^>]+>", "", cap.group(1)).split()) if cap else ""
+    return ""
 
-    Shaped for a spreadsheet or a plotting script — a list of rows, each cell
-    carrying its column name — rather than mirroring the storage rows.
+
+def _column_names(names, columns):
+    """Column index -> the name this export uses for it, all distinct.
+
+    Two columns headed "Notes" would collide as keys and the second would eat
+    the first, so the later one becomes "Notes (2)". An unheaded column gets
+    "Column <n>" rather than "", which is unusable as a key.
+    """
+    out, seen = {}, {}
+    for c in columns:
+        base = str(names["columns"].get(str(c), "") or "").strip() or f"Column {c}"
+        seen[base] = seen.get(base, 0) + 1
+        out[c] = base if seen[base] == 1 else f"{base} ({seen[base]})"
+    return out
+
+
+def table_payload(html, values, table_id):
+    """One table as the shape a reader can actually use.
+
+    ``columns`` is the header row, and ``rows`` is one flat object per row
+    keyed by those headers — so `pd.DataFrame(t["rows"], columns=t["columns"])`
+    reproduces the table as it appears on the page, and a spreadsheet import
+    finds the header row where it expects it.
+
+    The row LABEL is a cell like any other, under its own column heading. It
+    used to live beside the data as a separate `name`, which read fine but
+    dropped out of every dataframe built from the cells — the labels are what
+    say which trial a reading belongs to, so they have to be in the table.
+
+    Rectangular on purpose: every row carries every column, empty ones as "",
+    so a half-filled table still loads as a table.
     """
     names = headers(html, table_id)
     cells = values.get(table_id, {})
     columns = sorted({int(c) for _, c in cells if str(c).isdigit()}
                      | {int(c) for c in names["columns"] if str(c).isdigit()})
-    # The build reads the row names out of the first column, so that column is
-    # the row label, not data: exporting it would put an empty "Task" beside
-    # every row's own name.
-    if names["rows"] and 1 in columns:
-        columns.remove(1)
+    labelled = bool(names["rows"])
+    column_names = _column_names(names, columns)
     rows = sorted({r for r, _ in cells}
                   | {int(r) for r in names["rows"] if str(r).isdigit()})
+
+    def record(r):
+        out = {}
+        for c in columns:
+            # Column 1 holds the row labels when the table has them: the build
+            # reads its own row headers out of that column, and no input is
+            # rendered there.
+            if labelled and c == 1:
+                out[column_names[c]] = names["rows"].get(str(r), "")
+            else:
+                out[column_names[c]] = cells.get((r, str(c)), "")
+        return out
+
     return {
-        "table_id": table_id,
-        "columns": [{"index": c, "name": names["columns"].get(str(c), f"Column {c}")}
-                    for c in columns],
-        "rows": [
-            {
-                "index": r,
-                "name": names["rows"].get(str(r), f"Row {r}"),
-                "cells": {names["columns"].get(str(c), f"Column {c}"):
-                          cells.get((r, str(c)), "") for c in columns},
-            }
-            for r in rows
-        ],
+        "table": {"id": table_id, "caption": caption(html, table_id)},
+        "columns": [column_names[c] for c in columns],
+        "rows": [record(r) for r in rows],
     }
 
 
-def materialise(html, *, request, book, section, values=None, export_url=None):
+def materialise(html, *, request, book, section, values=None, export_url=None,
+                all_tables_url=None):
     """The frozen markup, resolved for this reader.
 
-    ``export_url(table_id)`` returns the JSON-download URL for one table;
-    ``values`` is :func:`stored_values` (fetched here when not supplied).
+    ``export_url(table_id)`` returns the JSON-download URL for one table,
+    ``all_tables_url`` the book-wide one; ``values`` is :func:`stored_values`
+    (fetched here when not supplied).
     """
     if not has_tables(html):
         return html
@@ -181,6 +220,14 @@ def materialise(html, *, request, book, section, values=None, export_url=None):
             f'value="{escape(token)}">', html)
         html = FORM_OPEN_RE.sub(
             '<form method="post" class="editable-table-wrapper">', html)
+        if all_tables_url:
+            # Beside this table's download, because that is where a reader who
+            # wants their data is standing — and by the end of term the file
+            # they actually want is all of it, not this one lab's.
+            html = html.replace(
+                "</a>\n  </div>",
+                '</a>\n    <a class="all-tables" href="'
+                f'{escape(all_tables_url)}">All my tables</a>\n  </div>')
         return html
 
     # Anonymous: keep the table readable, say plainly why it cannot be saved.

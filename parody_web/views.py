@@ -16,8 +16,16 @@ from django.urls import reverse
 from django.utils.html import escape, strip_tags
 from django.utils.safestring import mark_safe
 
+from django.utils import timezone
+
 from . import editable_tables
 from .access import get_policy
+
+# The reader's own data leaves here in a documented shape, and something on the
+# other end will grow to depend on it: name the shape and version it, so a later
+# change to what a table exports is a new number rather than a silent break.
+TABLE_EXPORT_FORMAT = "parody-table/1"
+TABLES_EXPORT_FORMAT = "parody-tables/1"
 from .books import resolve_slug
 from .models import Book, Chapter, Section
 from .numbering import section_own_heading
@@ -388,7 +396,8 @@ def section_detail(request, chapter_slug, section_slug):
         # they saved. Identical to section.html for every other book.
         "section_html": editable_tables.materialise(
             section.html, request=request, book=book, section=section,
-            export_url=lambda tid: _table_url(book, chapter_slug, section_slug, tid)),
+            export_url=lambda tid: _table_url(book, chapter_slug, section_slug, tid),
+            all_tables_url=_tables_url(book)),
         "chapter_nav": _chapter_nav(book, section.chapter, current=section),
         "page_anchors": [] if preview else _page_anchors(section.html),
         "prev": prev_s, "next": next_s,
@@ -544,6 +553,33 @@ def _table_url(book, chapter_slug, section_slug, table_id):
             + _ed_query(book))
 
 
+def _tables_url(book):
+    """Download URL for every table this reader has filled in, book-wide."""
+    return reverse("parody_web:tables_export") + _ed_query(book)
+
+
+def _book_stamp(book):
+    return {"slug": book.slug, "title": book.title,
+            "edition": book.edition_id or ""}
+
+
+def _section_stamp(request, book, section):
+    return {
+        "key": section.key,
+        "number": section.number or "",
+        "title": section.title,
+        "url": request.build_absolute_uri(
+            reverse("parody_web:section",
+                    args=[section.chapter.slug, section.slug]) + _ed_query(book)),
+    }
+
+
+def _json_download(payload, filename):
+    response = JsonResponse(payload, json_dumps_params={"indent": 2})
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 def table_export(request, chapter_slug, section_slug, table_id):
     """One data-entry table as JSON, for the reader who filled it in.
 
@@ -561,13 +597,53 @@ def table_export(request, chapter_slug, section_slug, table_id):
     if table_id not in editable_tables.table_ids(section.html or ""):
         raise Http404("no such table in this section")
     values = editable_tables.stored_values(request.user, book, section)
-    payload = editable_tables.export(section.html or "", values, table_id)
-    payload["book"] = book.slug
-    payload["section"] = section.key
-    response = JsonResponse(payload)
-    response["Content-Disposition"] = (
-        f'attachment; filename="{table_id}-data.json"')
-    return response
+    payload = {
+        "format": TABLE_EXPORT_FORMAT,
+        "exported_at": timezone.now().isoformat(timespec="seconds"),
+        "book": _book_stamp(book),
+        "section": _section_stamp(request, book, section),
+        **editable_tables.table_payload(section.html or "", values, table_id),
+    }
+    return _json_download(
+        payload, f"{book.slug}-{section.slug}-{table_id}.json")
+
+
+def tables_export(request):
+    """Every table this reader has filled in, across the whole book, as one file.
+
+    A lab manual's tables are a term's measurements spread over a dozen labs,
+    and asking for them one page at a time is asking someone to remember which
+    pages they typed on. Tables with nothing in them are left out — this is the
+    reader's data, not the book's blank forms.
+    """
+    book, _editions = _resolve_book(request)
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "sign in to download your tables"},
+                            status=401)
+    policy = get_policy()
+    tables = []
+    for section in _all_sections_ordered(book):
+        if not editable_tables.has_tables(section.html or ""):
+            continue
+        if not policy.can_view_section(request, section):
+            continue
+        values = editable_tables.stored_values(request.user, book, section)
+        for table_id in editable_tables.table_ids(section.html or ""):
+            # Emptiness is judged on what the reader SAVED, not on the rendered
+            # records — those now carry the book's own row labels, so every
+            # untouched table would look full.
+            if not any(v for v in values.get(table_id, {}).values()):
+                continue
+            tables.append({"section": _section_stamp(request, book, section),
+                           **editable_tables.table_payload(
+                               section.html or "", values, table_id)})
+    payload = {
+        "format": TABLES_EXPORT_FORMAT,
+        "exported_at": timezone.now().isoformat(timespec="seconds"),
+        "book": _book_stamp(book),
+        "tables": tables,
+    }
+    return _json_download(payload, f"{book.slug}-tables.json")
 
 
 def solution_detail(request, chapter_slug, section_slug, exercise_id):
