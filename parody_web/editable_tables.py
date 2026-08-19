@@ -24,8 +24,8 @@ Two things it must get right:
   saveable and silently isn't is worse than one that says so.
 """
 
-import json
 import re
+from html import unescape
 
 from django.utils.html import conditional_escape, escape
 
@@ -42,7 +42,23 @@ EXPORT_URL_RE = re.compile(
 CSRF_RE = re.compile(r"\{%\s*csrf_token\s*%\}")
 FORM_OPEN_RE = re.compile(r'<form method="POST" class="editable-table-wrapper">')
 CELL_NAME_RE = re.compile(r"^cell-(?P<row>\d+)-(?P<col>\d+)$")
-DATA_ATTR_RE = re.compile(r"data-(?P<which>column|row)-headers='(?P<json>[^']*)'")
+
+# The rendered table itself, which is what the export reads. The anchor div also
+# carries data-column-headers / data-row-headers, and reading THOSE is how the
+# export used to work — but the build writes header text into them verbatim, so
+# a heading like \(R_i\) lands as an invalid JSON escape, json.loads throws, and
+# every column and row name in the table quietly became "Column 3". Nearly every
+# real lab table has maths in its headings. The markup below cannot lie about
+# what the reader is looking at, and it also carries the cells the AUTHOR filled
+# in (a nominal resistance, say), which the attributes never mentioned.
+THEAD_RE = re.compile(r"<thead>(.*?)</thead>", re.DOTALL)
+TBODY_RE = re.compile(r"<tbody>(.*?)</tbody>", re.DOTALL)
+TH_RE = re.compile(r"<th[^>]*>(.*?)</th>", re.DOTALL)
+TR_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL)
+TD_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL)
+CELL_INPUT_RE = re.compile(r'name="cell-(?P<row>\d+)-(?P<col>\d+)"')
+# \(x\) and $x$ delimit maths for MathJax; in a column heading they are noise.
+MATH_DELIM_RE = re.compile(r"\\\((.*?)\\\)|\\\[(.*?)\\\]|\$([^$]*)\$", re.DOTALL)
 
 
 def has_tables(html):
@@ -55,24 +71,50 @@ def table_ids(html):
     return [m.group("id") for m in ANCHOR_RE.finditer(html or "")]
 
 
-def headers(html, table_id):
-    """The column/row header names the build recorded on the anchor div.
+def _text(fragment):
+    """A cell's text: tags gone, entities decoded, maths unwrapped.
 
-    They are the export's column names, and they are only on the anchor — the
-    ``<th>`` cells carry the same text but the row names live in the body.
+    A heading reads \\(R_i\\) in the markup because MathJax needs the
+    delimiters. As a column name in a data file they are noise, so the maths
+    comes out as the author wrote it — R_i — and stays their notation.
     """
-    out = {"columns": {}, "rows": {}}
+    text = MATH_DELIM_RE.sub(
+        lambda m: next(g for g in m.groups() if g is not None), fragment or "")
+    text = re.sub(r"<[^>]+>", " ", text)
+    return " ".join(unescape(text).split())
+
+
+def _table_markup(html, table_id):
+    """The one table's rendered markup, anchor div to closing form."""
     for m in ANCHOR_RE.finditer(html or ""):
         if m.group("id") != table_id:
             continue
-        for attr in DATA_ATTR_RE.finditer(m.group("attrs")):
-            try:
-                parsed = json.loads(attr.group("json").replace("&quot;", '"'))
-            except ValueError:
-                continue
-            out["columns" if attr.group("which") == "column" else "rows"] = parsed
-        break
-    return out
+        rest = (html or "")[m.end():]
+        end = rest.find("</form>")
+        return rest if end < 0 else rest[:end]
+    return ""
+
+
+def parse_table(html, table_id):
+    """The table as rendered: its column names, and its rows of cells.
+
+    Each cell is either ``("text", "1.5")`` — fixed content, whether a row label
+    or a value the author filled in — or ``("input", (row, col))``, a blank for
+    the reader, carrying the very coordinates their saved values are keyed to.
+    """
+    markup = _table_markup(html, table_id)
+    head = THEAD_RE.search(markup)
+    columns = [_text(th) for th in TH_RE.findall(head.group(1))] if head else []
+    body = TBODY_RE.search(markup)
+    rows = []
+    for tr in TR_RE.findall(body.group(1) if body else ""):
+        cells = []
+        for td in TD_RE.findall(tr):
+            hit = CELL_INPUT_RE.search(td)
+            cells.append(("input", (int(hit.group("row")), hit.group("col")))
+                         if hit else ("text", _text(td)))
+        rows.append(cells)
+    return columns, rows
 
 
 def stored_values(user, book, section):
@@ -129,18 +171,19 @@ def caption(html, table_id):
     return ""
 
 
-def _column_names(names, columns):
-    """Column index -> the name this export uses for it, all distinct.
+def _column_names(headings, width):
+    """The name this export uses for each column, all distinct.
 
     Two columns headed "Notes" would collide as keys and the second would eat
-    the first, so the later one becomes "Notes (2)". An unheaded column gets
-    "Column <n>" rather than "", which is unusable as a key.
+    the first, so the later one becomes "Notes (2)". An unheaded column — lab
+    tables often leave the label column's heading blank — gets "Column <n>"
+    rather than "", which is unusable as a key.
     """
-    out, seen = {}, {}
-    for c in columns:
-        base = str(names["columns"].get(str(c), "") or "").strip() or f"Column {c}"
+    out, seen = [], {}
+    for i in range(width):
+        base = (headings[i].strip() if i < len(headings) else "") or f"Column {i + 1}"
         seen[base] = seen.get(base, 0) + 1
-        out[c] = base if seen[base] == 1 else f"{base} ({seen[base]})"
+        out.append(base if seen[base] == 1 else f"{base} ({seen[base]})")
     return out
 
 
@@ -159,32 +202,30 @@ def table_payload(html, values, table_id):
 
     Rectangular on purpose: every row carries every column, empty ones as "",
     so a half-filled table still loads as a table.
-    """
-    names = headers(html, table_id)
-    cells = values.get(table_id, {})
-    columns = sorted({int(c) for _, c in cells if str(c).isdigit()}
-                     | {int(c) for c in names["columns"] if str(c).isdigit()})
-    labelled = bool(names["rows"])
-    column_names = _column_names(names, columns)
-    rows = sorted({r for r, _ in cells}
-                  | {int(r) for r in names["rows"] if str(r).isdigit()})
 
-    def record(r):
-        out = {}
-        for c in columns:
-            # Column 1 holds the row labels when the table has them: the build
-            # reads its own row headers out of that column, and no input is
-            # rendered there.
-            if labelled and c == 1:
-                out[column_names[c]] = names["rows"].get(str(r), "")
-            else:
-                out[column_names[c]] = cells.get((r, str(c)), "")
+    Read off the rendered table, so what comes out is what the reader saw: row
+    labels, the author's own prefilled cells, and the reader's answers, each in
+    its column.
+    """
+    headings, body = parse_table(html, table_id)
+    cells = values.get(table_id, {})
+    width = max([len(headings)] + [len(r) for r in body]) if (headings or body) else 0
+    names = _column_names(headings, width)
+
+    def record(row):
+        out = {name: "" for name in names}
+        for i, cell in enumerate(row):
+            if i >= width:
+                break
+            kind, payload = cell
+            out[names[i]] = (payload if kind == "text"
+                             else cells.get(payload, ""))
         return out
 
     return {
         "table": {"id": table_id, "caption": caption(html, table_id)},
-        "columns": [column_names[c] for c in columns],
-        "rows": [record(r) for r in rows],
+        "columns": names,
+        "rows": [record(row) for row in body],
     }
 
 

@@ -3268,14 +3268,46 @@ class EditableTableTests(TestCase):
         from parody_web import editable_tables
 
         html = FROZEN_TABLE.replace(
-            '{"1":"Task","2":"Observation","3":"Notes"}',
-            '{"1":"Task","2":"Notes","3":"Notes"}')
+            "<th>Task</th><th>Observation</th><th>Notes</th>",
+            "<th>Task</th><th>Notes</th><th>Notes</th>")
         payload = editable_tables.table_payload(
             html, {"test-observations": {(1, "2"): "a", (1, "3"): "b"}},
             "test-observations")
         self.assertEqual(payload["columns"], ["Task", "Notes", "Notes (2)"])
         self.assertEqual(payload["rows"][0]["Notes"], "a")
         self.assertEqual(payload["rows"][0]["Notes (2)"], "b")
+
+    def test_headings_with_maths_survive_and_lose_their_delimiters(self):
+        """The regression that made this read the table instead of the attrs.
+
+        A real lab table heads its columns with maths, and the build writes that
+        text into data-column-headers verbatim — where \\(R_1\\) is an invalid
+        JSON escape. Reading the attributes meant json.loads threw and EVERY
+        name in the table silently became "Column 3"."""
+        from parody_web import editable_tables
+
+        html = FROZEN_TABLE.replace(
+            "<th>Task</th><th>Observation</th><th>Notes</th>",
+            r"<th></th><th>\(R_1\) (M&#937;)</th><th>\(v_{R_1}\)</th>"
+        ).replace("<td>LabVIEW Setup</td>", r"<td>Nominal \(R_i\)</td>")
+        payload = editable_tables.table_payload(
+            html, {"test-observations": {(1, "2"): "1.5"}}, "test-observations")
+        self.assertEqual(payload["columns"], ["Column 1", "R_1 (MΩ)", "v_{R_1}"])
+        self.assertEqual(payload["rows"][0]["Column 1"], "Nominal R_i")
+        self.assertEqual(payload["rows"][0]["R_1 (MΩ)"], "1.5")
+
+    def test_cells_the_author_filled_in_are_part_of_the_data(self):
+        """A lab table often ships with values already in it — nominal
+        resistances, say. They are not inputs, so reading only the reader's
+        saved cells dropped them from the file entirely."""
+        from parody_web import editable_tables
+
+        html = FROZEN_TABLE.replace(
+            '<td><input name="cell-1-2" type="text" class="input input-bordered text-sm" '
+            'style="min-width: 120px; width: 120px;" value="{% get_cell "test-observations" 1 2 %}" /></td>',
+            "<td>1.5</td>")
+        payload = editable_tables.table_payload(html, {}, "test-observations")
+        self.assertEqual(payload["rows"][0]["Observation"], "1.5")
 
     def test_export_needs_a_reader(self):
         self.assertEqual(
