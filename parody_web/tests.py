@@ -886,6 +886,20 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('href="/c/s/#fundamental-cov"',
                       data["chapters"][0]["sections"][0]["html"])
 
+    def test_exercise_resolves_via_exe_prefix(self):
+        # an exercise div is anchored on its bare id (::: {#horticulture
+        # .exercise}); pandoc-crossref's prefix for one is exe:
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "Problems", "slug": "problems", "anchors": [
+                {"id": "horticulture", "type": "exercise"},
+            ], "html":
+                '<div id="horticulture" class="exercise">Do it.</div>'
+                '<p>see <span class="citation" data-cites="exe:horticulture">'
+                '[@exe:horticulture]</span></p>'}]}]}
+        number_artifact(data)
+        self.assertIn('href="/c/problems/#horticulture"',
+                      data["chapters"][0]["sections"][0]["html"])
+
     def test_a_table_referred_to_as_tab_still_resolves(self):
         # LaTeX spells a table label tab:, pandoc-crossref spells it tbl:, and a
         # migrated book carries both. The Laplace chapter points at

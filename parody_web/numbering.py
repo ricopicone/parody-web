@@ -197,7 +197,7 @@ def _lookup_target(tgt, targets):
         # definitions/theorems/comments/lemmas are anchored on their bare id
         # (::: {#magnitude-criterion .definition}) but referenced as
         # [def:magnitude-criterion]{.hashref}. Strip the prefix and retry.
-        m = re.match(r'(?:def|thm|cmt|lem):(.+)$', tgt, re.I)
+        m = re.match(r'(?:def|thm|cmt|lem|exe|exa):(.+)$', tgt, re.I)
         if m:
             t = targets.get(m.group(1))
     if not t and re.match(r'tab[:\-]', tgt, re.I):
