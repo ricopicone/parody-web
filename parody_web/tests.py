@@ -886,6 +886,47 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('href="/c/s/#fundamental-cov"',
                       data["chapters"][0]["sections"][0]["html"])
 
+    def test_an_author_in_text_citation_resolves(self):
+        # `@kreyszig2011` with no brackets is pandoc's author-in-text form and
+        # was reaching the page as literal "@kreyszig2011" — 69 times across
+        # the maths notes.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [], "html":
+                '<p>see <span class="citation" data-cites="k11">@k11</span>'
+                ' for more</p>'}]}]}
+        number_artifact(data, references={"k11": {"label": "Kreyszig (2011)",
+                                                  "full": "Kreyszig, E. 2011."}})
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<a class="cite" href="#ref-k11">Kreyszig (2011)</a>', html)
+        self.assertNotIn("@k11", html)
+
+    def test_a_prefix_phrase_reference_keeps_the_phrase_and_drops_the_word(self):
+        # pandoc-crossref's "[Equation @eq:ioode]" arrives as ONE citation span
+        # whose body is the whole phrase. It should read "Equation (1.1)" —
+        # neither "[Equation @eq:ioode]" (what shipped) nor "Equation equation
+        # (1.1)". Eleven of these in Ordinary Differential Equations.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:ioode", "type": "equation"}], "html":
+                '<p><span class="math display">\\[x\\]</span>'
+                '<span id="eq:ioode"></span></p>'
+                '<p>see <span class="citation" data-cites="eq:ioode">'
+                '[Equation @eq:ioode]</span> above</p>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('see Equation <a class="xref"', html)
+        self.assertIn('>(1.1)</a> above', html)
+        self.assertNotIn("@eq:ioode", html)
+
+    def test_an_unplaceable_key_leaves_its_span_alone(self):
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [], "html":
+                '<p><span class="citation" data-cites="nope">'
+                '[Equation @nope]</span></p>'}]}]}
+        number_artifact(data)
+        self.assertIn("[Equation @nope]",
+                      data["chapters"][0]["sections"][0]["html"])
+
     def test_exercise_resolves_via_exe_prefix(self):
         # an exercise div is anchored on its bare id (::: {#horticulture
         # .exercise}); pandoc-crossref's prefix for one is exe:

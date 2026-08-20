@@ -43,6 +43,16 @@ _HASHREF_RE = re.compile(r'<span class="([Hh]ashref)">([^<]*)</span>')
 # pandoc-crossref didn't run; resolve those against the same target map.
 _CITE_RE = re.compile(
     r'<span class="citation" data-cites="([^"]+)">\[@([^\]]*)\]</span>')
+# Everything _CITE_RE does not cover: pandoc wraps the author-in-text form
+# (`@kreyszig2011`) and pandoc-crossref's prefix phrase (`[Equation
+# @eq:ioode]`) in the same span, and only the BODY differs. A bibliography key
+# reads "Kreyszig (2011)" — the reader is already saying the name — and a
+# cross-reference key inside a prefix phrase gives only its number, because the
+# phrase supplies the word. 69 of these were on the maths notes' pages as
+# literal "@kreyszig2011" and "[Equation @eq:ioode]".
+_ANY_CITE_RE = re.compile(
+    r'<span class="citation" data-cites="[^"]+">(.*?)</span>', re.S)
+_AT_KEY_RE = re.compile(r'@([A-Za-z][\w:.-]*)')
 
 # Further-reading boxes (::: {.freadinglist}) list recommended sources as
 # [key]{.plaincite post="…"} spans, which pandoc renders as
@@ -1603,6 +1613,39 @@ def number_artifact(data, references=None, edition_query=""):
                         return mo.group(0)  # unknown key → leave span as-is
                 return ", ".join(parts)
             html = _CITE_RE.sub(resolve_cite, html)
+
+            def resolve_any_cite(mo):
+                body = mo.group(1)
+                # "[Equation @eq:x]" — the phrase names the kind already, so the
+                # reference contributes only its number, and the brackets that
+                # marked the citation for pandoc are not the author's prose.
+                bracketed = body.startswith("[") and body.endswith("]")
+                inner = body[1:-1] if bracketed else body
+                prefixed = bool(_AT_KEY_RE.search(inner)) and \
+                    inner[:_AT_KEY_RE.search(inner).start()].strip()
+                resolved = [True]
+
+                def one(m):
+                    key = m.group(1)
+                    t = _lookup_target(key, targets)
+                    if t:
+                        label = t["label"]
+                        if prefixed and " " in label:
+                            label = label.split(" ", 1)[1]
+                        return f'<a class="xref" href="{t["url"] or "#"}">{label}</a>'
+                    if key in references:
+                        if key not in cited:
+                            cited.append(key)
+                        return (f'<a class="cite" href="#ref-{key}">'
+                                f'{_esc(references[key]["label"])}</a>')
+                    resolved[0] = False
+                    return m.group(0)
+
+                out = _AT_KEY_RE.sub(one, inner)
+                # an unresolvable key keeps the span exactly as it was, so
+                # nothing silently changes shape around a name we cannot place
+                return out if resolved[0] else mo.group(0)
+            html = _ANY_CITE_RE.sub(resolve_any_cite, html)
 
             # .plaincite entry → its linked "Author (Year)" label (registered for
             # the References list, like a normal citation) plus any note(s). Unknown
