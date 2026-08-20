@@ -144,12 +144,16 @@ def _lookup_target(tgt, targets):
         t = targets.get(tgt[:1].lower() + tgt[1:])
     if not t:
         # environment refs carry a type prefix the target id may lack:
-        # definitions/theorems/comments are anchored on their bare id
+        # definitions/theorems/comments/lemmas are anchored on their bare id
         # (::: {#magnitude-criterion .definition}) but referenced as
         # [def:magnitude-criterion]{.hashref}. Strip the prefix and retry.
-        m = re.match(r'(?:def|thm|cmt):(.+)$', tgt, re.I)
+        m = re.match(r'(?:def|thm|cmt|lem):(.+)$', tgt, re.I)
         if m:
             t = targets.get(m.group(1))
+    if not t and re.match(r'tab[:\-]', tgt, re.I):
+        # LaTeX spells a table label tab:, pandoc-crossref spells it tbl:, and a
+        # migrated book carries both spellings.
+        t = targets.get("tbl:" + tgt.split(":", 1)[-1])
     if not t and "ex" in tgt.split(":"):
         # xsim namespaces labels declared inside an exercise/solution; 'ex' shows
         # up as a segment whether the label leads with a type

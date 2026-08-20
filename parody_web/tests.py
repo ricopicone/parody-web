@@ -808,6 +808,33 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<a class="xref" href="/c/s/#magnitude">definition 1.1</a>',
                       data["chapters"][0]["sections"][0]["html"])
 
+    def test_lemma_resolves_via_lem_prefix(self):
+        # same shape as def:/thm:/cmt: — the Calculus of Variations refers to
+        # [lem:fundamental-cov]{.hashref} and the lemma is anchored bare.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "fundamental-cov", "type": "theorem"},
+            ], "html":
+                '<div id="fundamental-cov" class="theorem">L.</div>'
+                '<p>see <span class="hashref">lem:fundamental-cov</span></p>'}]}]}
+        number_artifact(data)
+        self.assertIn('href="/c/s/#fundamental-cov"',
+                      data["chapters"][0]["sections"][0]["html"])
+
+    def test_a_table_referred_to_as_tab_still_resolves(self):
+        # LaTeX spells a table label tab:, pandoc-crossref spells it tbl:, and a
+        # migrated book carries both. The Laplace chapter points at
+        # [tab:fourier_transforms]{.hashref}; the table is anchored tbl:.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "tbl:fourier_transforms", "type": "table"},
+            ], "html":
+                '<table id="tbl:fourier_transforms"><caption>T</caption></table>'
+                '<p>see <span class="hashref">tab:fourier_transforms</span></p>'}]}]}
+        number_artifact(data)
+        self.assertIn('href="/c/s/#tbl:fourier_transforms"',
+                      data["chapters"][0]["sections"][0]["html"])
+
     def test_infobox_resolves_by_title_keeping_case(self):
         # infoboxes are labelled by their proper-noun title, which a .hashref
         # ref must NOT lower-case the way it recases a numbered "Figure 1.1".
