@@ -834,12 +834,36 @@ class CrossRefResolutionTests(TestCase):
             ], "html":
                 '<p><span class="math display">\\[x\\]</span>'
                 '<span id="eq:one"></span></p>'
-                '<p><span class="math display">\\[\\begin{align}y &= x'
-                ' \\tag{\\cref{eq:one}}\\end{align}\\]</span></p>'}]}]}
+                '<p><span class="math display">\\[y = x + \\cref{eq:one}'
+                '\\]</span></p>'}]}]}
         number_artifact(data)
         html = data["chapters"][0]["sections"][0]["html"]
-        self.assertIn("\\text{equation (1.1)}", html)
+        self.assertIn("\\text{equation (1.1)}", html)   # maths mode: wrapped
         self.assertNotIn("\\cref", html)
+
+    def test_a_cref_inside_a_tag_is_not_wrapped_in_text(self):
+        # \tag{…} is already text mode; a nested \text is an error there and
+        # MathJax abandons the block — five of the six live inside \tag/\text.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:one", "type": "equation"},
+            ], "html":
+                '<p><span class="math display">\\[x\\]</span>'
+                '<span id="eq:one"></span></p>'
+                '<p><span class="math display">\\[\\begin{align}y &= x'
+                ' \\tag{see \\cref{eq:one}}\\end{align}\\]</span></p>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn("\\tag{see equation (1.1)}", html)
+
+    def test_dollar_math_in_a_code_block_is_left_alone(self):
+        # a notebook's own repr output is text, not an equation
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [], "html":
+                "<pre><code>Text(0, 0.5, '$g(x_1)=\\int f$')</code></pre>"}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertNotIn('class="math', html)
 
     def test_an_unresolvable_cref_in_maths_is_left_alone(self):
         data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",

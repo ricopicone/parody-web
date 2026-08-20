@@ -85,6 +85,12 @@ _DOLLAR_MATH_RE = re.compile(r'(?<!\$)\$(?!\$)([^$<\n]{1,60}?)\$(?!\$)')
 # with $…$ inside \tag{}/\text{} — rescuing those would bury a <span> in the
 # middle of the TeX and MathJax would abandon the whole block.
 _MATH_SPAN_RE = re.compile(r'<span class="math [^"]*">.*?</span>', re.S)
+# …nor inside code. A notebook's own output line is repr text —
+# `Text(0, 0.5, '$g(x_1)=\\int…$')` — and rescuing the dollars there put a
+# maths span inside a <code> block and set the repr as an equation.
+_NO_DOLLAR_RESCUE_RE = re.compile(
+    r'<span class="math [^"]*">.*?</span>|<code\b[^>]*>.*?</code>|'
+    r'<pre\b[^>]*>.*?</pre>', re.S)
 
 
 def _fix_dollar_math(html):
@@ -97,7 +103,7 @@ def _fix_dollar_math(html):
         return mo.group(0)
 
     out, at = [], 0
-    for span in _MATH_SPAN_RE.finditer(html):
+    for span in _NO_DOLLAR_RESCUE_RE.finditer(html):
         out.append(_DOLLAR_MATH_RE.sub(conv, html[at:span.start()]))
         out.append(span.group(0))
         at = span.end()
@@ -134,15 +140,36 @@ def _resolve_cref_in_math(html, targets):
     "cref". Resolve it against the same targets the .hashref spans use and set
     the label as text; an unresolvable key is left alone rather than replaced
     with something wrong."""
-    def one(mo):
+    def one(mo, body):
         t = _lookup_target(mo.group(2).strip(), targets)
         if not t:
             return mo.group(0)
-        return "\\text{" + _recase_label(t["label"], mo.group(1) == "C") + "}"
+        label = _recase_label(t["label"], mo.group(1) == "C")
+        # \tag{…} and \text{…} put their argument in TEXT mode, where a nested
+        # \text is an error and MathJax abandons the whole block — which is
+        # exactly where these \crefs live. Wrap only in maths mode.
+        return label if _in_text_mode(body, mo.start()) else "\\text{" + label + "}"
 
     def in_span(mo):
-        return _CREF_IN_MATH_RE.sub(one, mo.group(0))
+        body = mo.group(0)
+        return _CREF_IN_MATH_RE.sub(lambda m: one(m, body), body)
     return _MATH_SPAN_RE.sub(in_span, html)
+
+
+_TEXT_ARG_RE = re.compile(r'\\(?:text|tag|mbox|textrm|textbf|textit)\{|[{}]')
+
+
+def _in_text_mode(body, pos):
+    """True when pos sits inside a \\text{…}-family argument."""
+    stack = []
+    for m in _TEXT_ARG_RE.finditer(body[:pos]):
+        tok = m.group(0)
+        if tok == "}":
+            if stack:
+                stack.pop()
+        else:
+            stack.append(tok != "{")   # True = opened by \text-family
+    return any(stack)
 
 
 def _bind_math_punctuation(html):
