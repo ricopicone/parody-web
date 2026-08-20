@@ -58,6 +58,17 @@ window.MathJax = {
        and nothing anywhere said so. The math notes use \norm the same way. */
     abs: ['{\\left\\lvert #1 \\right\\rvert}', 1],
     norm: ['{\\left\\lVert #1 \\right\\rVert}', 1],
+    /* Probability and statistics operators, one mandatory argument, bracketed:
+       \E{X} sets E[X]. The book's LaTeX declares them with xparse so a starred
+       form drops the brackets; nothing in any book uses the star, so these
+       take the plain form. Silent-failure class again — Probability read
+       "EX" and "VarX" on the page. */
+    E: ['{\\operatorname{E}\\left[#1\\right]}', 1],
+    Var: ['{\\operatorname{Var}\\left[#1\\right]}', 1],
+    Cov: ['{\\operatorname{Cov}\\left[#1\\right]}', 1],
+    Cor: ['{\\operatorname{Cor}\\left[#1\\right]}', 1],
+    Skew: ['{\\operatorname{Skew}\\left[#1\\right]}', 1],
+    Kurt: ['{\\operatorname{Kurt}\\left[#1\\right]}', 1],
     bigcdot: '{\\cdot}',
     band: ['{#1\\cdot #2}', 2],
     bor: ['{#1+#2}', 2],

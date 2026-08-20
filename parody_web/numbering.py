@@ -80,6 +80,13 @@ _RAWTEX_DROP = {"raggedleft", "arraybackslash", "cmidrule", "newpage",
 _DOLLAR_MATH_RE = re.compile(r'(?<!\$)\$(?!\$)([^$<\n]{1,60}?)\$(?!\$)')
 
 
+# …but only OUTSIDE the maths pandoc already marked up. A raw \begin{align}
+# block arrives as one display-maths span, and the maths notes annotate rows
+# with $…$ inside \tag{}/\text{} — rescuing those would bury a <span> in the
+# middle of the TeX and MathJax would abandon the whole block.
+_MATH_SPAN_RE = re.compile(r'<span class="math [^"]*">.*?</span>', re.S)
+
+
 def _fix_dollar_math(html):
     def conv(mo):
         c = mo.group(1)
@@ -88,7 +95,14 @@ def _fix_dollar_math(html):
         if re.search(r"[\\_^{]", c) or (" " not in c and len(c) <= 30):
             return f'<span class="math inline">\\({c}\\)</span>'
         return mo.group(0)
-    return _DOLLAR_MATH_RE.sub(conv, html)
+
+    out, at = [], 0
+    for span in _MATH_SPAN_RE.finditer(html):
+        out.append(_DOLLAR_MATH_RE.sub(conv, html[at:span.start()]))
+        out.append(span.group(0))
+        at = span.end()
+    out.append(_DOLLAR_MATH_RE.sub(conv, html[at:]))
+    return "".join(out)
 
 
 # MathJax renders inline math into an <mjx-container>, which is an atomic

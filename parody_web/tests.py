@@ -2363,6 +2363,15 @@ class ClozeAssetsTests(TestCase):
         for name in ("abs", "norm"):
             self.assertIn(f"{name}: [", base, f"\\{name} is not declared")
 
+    def test_probability_operators_are_declared(self):
+        # The maths notes write expectation and its friends as \E{X}, \Var{X},
+        # \Cov{X,Y} — one mandatory argument, rendered bracketed. Same silent
+        # failure as \abs above: 25 expressions across Probability and
+        # Statistics read "EX" and "VarX" on the live page instead.
+        base = self.BASE.read_text(encoding="utf-8")
+        for name in ("E", "Var", "Cov", "Cor", "Skew", "Kurt"):
+            self.assertIn(f"{name}: [", base, f"\\{name} is not declared")
+
     def test_cloze_classes_are_styled(self):
         css = (self.STATIC / "content.css").read_text(encoding="utf-8")
         for cls in (".cloze-blank", ".cloze-key", ".cloze-key-block",
@@ -2945,6 +2954,28 @@ class ReadingDetailTests(TestCase):
         # _fix_dollar_math converts $x$ late; binding must run after it
         out = self.render('<p>a value $R_e$. Next.</p>')
         self.assertIn(f'</span>{self.WJ}.', out)
+
+    def test_dollar_math_inside_a_math_span_is_left_alone(self):
+        # A raw \begin{align} block reaches the artifact as ONE display-math
+        # span, and the maths notes write annotations as $…$ inside \tag{}:
+        #   \lambda = (n\pi/L)^2. \tag{$n \in \mathbb{Z_+}$}
+        # Rewriting that inner $…$ buries a <span> inside the display maths and
+        # MathJax gives up on the whole block ("Missing close brace"), so the
+        # equation vanishes from the page.
+        tex = ('<p><span class="math display">\\[\\begin{align}\n'
+               '  \\lambda &= 1. \\tag{$n \\in \\mathbb{Z_+}$}\n'
+               '\\end{align}\\]</span></p>')
+        out = self.render(tex)
+        self.assertEqual(out.count('class="math'), 1)
+        self.assertIn('\\tag{$n \\in \\mathbb{Z_+}$}', out)
+
+    def test_dollar_math_outside_a_math_span_still_converts(self):
+        # the rescue itself must keep working either side of a display block
+        out = self.render('<p>before $a_1$ '
+                          '<span class="math display">\\[x\\]</span> '
+                          'after $b_2$</p>')
+        self.assertIn('<span class="math inline">\\(a_1\\)</span>', out)
+        self.assertIn('<span class="math inline">\\(b_2\\)</span>', out)
 
 
 class ContentStylesheetTests(SimpleTestCase):
