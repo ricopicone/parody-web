@@ -808,6 +808,22 @@ class CrossRefResolutionTests(TestCase):
         self.assertIn('<a class="xref" href="/c/s/#magnitude">definition 1.1</a>',
                       data["chapters"][0]["sections"][0]["html"])
 
+    def test_a_lemma_is_numbered_and_labelled_like_a_theorem(self):
+        # print has boxed .lemma from the start; the web had no branch for it,
+        # so the Calculus of Variations' five lemmas were bare divs. They are
+        # numbered on their own counter, as amsthm gives them.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "fundamental-cov", "type": "lemma"},
+            ], "html":
+                '<div id="fundamental-cov" class="lemma numbered-environment"'
+                ' data-env-type="lemma"><div class="px-4 py-2"><h3>Fundamental'
+                ' Lemma</h3></div><div class="px-4 py-3"><p>L.</p></div></div>'
+                '<p>see <span class="hashref">lem:fundamental-cov</span></p>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn("lemma 1.1", html)
+
     def test_lemma_resolves_via_lem_prefix(self):
         # same shape as def:/thm:/cmt: — the Calculus of Variations refers to
         # [lem:fundamental-cov]{.hashref} and the lemma is anchored bare.

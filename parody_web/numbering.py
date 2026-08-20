@@ -423,6 +423,9 @@ _TYPE_LABELS = {
     "exercise": None, "example": "Example", "theorem": "Theorem",
     "definition": "Definition", "comment": "Comment",
     "listing": "Listing", "algorithm": "Algorithm",
+    # theorem's siblings, boxed in print all along and on the web since
+    # parody 0.52 — each on its own counter, as amsthm gives them
+    "lemma": "Lemma", "corollary": "Corollary", "proposition": "Proposition",
 }
 
 #: Boxed environments that show their number in the box's own header rather
@@ -430,7 +433,8 @@ _TYPE_LABELS = {
 #: Examples and exercises are numbered too but carry the label in a
 #: presentation of their own (.example-label / .problem-label), and infoboxes
 #: are referenced by title and never numbered at all.
-_ENV_LABELLED = frozenset({"definition", "theorem", "comment"})
+_ENV_LABELLED = frozenset({"definition", "theorem", "comment",
+                           "lemma", "corollary", "proposition"})
 
 
 def _chapter_label(ch, idx_state):

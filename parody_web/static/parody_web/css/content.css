@@ -233,6 +233,10 @@ p.suppliers { font-family: var(--font-display); font-size: .9rem; }
 .col [data-env-type="definition"] { --env-hue: var(--env-definition); }
 .col [data-env-type="theorem"]    { --env-hue: var(--env-theorem); }
 .col [data-env-type="comment"]    { --env-hue: var(--env-comment); }
+/* theorem's siblings share its violet — they are the same kind of claim, and
+   three more hues would say a difference that isn't there. */
+.col :is([data-env-type="lemma"], [data-env-type="corollary"],
+         [data-env-type="proposition"]) { --env-hue: var(--env-theorem); }
 
 /* --env-hue's fallback is what an environment with no hue of its own gets. */
 .col :is([data-env-type]:not([data-env-type="example"], [data-env-type="exercise"]),
