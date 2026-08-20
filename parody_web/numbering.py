@@ -122,6 +122,29 @@ _MATH_PUNCT_RE = re.compile(
 _WORD_JOINER = "⁠"
 
 
+_CREF_IN_MATH_RE = re.compile(r'\\(c|C)ref\{([^}]*)\}')
+
+
+def _resolve_cref_in_math(html, targets):
+    """A \\cref inside maths is not a cross-reference to anyone.
+
+    A migrated derivation annotates its rows with \\tag{\\cref{eq:x}}, and no
+    part of the web pipeline reaches inside a maths span — MathJax has no
+    \\cref, and an undefined macro there typesets its own NAME, so the row read
+    "cref". Resolve it against the same targets the .hashref spans use and set
+    the label as text; an unresolvable key is left alone rather than replaced
+    with something wrong."""
+    def one(mo):
+        t = _lookup_target(mo.group(2).strip(), targets)
+        if not t:
+            return mo.group(0)
+        return "\\text{" + _recase_label(t["label"], mo.group(1) == "C") + "}"
+
+    def in_span(mo):
+        return _CREF_IN_MATH_RE.sub(one, mo.group(0))
+    return _MATH_SPAN_RE.sub(in_span, html)
+
+
 def _bind_math_punctuation(html):
     """Stop a line break stranding punctuation that follows inline math."""
     return _MATH_PUNCT_RE.sub(rf'\1{_WORD_JOINER}\2', html)
@@ -1523,6 +1546,8 @@ def number_artifact(data, references=None, edition_query=""):
                 # leave unresolved refs (missing targets) as-is
                 return out if out is not None else mo.group(0)
             html = _HASHREF_RE.sub(resolve, html)
+
+            html = _resolve_cref_in_math(html, targets)
 
             cited = []  # bib keys cited in this section, in order
 

@@ -824,6 +824,31 @@ class CrossRefResolutionTests(TestCase):
         html = data["chapters"][0]["sections"][0]["html"]
         self.assertIn("lemma 1.1", html)
 
+    def test_cref_inside_maths_resolves_to_the_label(self):
+        # a migrated derivation annotates rows with \tag{\cref{eq:x}}. MathJax
+        # has no \cref and an undefined macro there typesets its own NAME, so
+        # the row read "cref" on the page. Six of them in the maths notes.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:one", "type": "equation"},
+            ], "html":
+                '<p><span class="math display">\\[x\\]</span>'
+                '<span id="eq:one"></span></p>'
+                '<p><span class="math display">\\[\\begin{align}y &= x'
+                ' \\tag{\\cref{eq:one}}\\end{align}\\]</span></p>'}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn("\\text{equation (1.1)}", html)
+        self.assertNotIn("\\cref", html)
+
+    def test_an_unresolvable_cref_in_maths_is_left_alone(self):
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [], "html":
+                '<p><span class="math inline">\\(a \\cref{nope}\\)</span></p>'}]}]}
+        number_artifact(data)
+        self.assertIn("\\cref{nope}",
+                      data["chapters"][0]["sections"][0]["html"])
+
     def test_lemma_resolves_via_lem_prefix(self):
         # same shape as def:/thm:/cmt: — the Calculus of Variations refers to
         # [lem:fundamental-cov]{.hashref} and the lemma is anchored bare.
