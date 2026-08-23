@@ -24,7 +24,8 @@ means something different the following week.
 4. **Chapter numbers do not move.** A chapter marked draft still occupies its number, so
    Wheeled Mobile Robots is Chapter 11 from day one.
 5. A released chapter may cross-reference a draft chapter. The reference renders with the
-   correct number as **plain text, no link** — no 404, no title leak.
+   correct number as **plain text, no link** — no 404, no title leak. See
+   §"Cross-references": this is reader-independent, because numbering is baked at import.
 
 ## Approach: import-time gating
 
@@ -151,13 +152,19 @@ the chapter exists and leaks its slug.
 ### Cross-references
 
 `numbering.py` resolves a reference through `_lookup_target`, which returns
-`{"label", "url"}`. For a target inside a draft chapter, return the **label with an empty
-url**; the renderer already emits `<a href="{url or '#'}">`, so this needs a small change
-to emit a bare `<span class="xref">` when the url is empty. The number is correct because
-the draft chapter is present and numbered.
+`{"label", "url"}`. For a target inside a draft chapter, register the target with its
+**label and an empty url**, and emit a bare `<span class="xref">` instead of an `<a>` when
+the url is empty. The number is correct because the draft chapter is present and numbered.
 
-This applies only when the reader cannot view drafts; for course staff the link resolves
-normally.
+**This cannot vary by reader.** `number_artifact` runs at **import**
+(`import_artifact.py:111`) and its output is stored in `Section.html`; there is no request
+in scope and the HTML is shared by every viewer. So a reference into a draft chapter
+renders as plain text **for everyone, course staff included**. Staff reach draft chapters
+through the table of contents, which does vary by reader.
+
+Accepted deliberately. The alternative — re-running numbering per request, or storing two
+HTML variants per section — costs far more than it returns for a link staff can reach one
+click away. Revisit only if authors report the missing links as a real obstacle.
 
 ## Rollout
 
