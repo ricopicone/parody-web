@@ -59,6 +59,24 @@ def _is_owner(request):
     return bool(get_policy().is_owner(request))
 
 
+def _can_view_drafts(request):
+    """Whether this request may see chapters that are not yet released."""
+    return bool(get_policy().can_view_drafts(request))
+
+
+def visible_chapters(book, request):
+    """The book's chapters this request may see, in reading order.
+
+    One helper rather than the same filter written out at nine call sites: a
+    surface that forgets to filter leaks unreleased material to a class, so
+    there should be exactly one obvious thing for a new surface to call.
+    """
+    chapters = book.chapters.all()
+    if _can_view_drafts(request):
+        return chapters
+    return chapters.filter(draft=False)
+
+
 def _resolve_book(request):
     """Select the edition to serve (from ?ed=<id>) and the visible roster.
 

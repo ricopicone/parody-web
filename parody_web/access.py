@@ -34,6 +34,19 @@ class DefaultPolicy:
         """The book's owner: the only account a public book site has."""
         return bool(request and request.user.is_authenticated)
 
+    def can_view_drafts(self, request):
+        """Who may see chapters marked draft — authored and numbered, but not
+        yet released.
+
+        Defaults to is_owner, which on a standalone book site is the book's one
+        account. **A host with real users must override this**: is_owner above
+        returns True for any authenticated user, which on a course site means
+        every enrolled student — precisely the reader a draft has to be hidden
+        from.
+        """
+        return self.is_owner(request)
+
+
     def can_view_section(self, request, section):
         """Hard gate: may this reader have the section page at all?
 

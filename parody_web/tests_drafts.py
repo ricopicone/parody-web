@@ -88,3 +88,44 @@ class ChapterDraftImportTests(TestCase):
         _import_drafts(_draft_artifact(draft_slugs=("two",)))
         drafted = {c.slug: c.number for c in Chapter.objects.all()}
         self.assertEqual(plain, drafted)
+
+
+@override_settings(BOOK_SLUG="dbook")
+class DraftPolicyTests(TestCase):
+    def setUp(self):
+        _import_drafts()
+
+    def test_default_policy_defers_to_is_owner(self):
+        class YesOwner(DefaultPolicy):
+            def is_owner(self, request):
+                return True
+
+        class NoOwner(DefaultPolicy):
+            def is_owner(self, request):
+                return False
+
+        self.assertTrue(YesOwner().can_view_drafts(None))
+        self.assertFalse(NoOwner().can_view_drafts(None))
+
+    @override_settings(
+        PARODY_WEB_ACCESS_POLICY="parody_web.tests_drafts.StudentPolicy")
+    def test_visible_chapters_hides_drafts_from_a_non_owner(self):
+        from parody_web.views import visible_chapters
+        book = Book.objects.get(slug="dbook")
+        self.assertEqual([c.slug for c in visible_chapters(book, None)],
+                         ["one", "three"])
+
+    def test_visible_chapters_shows_everything_to_an_owner(self):
+        """DefaultPolicy with no request is not an owner, so pin the positive
+        case with a policy that is."""
+        from parody_web.views import visible_chapters
+        book = Book.objects.get(slug="dbook")
+        with override_settings(
+                PARODY_WEB_ACCESS_POLICY="parody_web.tests_drafts.AlwaysOwner"):
+            self.assertEqual([c.slug for c in visible_chapters(book, None)],
+                             ["one", "two", "three"])
+
+
+class AlwaysOwner(DefaultPolicy):
+    def is_owner(self, request):
+        return True
