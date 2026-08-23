@@ -275,3 +275,62 @@ class RepaginationTests(TestCase):
             audio_name="").first()
         self.assertIsNotNone(row)
         self.assertTrue((Path(self.cache.name) / row.audio_name).exists())
+
+
+class DraftChapterTests(TestCase):
+    """Read-along must not synthesise a chapter that has not been released.
+
+    A draft chapter is already absent from the print PDF, so slice_key_for
+    returns None and _one skips it with "no section pdf". That protection is
+    INCIDENTAL — it would evaporate the moment anyone built a preview PDF that
+    included drafts. The filter below states the intent instead, and stops the
+    command doing per-section PDF work for chapters it will never voice.
+    """
+
+    def setUp(self):
+        from parody_web.tests_printing import (import_artifact,
+                                               make_pdf_with_content)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        make_pdf_with_content(self.root / "print-book.pdf", 20)
+        self.book = import_artifact()
+        self.cache = tempfile.TemporaryDirectory()
+        self.addCleanup(self.cache.cleanup)
+
+    def _run(self, *args, **kwargs):
+        out, err = StringIO(), StringIO()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_READALOUD_CACHE=self.cache.name):
+            call_command("generate_readalong", *args, stdout=out, stderr=err,
+                         **kwargs)
+        return out.getvalue(), err.getvalue()
+
+    def _draft_everything(self):
+        self.book.chapters.all().update(draft=True)
+
+    def test_a_draft_chapter_is_not_considered_at_all(self):
+        """Not merely skipped downstream — excluded from the section list, so
+        no PDF work is done for it."""
+        self._draft_everything()
+        with self.assertRaises(CommandError) as ctx:
+            self._run(self.book.slug, skip_math=True)
+        self.assertIn("no matching sections", str(ctx.exception))
+
+    def test_include_drafts_puts_them_back(self):
+        """For hearing a chapter before releasing it."""
+        self._draft_everything()
+        out, err = self._run(self.book.slug, skip_math=True, include_drafts=True)
+        # It gets as far as looking for content, rather than being filtered out.
+        self.assertNotIn("no matching sections", out + err)
+
+    def test_publishing_a_chapter_makes_it_eligible(self):
+        """The publish trigger: nothing detects the transition. A released
+        chapter simply becomes visible to the next run, and the run is
+        idempotent for everything already done."""
+        self._draft_everything()
+        with self.assertRaises(CommandError):
+            self._run(self.book.slug, skip_math=True)
+        self.book.chapters.all().update(draft=False)   # publish
+        out, err = self._run(self.book.slug, skip_math=True)
+        self.assertNotIn("no matching sections", out + err)

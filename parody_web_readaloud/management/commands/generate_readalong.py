@@ -133,6 +133,12 @@ class Command(BaseCommand):
                                  "a clock.")
         parser.add_argument("--wpm", type=int, default=150,
                             help="Reading pace for --no-audio.")
+        parser.add_argument("--include-drafts", action="store_true",
+                            help="also voice chapters marked draft (for "
+                                 "hearing one before releasing it). Needs a "
+                                 "print PDF built WITH drafts; the ordinary "
+                                 "build omits them, so their sections have no "
+                                 "page range to align against.")
         parser.add_argument("--dry-run", action="store_true",
                             help="Report what would be synthesised and what "
                                  "would merely be re-aligned, with the "
@@ -146,8 +152,21 @@ class Command(BaseCommand):
         # `Section.key` is a property, not a column — it prefers the authored
         # short hash and falls back to the chapter/section slug pair — so
         # selecting by it has to happen in Python.
-        sections = list(Section.objects.filter(book=book)
-                        .select_related("chapter"))
+        # A DRAFT chapter is not released, so it is not voiced. Its sections
+        # are already absent from the print PDF and _one would skip each one
+        # with "no section pdf" — but that protection is incidental, inherited
+        # from print, and would evaporate the moment a preview PDF included
+        # drafts. Filtering here states the intent and avoids opening the PDF
+        # once per unreleased section.
+        #
+        # Nothing detects the moment a chapter is published: a released chapter
+        # simply appears in this queryset on the next run, and _one's cheap exit
+        # skips everything already voiced. So re-running after a publish costs
+        # only the new chapter.
+        qs = Section.objects.filter(book=book).select_related("chapter")
+        if not options["include_drafts"]:
+            qs = qs.exclude(chapter__draft=True)
+        sections = list(qs)
         if options["section"]:
             wanted = options["section"]
             sections = [s for s in sections if s.key == wanted]
