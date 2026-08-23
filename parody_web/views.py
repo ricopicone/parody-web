@@ -113,13 +113,23 @@ def _current_book(request=None):
     return book
 
 
-def _all_sections_ordered(book):
-    """Every section in reading order. The full TOC/nav is public; gating is
-    per-section at view time (full vs preview), not by hiding from the index."""
-    return list(
-        Section.objects.filter(book=book)
-        .select_related("chapter")
-        .order_by("chapter__order", "order"))
+def _all_sections_ordered(book, request):
+    """Every section this request may see, in reading order.
+
+    The full TOC/nav is public; per-section gating is done at view time (full vs
+    preview), not by hiding from the index. Sections of a DRAFT chapter are the
+    exception — an unreleased chapter must not appear in the subject index, the
+    prev/next nav, the sitemap or the table export.
+
+    `request` is required rather than defaulting to None: a default would fail
+    OPEN, and every caller has one.
+    """
+    qs = (Section.objects.filter(book=book)
+          .select_related("chapter")
+          .order_by("chapter__order", "order"))
+    if not _can_view_drafts(request):
+        qs = qs.exclude(chapter__draft=True)
+    return list(qs)
 
 
 _H2_ID_RE = re.compile(r'<h2\b[^>]*\bid="(?P<id>[^"]+)"[^>]*>(?P<text>.*?)</h2>', re.S)
@@ -169,7 +179,7 @@ def _resolve_code(request, code):
     # newest edition first ("latest that still has it")
     for book in sorted(editions, key=lambda b: b.edition_order, reverse=True):
         ed_q = _ed_query(book)
-        for ch in book.chapters.all():
+        for ch in visible_chapters(book, request):
             if ch.hash and ch.hash.lower() == code:
                 return reverse("parody_web:chapter", args=[ch.slug]) + ed_q
         for sec in book.sections.select_related("chapter"):
@@ -189,7 +199,7 @@ def index(request):
     book, editions = _resolve_book(request)
     public = not _is_owner(request)
     chapters = []
-    for ch in book.chapters.all():
+    for ch in visible_chapters(book, request):
         sections = list(ch.sections.all())
         if sections:
             chapters.append((ch, sections))
@@ -233,7 +243,7 @@ def book_index(request):
 
     def harvest(pattern, fold_case=False):
         canon = {}  # lower-cased name -> the spelling to display
-        for s in _all_sections_ordered(book):
+        for s in _all_sections_ordered(book, request):
             num = (s.number or "").strip()
             label = num if re.match(r"^[A-Za-z]?\d", num) else \
                 (s.chapter.number or s.chapter.title or "").strip()
@@ -323,6 +333,8 @@ def search(request):
     if len(q) >= 2:
         qs = (Section.objects.filter(book=book, plain__icontains=q)
               .select_related("chapter").order_by("chapter__order", "order"))
+        if not _can_view_drafts(request):
+            qs = qs.exclude(chapter__draft=True)
         for s in qs:
             snips = _snippets(s.plain, q)
             if not snips:
@@ -347,6 +359,9 @@ def chapter_detail(request, chapter_slug):
     first section. The lead-in is no longer a separate TOC line — it lives here."""
     book, editions = _resolve_book(request)
     chapter = Chapter.objects.filter(book=book, slug=chapter_slug).first()
+    if chapter is not None and chapter.draft and not _can_view_drafts(request):
+        # 404, never 403: a 403 confirms the chapter exists and leaks its slug.
+        raise Http404("chapter not available")
     if chapter is None:
         # A printed short code with a trailing slash (e.g. /q9/) lands here too;
         # try resolving it before giving up.
@@ -387,6 +402,8 @@ def section_detail(request, chapter_slug, section_slug):
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
     policy = get_policy()
+    if section.chapter.draft and not _can_view_drafts(request):
+        raise Http404("section not available")
     if not policy.can_view_section(request, section):
         raise Http404("section not available")
     # Sections the policy calls preview (in-print but not fully online) show a
@@ -403,7 +420,7 @@ def section_detail(request, chapter_slug, section_slug):
         return redirect(f"{target}{_ed_query(book)}"
                         + (f"#{table_id}" if table_id else ""))
 
-    flat = _all_sections_ordered(book)
+    flat = _all_sections_ordered(book, request)
     idx = next((i for i, s in enumerate(flat) if s.pk == section.pk), None)
     prev_s = flat[idx - 1] if idx else None
     next_s = flat[idx + 1] if idx is not None and idx + 1 < len(flat) else None
@@ -512,6 +529,11 @@ def section_pdf(request, chapter_slug, section_slug):
     book, _ = _resolve_book(request)
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
+    if section.chapter.draft and not _can_view_drafts(request):
+        # An unreleased chapter has no page range in the print PDF
+        # anyway; this makes the refusal explicit and indistinguishable
+        # from an absence.
+        raise Http404("section pdf not available")
     if not get_policy().can_download_section_pdf(request, section):
         raise Http404("no pdf for this section")
     path = section_pdf_path(book, section)
@@ -536,6 +558,11 @@ def section_pdf_view(request, chapter_slug, section_slug):
     book, editions = _resolve_book(request)
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
+    if section.chapter.draft and not _can_view_drafts(request):
+        # An unreleased chapter has no page range in the print PDF
+        # anyway; this makes the refusal explicit and indistinguishable
+        # from an absence.
+        raise Http404("section pdf not available")
     if not get_policy().can_download_section_pdf(request, section):
         raise Http404("no pdf for this section")
     if section_pdf_path(book, section) is None:
@@ -640,7 +667,7 @@ def tables_export(request):
                             status=401)
     policy = get_policy()
     tables = []
-    for section in _all_sections_ordered(book):
+    for section in _all_sections_ordered(book, request):
         if not editable_tables.has_tables(section.html or ""):
             continue
         if not policy.can_view_section(request, section):
@@ -740,9 +767,9 @@ def sitemap_xml(request):
         q = _ed_query(book)
         if q:
             urls.append(request.build_absolute_uri(f"/{q}"))
-        for ch in book.chapters.all():
+        for ch in visible_chapters(book, request):
             urls.append(request.build_absolute_uri(f"/{ch.slug}/{q}"))
-        for s in _all_sections_ordered(book):
+        for s in _all_sections_ordered(book, request):
             urls.append(request.build_absolute_uri(
                 f"/{s.chapter.slug}/{s.slug}/{q}"))
         for sys_ in (book.parts or []):
