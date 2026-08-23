@@ -865,6 +865,40 @@ class CrossRefResolutionTests(TestCase):
         html = data["chapters"][0]["sections"][0]["html"]
         self.assertNotIn('class="math', html)
 
+    def test_multi_line_dollar_maths_in_a_table_cell_converts(self):
+        # A raw-HTML table cell may hold an \begin{aligned} block written
+        # across several lines (electronics, circuit-analysis/methodology-for-
+        # analyzing-circuits). The cell's $…$ must be rescued the same as a
+        # one-line cell's: MathJax typesets the environment on its own either
+        # way, so leaving the delimiters literal puts a stray "$" line above
+        # and below the equations instead of nothing at all.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [], "html":
+                "<table>\n<tr>\n"
+                "<td>$\\begin{aligned}[t]\n"
+                "  \\frac{d v_C} {d t} &= \\frac{1} {C} i_C\\\\\n"
+                "  v_R &= i_R R\n"
+                "  \\end{aligned}$</td>\n"
+                "</tr>\n</table>"}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertNotIn("$", html)
+        self.assertIn('<span class="math inline">\\(\\begin{aligned}[t]', html)
+
+    def test_dollar_rescue_in_a_table_does_not_reach_across_cells(self):
+        # Widening the cell rescue to span newlines must not let a lone $ in
+        # one cell pair with a lone $ in the next — the markup between them
+        # keeps the run inside a single cell.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [], "html":
+                "<table>\n<tr>\n<td>costs $5</td>\n"
+                "<td>or $6</td>\n</tr>\n</table>"}]}]}
+        number_artifact(data)
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertNotIn('class="math', html)
+        self.assertIn("costs $5", html)
+        self.assertIn("or $6", html)
+
     def test_an_unresolvable_cref_in_maths_is_left_alone(self):
         data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
             "sections": [{"title": "S", "slug": "s", "anchors": [], "html":

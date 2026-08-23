@@ -485,7 +485,14 @@ def _clean_tables(html):
         t = _FMT_CMD_RE.sub("", mo.group(0))
         t = re.sub(r"`([^`\n]+)`",
                    lambda m: "<code>" + m.group(1) + "</code>", t)
-        t = re.sub(r"(?<!\$)\$(?!\$)([^$<\n]+?)\$(?!\$)",
+        # No \n in the excluded set: a cell may hold an \begin{aligned}
+        # block written across several lines, and a newline-free run stops at
+        # the first one and never finds the closing $. MathJax typesets a bare
+        # environment on its own either way, so what the reader got was the
+        # equations with a stray "$" line above and below them. `<` still
+        # bounds the run to one cell's text — the `</td><td>` between two cells
+        # keeps a lone $ in each from pairing across them.
+        t = re.sub(r"(?<!\$)\$(?!\$)([^$<]+?)\$(?!\$)",
                    lambda m: '<span class="math inline">\\(' + m.group(1)
                    + '\\)</span>', t)
         return t
