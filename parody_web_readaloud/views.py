@@ -11,8 +11,8 @@ starts tracking requests instead of content.
 
 import re
 
-from django.http import (FileResponse, Http404, HttpResponse, JsonResponse,
-                         HttpResponseNotModified)
+from django.http import (FileResponse, Http404, HttpResponse,
+                         HttpResponseRedirect, JsonResponse)
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
@@ -74,7 +74,11 @@ _RANGE = re.compile(r"bytes=(\d*)-(\d*)$")
 
 
 def _ranged(request, path):
-    """Serve `path` honouring HTTP Range.
+    """Serve a local `path` honouring HTTP Range.
+
+    The LOCAL path only. When audio lives in S3 the view redirects and S3 does
+    Range itself; this is what keeps `runserver` working with no AWS, and a
+    developer who cannot seek locally cannot test seeking.
 
     Without this the browser CANNOT SEEK. It has to fetch the file linearly
     from the start, so jumping to 4 minutes into a 4 MB track silently snaps
@@ -138,11 +142,25 @@ def _chunks(handle, length, size=64 * 1024):
 def audio(request, chapter_slug, section_slug):
     _, _, row = _track_or_404(request, chapter_slug, section_slug)
     try:
-        path = storage.audio_path(row.audio_name)
+        store = storage.backend()
+        present = store.exists(row.audio_name)
     except (RuntimeError, ValueError):
         # Misconfiguration, not a reader error — but still a 404 rather than a
         # 500, because the reader can do nothing with the difference.
         raise Http404("read-along audio is not configured")
-    if not path.exists():
+    if not present:
         raise Http404("read-along audio has not been generated")
-    return _ranged(request, path)
+
+    url = store.url(row.audio_name)
+    if url is None:
+        return _ranged(request, store.path(row.audio_name))
+
+    # The gate has already been asked, above, exactly as `section_pdf` asks it.
+    # Only now is a URL minted, and it is short-lived.
+    response = HttpResponseRedirect(url)
+    # A signed URL dies twice over: at its expiry, and — earlier, on the box —
+    # when the instance-role credentials that signed it rotate. Nothing may
+    # serve a dead one out of a cache; the client re-fetches this endpoint
+    # instead, which re-runs the access check and mints a fresh URL.
+    response["Cache-Control"] = "private, no-store"
+    return response

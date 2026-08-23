@@ -44,3 +44,33 @@ def readaloud_app_order(app_configs, **kwargs):
                 id=f"parody_web_readaloud.{code}",
             ))
     return errors
+
+
+@register()
+def readaloud_s3_usable(app_configs, **kwargs):
+    """A configured bucket that cannot be reached is a boot failure.
+
+    Serving from S3 needs boto3 — to mint the presigned URL the audio endpoint
+    redirects to. That is a real change of footing: until now boto3 was a
+    GENERATION-time dependency (Polly), and a host that only served tracks
+    needed neither it nor PyMuPDF. Without this check the deployment boots, the
+    reader presses play, and the endpoint 500s.
+    """
+    from django.conf import settings
+
+    apps = list(getattr(settings, "INSTALLED_APPS", []))
+    if "parody_web_readaloud" not in apps:
+        return []
+    if not (getattr(settings, "PARODY_WEB_READALOUD_BUCKET", "") or ""):
+        return []
+    try:
+        import boto3  # noqa: F401
+    except ImportError:
+        return [Error(
+            "PARODY_WEB_READALOUD_BUCKET is set but boto3 is not installed.",
+            hint="Serving read-along audio from S3 mints a presigned URL per "
+                 "request, which needs boto3. Install parody-web with the "
+                 "readalong extra: pip install 'parody-web[readalong]'.",
+            id="parody_web_readaloud.E003",
+        )]
+    return []

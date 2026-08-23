@@ -433,8 +433,11 @@ INSTALLED_APPS = [
     "parody_web",
 ]
 
-# Where generated audio is cached. Serving reads only this and the database.
+# Where generated audio lives — a local directory...
 PARODY_WEB_READALOUD_CACHE = "/var/lib/mysite/readalong"
+
+# ...or an S3 bucket, which is what a real deployment should use. See below.
+PARODY_WEB_READALOUD_BUCKET = "my-bucket"
 ```
 
 ```python
@@ -445,11 +448,71 @@ path("", include("parody_web.urls")),
 ```
 
 Install with the extra: `pip install "parody-web[print,readalong]"`. It pulls
-`PyMuPDF` (to measure the typeset page) and `boto3` (AWS Polly). Speaking maths
-additionally needs **Node on the generating machine**; the IAM user needs
-`polly:SynthesizeSpeech`. Both are
-**generation-time** concerns — a host that never generates still serves
-whatever tracks it already has.
+`PyMuPDF` (to measure the typeset page) and `boto3` (AWS Polly and S3).
+Speaking maths additionally needs **Node on the generating machine**; the IAM
+user needs `polly:SynthesizeSpeech`.
+
+`PyMuPDF` and Node are **generation-time** concerns — a host that never
+generates still serves whatever tracks it already has. `boto3` used to be one
+too, and no longer is: serving audio from a bucket mints a presigned URL per
+request. A deployment that sets `PARODY_WEB_READALOUD_BUCKET` without boto3
+installed is refused at boot rather than at the first reader's request.
+
+### Where the audio lives
+
+```
+PARODY_WEB_READALOUD_BUCKET unset -> files under PARODY_WEB_READALOUD_CACHE
+PARODY_WEB_READALOUD_BUCKET set   -> objects under PARODY_WEB_READALOUD_PREFIX
+```
+
+**Prefer the bucket.** The audio endpoint asks the access policy exactly the
+question `section_pdf` asks, and only then redirects to a short-lived presigned
+URL — so gating is unchanged, and **S3 answers HTTP Range**. That last point is
+the reason this option exists. Serving audio from Django means hand-rolling
+Range: `FileResponse` answers a Range request with 200 and the whole file, so
+the browser cannot seek at all, and every seek snaps back to the start. The
+local path still does that hand-rolled 206 correctly, and it stays because
+`runserver` must need no AWS — but a developer is the only one who should be
+touching it.
+
+The bucket is **not** inherited from `AWS_STORAGE_BUCKET_NAME`, on purpose:
+writing into a host's media bucket because it happens to have one is a
+surprise. Name it. Server-side encryption *is* inherited from `AWS_S3_SSE`,
+because a bucket policy that requires it would otherwise reject every upload
+with no obvious cause.
+
+Credentials come from `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` when the host
+sets them and from boto3's default chain when it does not — which on EC2 means
+the instance role. The role needs `s3:GetObject`, `s3:PutObject` and
+`s3:ListBucket` on the prefix. Keys are sha256 text keys under the prefix, and
+the bucket path must stay private: the presigned URL is the only way in, it is
+minted only after the access check, and the redirect carries
+`Cache-Control: private, no-store` so a dead one is never re-served from a
+cache.
+
+A signed URL dies with the credentials that signed it, which on EC2 is sooner
+than its nominal expiry. The player handles that itself: on a media error it
+re-fetches the endpoint once (rate-limited), which re-runs the access check,
+mints a fresh URL, and restores the reader's position.
+
+### Moving audio you already have
+
+Audio already generated onto local disk is **moved, not re-bought** —
+regenerating spends Polly money on recordings that are byte-identical:
+
+```
+python manage.py sync_readalong_audio [--dry-run] [--from DIR]
+```
+
+It uploads every `ReadAlongTrack`'s file that the bucket does not already hold,
+reading from `PARODY_WEB_READALOUD_CACHE` unless `--from` says otherwise, and
+leaves the local files alone so the change is reversible. Read the
+**`missing from disk`** count: each one is a track that would 404 for a reader
+today.
+
+Set the bucket, run the sync, restart. `PARODY_WEB_READALOUD_CACHE` can stay
+set — with a bucket configured it is unused for serving, and it is what the
+sync reads from.
 
 ### Two builds of every section
 
@@ -578,5 +641,10 @@ vanishing.
 | `PARODY_WEB_PRINT_CACHE` | `<print root>/.cache` | where sliced section PDFs are cached; must be under the print root when X-Accel is used |
 | `PARODY_WEB_PRINT_XACCEL` | `""` (Django streams) | nginx `internal` location mapped to the print root |
 | `PARODY_WEB_PUBLIC_BOOK_PDF` | `True` | may the public download the whole book as one PDF; set `False` for any book that gates a section |
-| `PARODY_WEB_READALOUD_CACHE` | `""` (feature off) | directory holding generated read-along audio; required to generate or serve it |
+| `PARODY_WEB_READALOUD_CACHE` | `""` (feature off) | directory holding generated read-along audio; required to generate or serve it unless a bucket is set |
+| `PARODY_WEB_READALOUD_BUCKET` | `""` (uses the cache directory) | S3 bucket holding generated audio; the endpoint redirects to a presigned URL and S3 answers Range natively |
+| `PARODY_WEB_READALOUD_PREFIX` | `"readalong/"` | key prefix inside that bucket |
+| `PARODY_WEB_READALOUD_REGION` | `AWS_S3_REGION_NAME`, else `us-west-2` | region of that bucket |
+| `PARODY_WEB_READALOUD_URL_EXPIRE` | `3600` | seconds a minted audio URL stays valid |
+| `PARODY_WEB_READALOUD_SSE` | `AWS_S3_SSE` if set | `ServerSideEncryption` applied on upload |
 | `PARODY_WEB_READALOUD_SRE` | `""` (uses the packaged copy) | path to a `speak.mjs` whose npm dependencies resolve; required for spoken maths |

@@ -85,6 +85,43 @@ async function boot() {
     }, { once: true });
   }
 
+  /**
+   * Re-fetch the audio when its URL dies underneath the player.
+   *
+   * The endpoint redirects to a SHORT-LIVED signed URL, and a media element
+   * keeps the redirect target for its subsequent range requests. So a reader
+   * who leaves the tab open over lunch and then seeks is asking a URL that has
+   * expired — and nothing on the page can refresh it by itself.
+   *
+   * Re-assigning `src` sends the browser back through the endpoint, which
+   * re-runs the access check and mints a fresh URL. The position is restored
+   * through `seekTo`, because assigning `currentTime` before metadata arrives
+   * is silently discarded.
+   *
+   * Once per REFETCH_QUIET ms: audio that is genuinely gone must not spin.
+   */
+  const REFETCH_QUIET = 10000;
+  let lastRefetch = null;
+
+  function refetchAudio() {
+    if (!track.audio_url) return false;
+    const now = Date.now();
+    if (lastRefetch !== null && now - lastRefetch < REFETCH_QUIET) return false;
+    lastRefetch = now;
+    // Not `audio.paused`: by the time an error surfaces the element has
+    // already stopped, so it can no longer say whether the reader was
+    // listening. The mode does.
+    const wasPlaying = root.dataset.readalong === 'playing';
+    const at = pendingSeek === null ? audio.currentTime : pendingSeek;
+    const sep = track.audio_url.indexOf('?') >= 0 ? '&' : '?';
+    audio.src = `${track.audio_url}${sep}r=${now}`;
+    audio.load();
+    seekTo(at, wasPlaying);
+    return true;
+  }
+
+  if (track.audio_url) audio.addEventListener('error', refetchAudio);
+
   const scroller = root.querySelector('[data-ink-pages]');
   const reveal = new Reveal();
   const layers = new Map();             // page index -> Highlight
@@ -625,6 +662,7 @@ async function boot() {
 
   window.parodyReadAlong = {
     audio, track, play, pause, resume, restart, toggle, step, skip, readFrom,
+    refetch: refetchAudio,
     follow: (on) => { following = on; },
   };
 

@@ -1,10 +1,12 @@
 """The two serve-only endpoints, gated exactly as the PDF is."""
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from django.test import Client, TestCase, override_settings
 
 from parody_web import printing
+from parody_web_readaloud import storage
 from parody_web_readaloud.models import ReadAlongTrack
 
 
@@ -153,3 +155,93 @@ class AudioRangeTests(ReadAlongEndpointTests):
         with self._settings():
             response = self.client.head(self.audio_url)
         self.assertEqual(response.status_code, 200)
+
+
+class S3AudioViewTests(ReadAlongEndpointTests):
+    """With a bucket configured the endpoint redirects instead of streaming.
+
+    Which is the point of the change: S3 answers Range natively, so the
+    hand-rolled 206 path — written because `FileResponse` returns 200 and the
+    whole file, and the browser therefore cannot seek — stops being what a
+    reader touches.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from parody_web_readaloud.tests_storage import FakeS3
+
+        self.fake = FakeS3()
+        patcher = patch.object(storage, "_s3_client", lambda *a, **k: self.fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _settings(self, **extra):
+        extra.setdefault("PARODY_WEB_READALOUD_BUCKET", "bkt")
+        extra.setdefault("PARODY_WEB_READALOUD_URL_EXPIRE", 900)
+        return super()._settings(**extra)
+
+    def test_present_audio_is_a_redirect_to_a_signed_url(self):
+        self._make_track()
+        with self._settings():
+            response = self.client.get(self.audio_url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("readalong/track.mp3", response["Location"])
+        self.assertEqual(self.fake.presigned[0][2], 900)
+
+    def test_the_redirect_is_never_cached(self):
+        """A signed URL dies with the credentials that signed it. Serving a
+        stale one out of a cache is a 403 the page cannot recover from."""
+        self._make_track()
+        with self._settings():
+            response = self.client.get(self.audio_url)
+        self.assertEqual(response["Cache-Control"], "private, no-store")
+
+    def test_an_object_that_is_not_there_is_a_404(self):
+        self._make_track()
+        self.fake.missing.add("readalong/track.mp3")
+        with self._settings():
+            response = self.client.get(self.audio_url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_a_refused_reader_gets_no_url_at_all(self):
+        """The security-relevant assertion is the negative one: nothing is
+        signed before the access check the PDF view makes."""
+        self._make_track()
+        with self._settings(
+                PARODY_WEB_ACCESS_POLICY="parody_web_annotate.tests.DenyAll"):
+            response = self.client.get(self.audio_url)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(self.fake.presigned, [])
+
+    def test_the_track_json_still_points_at_this_endpoint(self):
+        """Not at the bucket: the redirect is where the gate is asked, and a
+        URL baked into the JSON would outlive the page that fetched it."""
+        self._make_track()
+        with self._settings():
+            body = self.client.get(self.url).json()
+        self.assertIn("readalong/audio/", body["audio_url"])
+        self.assertNotIn("s3.example", body["audio_url"])
+
+    # Inherited from ReadAlongEndpointTests but written against local files.
+    def test_present_audio_is_served_as_mpeg(self):
+        self._make_track()
+        with self._settings():
+            response = self.client.get(self.audio_url)
+        self.assertEqual(response.status_code, 302)
+
+    def test_missing_audio_is_a_404_not_a_500(self):
+        """Absence is a missing OBJECT here, not a missing file."""
+        self._make_track()
+        self.fake.missing.add("readalong/track.mp3")
+        with self._settings():
+            response = self.client.get(self.audio_url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_an_unconfigured_cache_is_a_404_not_a_crash(self):
+        """With a bucket set the cache setting is irrelevant, not missing."""
+        self._make_track()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_READALOUD_CACHE="",
+                               PARODY_WEB_READALOUD_BUCKET="bkt"):
+            response = self.client.get(self.audio_url)
+        self.assertEqual(response.status_code, 302)
