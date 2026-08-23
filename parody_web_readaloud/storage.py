@@ -18,6 +18,7 @@ seek locally cannot test seeking.
 move from a directory to a bucket without touching a single row.
 """
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from django.conf import settings
@@ -88,6 +89,26 @@ class DiskAudio:
     def url(self, name: str):
         """No URL of its own: the caller serves the bytes itself."""
         return None
+
+    def delete(self, name: str) -> None:
+        audio_path(name).unlink(missing_ok=True)
+
+    def entries(self):
+        """Every audio file in the root: (name, bytes, last modified).
+
+        Non-recursive and files only. What is actually THERE, as opposed to
+        what the database believes is there — the difference between those two
+        is the whole point of pruning.
+        """
+        root = cache_root()
+        if not root.is_dir():
+            return
+        for path in sorted(root.iterdir()):
+            if not path.is_file():
+                continue
+            stat = path.stat()
+            yield (path.name, stat.st_size,
+                   datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc))
 
 
 _CLIENTS = {}
@@ -171,6 +192,28 @@ class S3Audio:
             # that looks exactly like an ungenerated track.
             raise
         return True
+
+    def delete(self, name: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=self.key(name))
+
+    def entries(self):
+        """Every audio object under the prefix: (name, bytes, last modified).
+
+        Paginated, because a book with several voices passes 1000 objects
+        sooner than it looks and a truncated listing would read as "nothing
+        else is there" — which, to a prune, means "delete the rest".
+        """
+        paginator = self.client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=self.prefix):
+            for obj in page.get("Contents", []) or []:
+                key = obj["Key"]
+                if not key.startswith(self.prefix):
+                    continue
+                name = key[len(self.prefix):]
+                # Nothing nested, and not the prefix placeholder itself.
+                if not name or "/" in name:
+                    continue
+                yield name, obj["Size"], obj["LastModified"]
 
     def url(self, name: str) -> str:
         return self.client.generate_presigned_url(

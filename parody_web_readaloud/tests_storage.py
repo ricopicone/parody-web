@@ -114,11 +114,19 @@ class FakeS3:
     so the exception has to be the one botocore actually raises.
     """
 
+    PAGE = 1000
+
     def __init__(self, missing=(), broken=None):
         self.missing = set(missing)
         self.broken = broken
         self.puts = []
         self.presigned = []
+        self.deleted = []
+        # key -> (size, last modified). `other` holds keys outside the prefix,
+        # so a listing that ignores Prefix is caught rather than passing.
+        self.objects = {}
+        self.other = {}
+        self.list_pages = 0
 
     def _fail(self, code):
         from botocore.exceptions import ClientError
@@ -135,9 +143,39 @@ class FakeS3:
             self._fail("404")
         return {"ContentLength": 3}
 
+    def delete_object(self, Bucket, Key):
+        self.deleted.append((Bucket, Key))
+        self.objects.pop(Key, None)
+
+    def get_paginator(self, name):
+        assert name == "list_objects_v2", name
+        return _FakePaginator(self)
+
     def generate_presigned_url(self, op, Params, ExpiresIn):
         self.presigned.append((op, Params, ExpiresIn))
         return f"https://s3.example/{Params['Key']}?sig=1&exp={ExpiresIn}"
+
+
+class _FakePaginator:
+    """Pages the way botocore does, so a caller that reads only the first
+    page fails here instead of in production."""
+
+    def __init__(self, client):
+        self.client = client
+
+    def paginate(self, Bucket, Prefix=""):
+        everything = dict(self.client.objects)
+        everything.update(self.client.other)
+        keys = sorted(k for k in everything if k.startswith(Prefix))
+        size = self.client.PAGE
+        for start in range(0, max(len(keys), 1), size):
+            chunk = keys[start:start + size]
+            if not chunk and start:
+                break
+            self.client.list_pages += 1
+            yield {"Contents": [
+                {"Key": k, "Size": everything[k][0],
+                 "LastModified": everything[k][1]} for k in chunk]}
 
 
 class S3AudioTests(SimpleTestCase):

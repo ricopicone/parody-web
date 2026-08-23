@@ -514,6 +514,46 @@ Set the bucket, run the sync, restart. `PARODY_WEB_READALOUD_CACHE` can stay
 set — with a bucket configured it is unused for serving, and it is what the
 sync reads from.
 
+### Clearing out audio nothing refers to
+
+Editing a section changes its text key, so the next run writes a new
+`<text_key>-<voice>.mp3` and points the row at it. The file the row used to
+name is then referred to by nothing. Nothing removed it — on disk or in the
+bucket — until:
+
+```
+python manage.py prune_readalong_audio [--delete] [--older-than DAYS] [--force]
+```
+
+**It reports and deletes nothing unless you pass `--delete`.** Re-synthesising
+costs real money, so a report you have to run twice is a far cheaper mistake
+than a bucket you have to re-buy. Three things it will not do:
+
+- **Prune per book.** "In use" is every `audio_name` in the whole table. Audio
+  is named from the text, so two editions of a section whose words are
+  identical share one file — and a per-book prune would delete a file another
+  book is still serving.
+- **Touch anything it did not write.** Only `<64 hex>-<voice>.mp3` directly
+  under the root is ever a candidate; anything else is reported as `not ours`
+  and left. A bucket prefix is not necessarily this app's private property.
+- **Touch anything recent.** Nothing newer than `--older-than` (default 7 days)
+  goes, because `generate_readalong` writes the file before it writes the row —
+  a file with no row may just be a run that is still going.
+
+`--older-than 0` turns that hold-back **off**, rather than meaning "written
+before this instant". The timestamp being compared belongs to the store, and
+S3's runs ahead of ours — it rounds up to the second and the clocks differ, so
+an object written moments ago reads as about 0.6 s in the future (measured, not
+supposed). Treated as a cutoff, zero would hold back everything and prune
+nothing.
+
+And if the table names no audio at all it refuses outright: a fresh database
+and *the wrong database* look identical from inside this command, and both
+would delete everything. `--force` says you meant it.
+
+Both backends support it: on disk it removes files from the cache directory,
+in S3 it removes objects under the prefix.
+
 ### Two builds of every section
 
 The published artifact stays `--clozes blank`, unchanged. Read-along
