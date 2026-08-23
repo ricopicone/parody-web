@@ -188,11 +188,21 @@ def _bind_math_punctuation(html):
 
 
 def _target_url(t):
-    """The href for a resolved target; chapter refs point at their first section."""
+    """The href for a resolved target; chapter refs point at their first section.
+
+    A target in a DRAFT chapter gets "" — no href at all. The chapter is
+    numbered but unreleased, so the reference keeps its number and _link renders
+    it as a span. Checked here rather than only where the target is registered,
+    because this function RECONSTRUCTS a missing url from the chapter's
+    sections, which would otherwise hand back a link into a 404.
+    """
+    chapter = t.get("chapter")
+    if chapter and chapter.get("draft"):
+        return ""
     url = t.get("url")
-    if url is None and t.get("chapter"):
-        secs = t["chapter"].get("sections", [])
-        url = f"/{t['chapter']['slug']}/{secs[0]['slug']}/" if secs else "#"
+    if url is None and chapter:
+        secs = chapter.get("sections", [])
+        url = f"/{chapter['slug']}/{secs[0]['slug']}/" if secs else "#"
     return url or "#"
 
 
@@ -239,6 +249,16 @@ def _recase_label(label, cap):
 
 
 def _link(label, url):
+    """A cross-reference. Without a url it is a span, not a dead link.
+
+    A target inside a DRAFT chapter carries no url: the chapter is numbered but
+    not released, so the reference keeps its (correct) number and has nothing to
+    follow. Numbering runs at IMPORT and its output is stored in Section.html,
+    so this cannot vary by reader — course staff see plain text too, and reach
+    the chapter through the contents.
+    """
+    if not url:
+        return f'<span class="xref">{label}</span>'
     return f'<a class="xref" href="{url}">{label}</a>'
 
 
@@ -1125,6 +1145,11 @@ def number_artifact(data, references=None, edition_query=""):
             secs = ch.get("sections", [])
             ch_url = (f"/{ch['slug']}/{secs[0]['slug']}/{edition_query}"
                       if secs else None)
+            # A draft chapter is numbered but not reachable, so its target
+            # carries the label and NO url: a reference to it renders as plain
+            # text rather than a link into a 404 (see _link).
+            if ch.get("draft"):
+                ch_url = None
             targets[ch["hash"]] = {"label": f"Chapter {cnum}", "url": ch_url,
                                    "chapter": ch}
         sec_m = 0
@@ -1602,8 +1627,7 @@ def number_artifact(data, references=None, edition_query=""):
                     t = _lookup_target(k, targets)
                     if t:  # cross-reference written as [@fig:x]/[@Fig:x]/[@s4]
                         label = _recase_label(t["label"], k[:1].isupper())
-                        parts.append(
-                            f'<a class="xref" href="{t["url"] or "#"}">{label}</a>')
+                        parts.append(_link(label, t["url"]))
                     elif k in references:  # real bibliography citation
                         if k not in cited:
                             cited.append(k)
@@ -1632,7 +1656,7 @@ def number_artifact(data, references=None, edition_query=""):
                         label = t["label"]
                         if prefixed and " " in label:
                             label = label.split(" ", 1)[1]
-                        return f'<a class="xref" href="{t["url"] or "#"}">{label}</a>'
+                        return _link(label, t["url"])
                     if key in references:
                         if key not in cited:
                             cited.append(key)

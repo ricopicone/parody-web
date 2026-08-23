@@ -215,3 +215,36 @@ class DraftSurfaceTests(TestCase):
                 self.assertEqual(c.get("/one/").status_code, 200)
                 self.assertEqual(c.get("/one/one-a/").status_code, 200)
                 self.assertEqual(c.get("/three/").status_code, 200)
+
+
+@override_settings(BOOK_SLUG="dbook")
+class DraftCrossRefTests(TestCase):
+    """A released chapter may forward-reference a draft one — normal during a
+    chapter-by-chapter rollout. The reference keeps its (correct) number and
+    loses its link.
+
+    This cannot vary by reader: number_artifact runs at IMPORT and its output is
+    stored in Section.html, so staff see plain text too and reach the chapter
+    through the contents.
+    """
+
+    def _import_with_ref(self, target_hash):
+        art = _draft_artifact()
+        art["chapters"][0]["sections"][0]["html"] = (
+            f'<p>See <span class="hashref">{target_hash}</span>.</p>')
+        _import_drafts(art)
+        from parody_web.models import Section
+        return Section.objects.get(slug="one-a").html
+
+    def test_reference_to_a_released_chapter_is_still_a_link(self):
+        html = self._import_with_ref("th")
+        # lowercase: the label is recased for its position in the sentence
+        self.assertIn("chapter 3", html)
+        self.assertIn('<a class="xref"', html)
+
+    def test_reference_into_a_draft_chapter_has_the_number_but_no_link(self):
+        html = self._import_with_ref("tw")
+        self.assertIn("chapter 2", html)          # right number: drafts hold theirs
+        self.assertNotIn('<a class="xref"', html)  # but nothing to follow
+        self.assertIn('<span class="xref"', html)
+        self.assertNotIn("/two/", html)            # and no url leaked
