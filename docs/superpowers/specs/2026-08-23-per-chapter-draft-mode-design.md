@@ -115,17 +115,29 @@ def can_view_drafts(self, request):
     return self.is_owner(request)
 ```
 
-`homepage-django`'s `CoursePolicy` overrides it:
+`homepage-django`'s `CoursePolicy` **does not override it**, and should not.
+
+An earlier draft of this spec said superusers were excluded from `is_owner` and that the
+hook therefore had to re-admit them. That was a misreading. `user_teaches_any_course`
+reads:
 
 ```python
-def can_view_drafts(self, request):
-    user = self._user(request)
-    return bool(user and (user.is_superuser or user_teaches_any_course(user)))
+if user.is_superuser:
+    return True
+return CourseStaff.objects.filter(user=user).exists()
 ```
 
-Superusers are **deliberately excluded** from `is_owner` today — that exclusion replaced a
-global-flag test which handed every course's solutions to anyone with `is_staff`. Adding
-them back is scoped to drafts only and is not a change to `is_owner`.
+So `CoursePolicy.is_owner` already means exactly *superuser or course staff* — precisely
+the requirement — and the inherited `can_view_drafts` is correct as-is. An override would
+only restate `is_owner` and could later drift from it.
+
+(The exclusion recorded in that function's docstring is of **`is_staff`**, the global flag
+that once handed every course's solutions to any staff account. `is_superuser` was never
+excluded.)
+
+The tests still pin the behaviour at the `CoursePolicy` level — anonymous, enrolled
+student and signed-in stranger refused; course staff and superuser allowed — because that
+is the contract this feature depends on, whoever implements it.
 
 ### Surfaces
 
