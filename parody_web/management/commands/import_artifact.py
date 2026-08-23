@@ -165,6 +165,7 @@ class Command(BaseCommand):
                     "order": ci + 1,
                     "hash": ch.get("hash", ""),
                     "appendix": bool(ch.get("appendix", False)),
+                    "draft": bool(ch.get("draft", False)),
                     "number": ch.get("number", ""),
                 })
             seen_ch.add(chapter.slug)

@@ -71,6 +71,12 @@ class Chapter(models.Model):
     order = models.PositiveIntegerField(default=0)
     hash = models.CharField(max_length=100, blank=True, default="")
     appendix = models.BooleanField(default=False)
+    # draft = authored and NUMBERED, but not released. Hidden from every reader
+    # the access policy's can_view_drafts() refuses — INCLUDING signed-in
+    # students, which DefaultPolicy.is_owner would otherwise admit. Kept in the
+    # database rather than withheld from the artifact so that releasing chapters
+    # one at a time never renumbers the book.
+    draft = models.BooleanField(default=False)
     number = models.CharField(max_length=16, blank=True, default="")
 
     class Meta:
