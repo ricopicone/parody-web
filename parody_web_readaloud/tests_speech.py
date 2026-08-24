@@ -153,3 +153,39 @@ class SreAvailableTests(SimpleTestCase):
         ok, why = sre_available()
         self.assertTrue(ok, why)
         self.assertEqual(why, "")
+
+
+class TidyMathSpeechTests(SimpleTestCase):
+    """SRE's line scaffolding, spoken aloud, is noise (task #615).
+
+    A multi-line equation comes back as "3 lines Line 1: … Line 2: blank
+    equals …" — the counts and markers are structure read out, and the "blank"
+    is SRE naming the empty left cell of an aligned continuation.
+    """
+
+    def test_the_line_count_prefix_goes(self):
+        from parody_web_readaloud.speech import tidy_math_speech
+        self.assertEqual(tidy_math_speech("3 lines a equals b"), "a equals b")
+
+    def test_a_line_marker_becomes_a_full_stop(self):
+        """Not simply deleted: a derivation read as one unbroken sentence is
+        worse than one read with the scaffolding in it."""
+        from parody_web_readaloud.speech import tidy_math_speech
+        self.assertEqual(
+            tidy_math_speech("2 lines Line 1: a equals b Line 2: blank "
+                             "equals c"),
+            "a equals b. equals c")
+
+    def test_a_blank_only_goes_when_it_is_the_empty_cell(self):
+        from parody_web_readaloud.speech import tidy_math_speech
+        self.assertEqual(tidy_math_speech("x equals blank plus y"),
+                         "x equals blank plus y")
+
+    def test_an_ordinary_expression_is_untouched(self):
+        from parody_web_readaloud.speech import tidy_math_speech
+        for said in ("Z equals v over i", "x squared", "Z sub C", ""):
+            self.assertEqual(tidy_math_speech(said), said)
+
+    def test_it_does_not_leave_leading_punctuation(self):
+        from parody_web_readaloud.speech import tidy_math_speech
+        self.assertEqual(tidy_math_speech("Line 1: a equals b"), "a equals b")

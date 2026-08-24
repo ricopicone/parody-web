@@ -16,6 +16,7 @@ costs about a second and a chapter carries thousands of expressions.
 """
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -76,6 +77,38 @@ def sre_available(node="node"):
     return True, ""
 
 
+_LINE_COUNT = re.compile(r"^\s*\d+\s+lines\s+", re.IGNORECASE)
+_LINE_MARK = re.compile(r"\s*\bline\s+\d+\s*:\s*(blank\s+)?",
+                        re.IGNORECASE)
+
+
+def tidy_math_speech(said: str) -> str:
+    """Take SRE's line scaffolding out of a spoken equation.
+
+    A multi-line equation comes back as
+
+        "3 lines Line 1: v sub o equals A ... Line 2: blank equals A ..."
+
+    The counts and the "Line N:" markers are structure spoken aloud, and the
+    "blank" is SRE naming the empty left-hand cell of an aligned continuation —
+    so a reader hears "line two, blank equals" in the middle of a derivation.
+    The reader judged all three to be noise (task #615).
+
+    Each marker becomes a full stop, so the lines still separate audibly: a
+    derivation read as one unbroken sentence is worse than one read with the
+    scaffolding in it.
+
+    NOTE this changes the spoken text, and the spoken text is what `text_key`
+    hashes — so changing anything here re-synthesises every section containing
+    display maths, at Polly's per-character rate. It is not a free edit.
+    """
+    if not said:
+        return said
+    out = _LINE_COUNT.sub("", said)
+    out = _LINE_MARK.sub(". ", out)
+    return out.lstrip(". ").strip()
+
+
 class SkipMath:
     """Say nothing for math."""
 
@@ -108,7 +141,7 @@ class SreMath:
         return _sre_script()
 
     def speak_all(self, items):
-        return self._call(items)["texts"]
+        return [tidy_math_speech(said) for said in self._call(items)["texts"]]
 
     def render_all(self, items):
         """SVG per expression, for the blanks that have to reveal one."""
