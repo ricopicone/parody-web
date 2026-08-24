@@ -127,6 +127,12 @@ class Command(BaseCommand):
                             help="Re-synthesise even where the words are "
                                  "unchanged. For when the generator changed; "
                                  "an edit needs only --section.")
+        parser.add_argument("--respeak", action="store_true",
+                            help="Re-read the script and buy audio ONLY where "
+                                 "the spoken text actually changed. For when "
+                                 "the way maths is SPOKEN changed: nothing "
+                                 "moved on the page, so the cheap exit would "
+                                 "report `have` for the whole book.")
         parser.add_argument("--realign", action="store_true",
                             help="Re-box existing tracks against the pages "
                                  "they already sit on, keeping their audio. "
@@ -247,9 +253,16 @@ class Command(BaseCommand):
         # --realign has to pass this exit by definition: the pagination is
         # unchanged, which is exactly the case the exit exists to skip, and
         # the boxes are what it has come to redo.
+        # --respeak has to pass it too, and for a subtler reason than
+        # --realign: the exit tests that a text key EXISTS, never that it still
+        # describes the script. A change in how maths is spoken moves no page,
+        # so every section would report `have` and the new narration would
+        # never be bought. Past the exit the ordinary logic is already right —
+        # a section whose text really did change finds no prior and is
+        # synthesised; one whose text did not is re-boxed for nothing.
         exact = rows.filter(slice_key=slice_key).first()
         if (exact is not None and exact.text_key and not options["force"]
-                and not options["realign"]):
+                and not options["realign"] and not options["respeak"]):
             self.stdout.write(f"have {section.key}")
             return "skipped"
 
@@ -269,9 +282,13 @@ class Command(BaseCommand):
         text_key = text_key_for(prep.text, voice, engine)
 
         if exact is not None and not options["force"] \
-                and not options["realign"]:
+                and not options["realign"] and not options["respeak"]:
             # Nothing moved and nothing changed; the row simply never learned
             # its own text key. Stamp it so the NEXT reflow can reuse it.
+            #
+            # Not under --respeak: there the text may well have changed, and
+            # stamping the NEW key onto the OLD recording would label audio
+            # nobody has made as audio already made.
             if not options["dry_run"]:
                 exact.text_key = text_key
                 exact.token_count = len(prep.tokens)

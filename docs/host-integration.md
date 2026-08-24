@@ -600,7 +600,8 @@ surface in front of a student.)
 ```
 python manage.py generate_readalong <book_slug> [--section KEY] [--voice Matthew]
                                     [--engine neural|standard] [--skip-math]
-                                    [--force] [--realign] [--dry-run]
+                                    [--force] [--realign] [--respeak]
+                                    [--dry-run]
 ```
 
 `--dry-run` reports, per section, whether it would be synthesised and at what
@@ -638,6 +639,17 @@ disagreement synthesises rather than places words by an index that has moved.
 **`--force` is not the tool for a content edit.** It re-buys every section,
 including the ones whose text is untouched, and exists for when the *generator*
 changed. To redo one section, name it: `--section <key>`.
+
+**`--respeak` is the tool for when the *narration* changed** — how maths is
+spoken, say. Nothing moves on the page, and the cheap exit tests only that a
+text key **exists**, never that it still describes the script, so every section
+reports `have` and the new narration is never bought. `--respeak` re-reads the
+script and lets the ordinary logic decide: a section whose spoken text really
+changed finds no prior and is synthesised (**this costs money**); one whose
+text is untouched is re-boxed for nothing and reports `moved`. Unlike
+`--force` it does not re-buy the sections your change did not reach. Run it
+with `--dry-run` first — that prints the character count you are about to pay
+for.
 
 **`--realign` is the tool for when the *aligner* changed.** Nothing about the
 book has moved, so every section reports `have` and the run does nothing; the

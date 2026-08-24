@@ -308,6 +308,40 @@ class RepaginationTests(TestCase):
         self.assertTrue((Path(self.cache.name) / row.audio_name).exists())
 
 
+    def test_respeak_buys_only_what_the_new_narration_changed(self):
+        """A change in HOW maths is spoken moves nothing on the page, so the
+        cheap exit tests a text key that no longer describes the script."""
+        self._run()
+        self.assertEqual(len(self.polly.calls), 1)
+
+        # The same section, now spoken differently.
+        self.key_artifact.write_text(json.dumps({"chapters": [{
+            "slug": "one", "sections": [
+                {"slug": "alpha", "hash": "al",
+                 "html": '<p>at a fixed <span class="cloze-key">sampling '
+                         'rate</span>, which sets the pace differently.</p>'}]}]}))
+        out, _ = self._run(respeak=True)
+        self.assertIn("made al", out)
+        self.assertEqual(len(self.polly.calls), 2)
+
+    def test_respeak_does_not_buy_what_it_did_not_change(self):
+        """Sections whose narration is untouched are re-boxed, not re-bought."""
+        self._run()
+        out, _ = self._run(respeak=True)
+        self.assertIn("moved al", out)
+        self.assertEqual(len(self.polly.calls), 1, "Polly was asked twice")
+
+    def test_a_plain_run_would_not_notice_at_all(self):
+        """The trap this flag exists for: without it the exit says `have`."""
+        self._run()
+        self.key_artifact.write_text(json.dumps({"chapters": [{
+            "slug": "one", "sections": [
+                {"slug": "alpha", "hash": "al",
+                 "html": "<p>utterly different words entirely.</p>"}]}]}))
+        out, _ = self._run()
+        self.assertIn("have al", out)
+        self.assertEqual(len(self.polly.calls), 1)
+
 class DraftChapterTests(TestCase):
     """Read-along must not synthesise a chapter that has not been released.
 
