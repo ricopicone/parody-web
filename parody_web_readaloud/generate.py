@@ -138,10 +138,28 @@ def prepare(html: str, pdf_bytes: bytes, math=None) -> Prepared:
     )
 
 
+def is_math_cloze(token) -> bool:
+    """A maths token that HIDES something.
+
+    The author clozes part of an equation rather than the whole of it, so the
+    blank never becomes a cloze token: key mode marks the answer inside the
+    maths and the equation stays one token. It is still a blank on the page and
+    still needs a reveal, and the equation's own box is where to put it — the
+    rules inside an equation are a mix of blanks and fraction bars, and telling
+    those apart is a problem this deliberately does not take on.
+
+    What the reader sees is the WHOLE equation, filled in: one picture per
+    equation however many blanks it holds, and the missing part shown in the
+    place it belongs rather than floating on its own.
+    """
+    return token.kind == "math" and token.blanks > 0
+
+
 def cloze_count(prep: Prepared) -> int:
     """How many blanks this section would store — known before synthesis."""
     return sum(1 for spot in prep.placed
-               if spot.token.kind in ("cloze", "figure_cloze") and spot.box)
+               if (spot.token.kind in ("cloze", "figure_cloze")
+                   or is_math_cloze(spot.token)) and spot.box)
 
 
 def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
@@ -228,13 +246,19 @@ def _assemble(prep: Prepared, words: list, audio_bytes) -> dict:
 
     clozes = []
     for spot in prep.placed:
-        if spot.token.kind not in ("cloze", "figure_cloze"):
+        math_cloze = is_math_cloze(spot.token)
+        if spot.token.kind not in ("cloze", "figure_cloze") and not math_cloze:
             continue
         if not spot.box:
             continue                     # no rule found: stay silent about it
+        # A clozed equation with no picture to show is not a blank the client
+        # can do anything with — it would pause playback to reveal nothing.
+        if math_cloze and not prep.svgs.get(spot.index):
+            continue
         start, end = window.get(spot.index, (0, 0))
         clozes.append({
-            "token": spot.index, "kind": spot.token.kind,
+            "token": spot.index,
+            "kind": "math_cloze" if math_cloze else spot.token.kind,
             "answer": "" if spot.token.latex else spot.token.text,
             "svg": prep.svgs.get(spot.index) or "",
             "src": spot.token.src,
@@ -279,11 +303,13 @@ def _render_cloze_maths(tokens, math):
     if math is None or not hasattr(math, "render_all"):
         return {}
     positions = [i for i, t in enumerate(tokens)
-                 if t.kind == "cloze" and t.latex]
+                 if (t.kind == "cloze" and t.latex) or is_math_cloze(t)]
     if not positions:
         return {}
-    svgs = math.render_all([(tokens[i].latex, tokens[i].display)
-                            for i in positions])
+    # `plain` for a clozed equation — the marker unwrapped, so the picture is
+    # the complete equation and carries no class a stylesheet might hide.
+    svgs = math.render_all([(tokens[i].plain or tokens[i].latex,
+                             tokens[i].display) for i in positions])
     return {i: svg for i, svg in zip(positions, svgs) if svg}
 
 

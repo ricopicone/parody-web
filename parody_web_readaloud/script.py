@@ -28,12 +28,62 @@ class Token:
     display: bool = False
     answer: list = field(default_factory=list)
     src: str = ""
+    # A maths token can HIDE something: the author clozes part of an equation
+    # rather than the whole of it, and key mode marks the answer with
+    # \class{cloze-key}{...} INSIDE the maths. `blanks` counts those marks and
+    # `plain` is the equation with them unwrapped — the complete equation, for
+    # the picture a blank reveals. `latex` is left exactly as it arrived,
+    # because it is what the aligner keys on and what SRE is given to speak.
+    blanks: int = 0
+    plain: str = ""
     # Punctuation that followed this token with no space before it. Kept here
     # rather than as a token of its own: the PDF glues punctuation to the word
     # it follows, so a standalone "," would have no counterpart to align
     # against, and its alignment key (punctuation stripped) is the empty
     # string, which matches anything. It is still spoken, for the prosody.
     trail: str = ""
+
+
+CLOZE_KEY = "\\class{cloze-key}{"
+
+
+def strip_cloze_markers(latex: str) -> "tuple[str, int]":
+    """`\\class{cloze-key}{X}` -> `X`, and how many were unwrapped.
+
+    Brace-matched rather than regexed: the thing being hidden is maths, so it
+    is full of braces — `\\class{cloze-key}{\\frac{v} {i}}` ends at the LAST
+    brace, not the first, and a non-greedy pattern silently keeps half an
+    equation.
+
+    The marker is stripped for RENDERING only. It is transparent to MathJax and
+    to SRE — verified: both forms speak as "Z equals v over i period" — so the
+    spoken text, and therefore the audio anyone has already paid for, does not
+    depend on which form is used. But the class reaches the rendered SVG, where
+    a stylesheet that hides `.cloze-key` would hide the very answer the reveal
+    exists to show.
+    """
+    out, count, i = [], 0, 0
+    while True:
+        at = latex.find(CLOZE_KEY, i)
+        if at < 0:
+            out.append(latex[i:])
+            return "".join(out), count
+        out.append(latex[i:at])
+        depth, j = 1, at + len(CLOZE_KEY)
+        while j < len(latex) and depth:
+            if latex[j] == "{":
+                depth += 1
+            elif latex[j] == "}":
+                depth -= 1
+                if not depth:
+                    break
+            j += 1
+        if j >= len(latex):                # unbalanced: leave it alone
+            out.append(latex[at:])
+            return "".join(out), count
+        out.append(latex[at + len(CLOZE_KEY):j])
+        count += 1
+        i = j + 1
 
 
 def _strip_delims(raw: str) -> str:
@@ -124,8 +174,12 @@ class _ScriptParser(HTMLParser):
 
         if tag == "span" and self._math:
             raw = "".join(self._buf).strip()
-            self.tokens.append(Token(kind="math", latex=_strip_delims(raw),
-                                     display=self._math == "display"))
+            latex = _strip_delims(raw)
+            plain, blanks = strip_cloze_markers(latex)
+            self.tokens.append(Token(kind="math", latex=latex,
+                                     display=self._math == "display",
+                                     blanks=blanks,
+                                     plain=plain if blanks else ""))
             self._math, self._buf = None, []
         elif tag == "span" and self._inline_cloze:
             words = "".join(self._buf).split()

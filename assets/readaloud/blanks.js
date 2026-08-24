@@ -107,6 +107,24 @@ export class BlankMarks {
       const y0 = Math.min(box.y0, box.y1) * scale;
       const y1 = Math.max(box.y0, box.y1) * scale;
       const on = box.token === this.active;
+      const pad = 3;
+
+      // A blank inside an EQUATION is marked by its equation, because the
+      // rules within one are a mix of blanks and fraction bars and telling
+      // them apart is a problem we do not take on. That box is the whole
+      // derivation — up to 180 points tall — so it gets an outline rather than
+      // a wash: filling it would put a slab of colour over the maths and read
+      // as a fault, where the wash over a one-line blank reads as a space to
+      // write in.
+      if (box.kind === 'math_cloze') {
+        this.ctx.strokeStyle = this.dark
+          ? `rgba(122, 184, 255, ${on ? 0.85 : 0.35})`
+          : `rgba(66, 133, 244, ${on ? 0.8 : 0.3})`;
+        this.ctx.lineWidth = on ? 1.5 : 1;
+        this.ctx.strokeRect(x0 - pad, y0 - pad,
+                            x1 - x0 + pad * 2, y1 - y0 + pad * 2);
+        continue;
+      }
 
       // A soft wash over the writing space, and a firmer edge on the one the
       // navigator just moved to. Deliberately weak: the reader is going to
@@ -114,7 +132,6 @@ export class BlankMarks {
       this.ctx.fillStyle = this.dark
         ? `rgba(122, 184, 255, ${on ? 0.22 : 0.10})`
         : `rgba(66, 133, 244, ${on ? 0.20 : 0.09})`;
-      const pad = 3;
       this.ctx.fillRect(x0 - pad, y0 - pad,
                         x1 - x0 + pad * 2, y1 - y0 + pad * 2);
 

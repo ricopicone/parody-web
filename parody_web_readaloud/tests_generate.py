@@ -229,3 +229,100 @@ class ChunkTextPartitionTests(SimpleTestCase):
         """Splitting inside a word would corrupt the offset mapping."""
         text = "x" * 50
         self.assertEqual(chunk_text(text, limit=10), [text])
+
+
+class FakeMaths:
+    """SRE stood in for: speaks an equation, and draws one."""
+
+    def speak_all(self, items):
+        return [f"the equation {i}" for i, _ in enumerate(items)]
+
+    def render_all(self, items):
+        return [f"<svg data-latex='{latex}'/>" for latex, _ in items]
+
+
+def _equation_pdf():
+    """A page whose equation prints with a blank where the answer was."""
+    doc = fitz.open()
+    page = doc.new_page(width=300, height=120)
+    page.insert_text((10, 20), "so we write", fontsize=10)
+    page.insert_text((10, 45), "Z =", fontsize=10)
+    page.draw_line(fitz.Point(30, 46), fitz.Point(70, 46), width=0.6)
+    page.insert_text((10, 70), "and rearranged", fontsize=10)
+    out = doc.tobytes()
+    doc.close()
+    return out
+
+
+EQ_HTML = ('<p>so we write <span class="math display">\\['
+           r'\begin{aligned} Z = \class{cloze-key}{\frac{v} {i}}.\end{aligned}'
+           '\\]</span> and rearranged</p>')
+
+
+class ClozeInsideAnEquationTests(SimpleTestCase):
+    """Task #660: the answer was spoken but never shown.
+
+    The author clozes part of an equation, so key mode marks the answer INSIDE
+    the maths and no cloze token is ever made. 171 blanks in the electronics
+    primer reached the reader as a blank with nothing above it.
+    """
+
+    def setUp(self):
+        self.track = build_track(EQ_HTML, _equation_pdf(), fake_synth,
+                                 math=FakeMaths())
+        self.clozes = self.track["clozes"]
+
+    def test_the_equation_becomes_a_revealable_blank(self):
+        self.assertEqual(len(self.clozes), 1)
+        self.assertEqual(self.clozes[0]["kind"], "math_cloze")
+
+    def test_it_reveals_the_whole_equation_with_the_answer_in_place(self):
+        svg = self.clozes[0]["svg"]
+        self.assertIn(r"\frac{v} {i}", svg, "the answer must be in the picture")
+        self.assertNotIn("cloze-key", svg,
+                         "a stylesheet that hides .cloze-key would hide the "
+                         "answer the reveal exists to show")
+
+    def test_it_is_timed_to_the_equation_being_read(self):
+        """Revealed as it is spoken, and the hold falls at the end of it."""
+        cloze = self.clozes[0]
+        self.assertLess(cloze["start_ms"], cloze["end_ms"])
+        spoken = [w for w in self.track["words"]
+                  if w["token"] == cloze["token"]]
+        self.assertTrue(spoken)
+        self.assertEqual(cloze["start_ms"], min(w["start_ms"] for w in spoken))
+        self.assertEqual(cloze["end_ms"], max(w["end_ms"] for w in spoken))
+
+    def test_it_sits_on_the_equation_itself(self):
+        cloze = self.clozes[0]
+        for key in ("page", "x0", "y0", "x1", "y1"):
+            self.assertIn(key, cloze)
+        self.assertLess(cloze["y0"], cloze["y1"])
+
+    def test_an_unplaced_equation_reveals_nothing(self):
+        """Silence beats revealing over the wrong part of the page."""
+        html = ('<p>alpha <span class="math display">\\['
+                r'\begin{aligned} Q = \class{cloze-key}{xyz}.\end{aligned}'
+                '\\]</span> omega</p>')
+        doc = fitz.open()
+        page = doc.new_page(width=300, height=60)
+        page.insert_text((10, 20), "nothing resembling that text", fontsize=10)
+        pdf = doc.tobytes()
+        doc.close()
+        track = build_track(html, pdf, fake_synth, math=FakeMaths())
+        self.assertEqual(track["clozes"], [])
+
+    def test_an_ordinary_equation_is_not_a_blank(self):
+        html = ('<p>so <span class="math display">\\[a = b\\]</span> then</p>')
+        track = build_track(html, _equation_pdf(), fake_synth,
+                            math=FakeMaths())
+        self.assertEqual(track["clozes"], [])
+
+    def test_the_spoken_text_does_not_depend_on_the_marker(self):
+        """What the reader has already paid for must not be invalidated: the
+        marker is transparent to SRE, so the text key cannot move."""
+        prep = prepare(EQ_HTML, _equation_pdf(), math=FakeMaths())
+        plain = EQ_HTML.replace(r"\class{cloze-key}{\frac{v} {i}}",
+                                r"\frac{v} {i}")
+        self.assertEqual(prepare(plain, _equation_pdf(),
+                                 math=FakeMaths()).text, prep.text)
