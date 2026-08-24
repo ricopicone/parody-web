@@ -82,11 +82,16 @@ export class BlankMarks {
   }
 
   setActive(token) {
+    // Called from the marker sync, which runs on every scroll event: a smooth
+    // scroll would otherwise redraw every blank on every page, 60 times a
+    // second, to arrive at the same picture.
+    if (token === this.active) return;
     this.active = token;
     this.draw();
   }
 
   setDark(dark) {
+    if (dark === this.dark) return;
     this.dark = dark;
     this.draw();
   }

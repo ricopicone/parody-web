@@ -79,18 +79,25 @@ export class Reveal {
    */
   _showText(cloze, page, typePx) {
     this.el.style.fontSize = typePx ? `${typePx}px` : '';
-    // A maths cloze reveals a picture: the reader is on a pdf.js canvas with
-    // no MathJax near it, so the SVG was rendered at generation time.
-    if (cloze.svg) {
-      this.el.dataset.kind = 'maths';
-      this.el.innerHTML = cloze.svg;
-    } else {
-      this.el.dataset.kind = 'text';
-      this.el.textContent = cloze.answer;
+    // Re-placed, not rebuilt. This is called again on every scroll event and
+    // on the marker timer, to keep the plate on its blank through a zoom —
+    // and `innerHTML = svg` re-parses the whole picture, so a smooth scroll
+    // was rebuilding a MathJax SVG sixty times a second.
+    if (this.showing !== cloze) {
+      this.showing = cloze;
+      // A maths cloze reveals a picture: the reader is on a pdf.js canvas with
+      // no MathJax near it, so the SVG was rendered at generation time.
+      if (cloze.svg) {
+        this.el.dataset.kind = 'maths';
+        this.el.innerHTML = cloze.svg;
+      } else {
+        this.el.dataset.kind = 'text';
+        this.el.textContent = cloze.answer;
+      }
     }
     this.el.hidden = false;
     this.el.classList.remove('is-fading');
-    page.el.appendChild(this.el);
+    if (this.el.parentElement !== page.el) page.el.appendChild(this.el);
     // Measure after attaching: the plate's width depends on the answer.
     const plate = { width: this.el.offsetWidth, height: this.el.offsetHeight };
     const at = placeReveal([cloze.x0, cloze.y0, cloze.x1, cloze.y1],
@@ -112,11 +119,14 @@ export class Reveal {
    */
   _showFigure(cloze, page) {
     this.el.dataset.kind = 'figure';
-    this.el.innerHTML = '';
-    const img = document.createElement('img');
-    img.src = cloze.src;
-    img.alt = '';
-    this.el.appendChild(img);
+    if (this.showing !== cloze) {
+      this.showing = cloze;
+      this.el.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = cloze.src;
+      img.alt = '';
+      this.el.appendChild(img);
+    }
     this.el.hidden = false;
     this.el.classList.remove('is-fading');
     const host = page.pad || page.el;

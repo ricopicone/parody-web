@@ -80,3 +80,63 @@ test('blank markers do not rebuild their canvas per scroll event', () => {
   for (let i = 0; i < 60; i += 1) marks.fit(page);
   assert.equal(counts.widthSets, after);
 });
+
+test('re-placing the same reveal does not rebuild its picture', async () => {
+  const { Reveal } = await import('./reveal.js');
+  let htmlWrites = 0;
+  const el = {
+    style: {}, dataset: {}, hidden: true, classList: { add() {}, remove() {} },
+    offsetWidth: 100, offsetHeight: 40, parentElement: null,
+    remove() {}, appendChild() {}, addEventListener() {},
+    set innerHTML(v) { htmlWrites += 1; this._h = v; },
+    get innerHTML() { return this._h; },
+    set textContent(v) { htmlWrites += 1; },
+    get textContent() { return ''; },
+  };
+  global.document = { createElement: () => el };
+  const page = { el: { offsetWidth: 540, offsetHeight: 810,
+                       appendChild() { el.parentElement = page.el; } },
+                 scale: 1, pad: null };
+  const reveal = new Reveal();
+  const cloze = { kind: 'cloze', svg: '<svg>a very large picture</svg>',
+                  x0: 1, y0: 2, x1: 3, y1: 4 };
+  reveal.show(cloze, page, 12);
+  const after = htmlWrites;
+  // The marker sync re-places it on every scroll event.
+  for (let i = 0; i < 60; i += 1) reveal.show(cloze, page, 12);
+  assert.equal(htmlWrites, after, 'the SVG was re-parsed');
+});
+
+test('a different reveal does rebuild', async () => {
+  const { Reveal } = await import('./reveal.js');
+  let htmlWrites = 0;
+  const el = {
+    style: {}, dataset: {}, hidden: true, classList: { add() {}, remove() {} },
+    offsetWidth: 100, offsetHeight: 40, parentElement: null,
+    remove() {}, appendChild() {}, addEventListener() {},
+    set innerHTML(v) { htmlWrites += 1; }, get innerHTML() { return ''; },
+    set textContent(v) { htmlWrites += 1; }, get textContent() { return ''; },
+  };
+  global.document = { createElement: () => el };
+  const page = { el: { offsetWidth: 540, offsetHeight: 810,
+                       appendChild() {} }, scale: 1, pad: null };
+  const reveal = new Reveal();
+  reveal.show({ kind: 'cloze', answer: 'one', x0: 1, y0: 2, x1: 3, y1: 4 },
+              page, 12);
+  const after = htmlWrites;
+  reveal.show({ kind: 'cloze', answer: 'two', x0: 1, y0: 2, x1: 3, y1: 4 },
+              page, 12);
+  assert.equal(htmlWrites, after + 1);
+});
+
+test('marker layers do not redraw when nothing became active', () => {
+  const { counts, page } = stubDom();
+  const marks = new BlankMarks(page);
+  marks.setBoxes([{ token: 1, x0: 1, y0: 2, x1: 3, y1: 4 }]);
+  marks.setActive(1);
+  const fills = counts.fills;
+  for (let i = 0; i < 60; i += 1) marks.setActive(1);
+  assert.equal(counts.fills, fills, 'the same blank was already active');
+  marks.setActive(2);
+  assert.ok(counts.fills > fills, 'a new active blank must redraw');
+});
