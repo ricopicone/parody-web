@@ -561,6 +561,30 @@ additionally needs a `--clozes key` render of the same source, which is
 **never served**: it is the only artifact that carries the answers, marks them
 as `<span class="cloze-key">`, and stages the complete figure artwork.
 
+#### A blank inside an equation
+
+A blank marked in prose becomes a cloze of its own. A blank marked inside
+**maths** does not: key mode writes it as `\class{cloze-key}{…}` *within* the
+equation, so the equation remains one token and there is no separate blank to
+reveal. Read-along reads those marks and treats the equation as the blank.
+
+What is revealed is the **whole equation, filled in** — one picture however
+many blanks it holds — anchored to the equation's own box rather than to the
+blank's rule. Deliberately: the rules inside an equation are a mixture of
+blanks and fraction bars (one section has an equation with one blank and two
+rules, another with four blanks and six), and this does not attempt to tell
+them apart. Its marker is an outline rather than the usual wash, because that
+box is the whole derivation.
+
+The reveal appears as the equation is read and the hold falls at the end of it.
+There is no earlier moment to pause at: the answer is spoken *inside* the
+narration. An equation with no box, or no rendered picture, produces no blank
+at all rather than pausing to reveal nothing.
+
+The `\class` wrapper is stripped for rendering only. It is transparent to
+MathJax and SRE — both forms speak identically — so the spoken text, and
+therefore the audio already paid for, does not depend on it.
+
 Point `generate_readalong --key-artifact` at that file. Nothing needs importing
 and nothing is served from it; it is read at generation time on the machine
 doing the generating.
