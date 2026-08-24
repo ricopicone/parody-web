@@ -20,6 +20,11 @@ later section; `generate.text_key_for` does not, and the audio is keyed on it.
 Which is also why `--force` should NOT be the habit. It re-buys everything,
 including the sections whose text is untouched, and is for when the generator
 itself changed. To redo one section after editing it, name it: `--section`.
+
+When the ALIGNER changes, `--realign` is the flag: the pages have not moved, so
+every section reports `have` and nothing happens, and `--force` would spend a
+book's worth of Polly to correct geometry that is free to recompute. It re-boxes
+what is already there and cannot call the engine at all.
 """
 
 import copy
@@ -122,6 +127,12 @@ class Command(BaseCommand):
                             help="Re-synthesise even where the words are "
                                  "unchanged. For when the generator changed; "
                                  "an edit needs only --section.")
+        parser.add_argument("--realign", action="store_true",
+                            help="Re-box existing tracks against the pages "
+                                 "they already sit on, keeping their audio. "
+                                 "For when the ALIGNER changed: --force would "
+                                 "re-buy recordings that are already right. "
+                                 "Never calls the engine.")
         parser.add_argument("--key-artifact", default=None,
                             help="Path to a `--clozes key` artifact to take "
                                  "section text from, instead of "
@@ -233,8 +244,12 @@ class Command(BaseCommand):
         # done and already carries a text key, so there is nothing to learn by
         # parsing the section. A row with no text key predates the split and is
         # worth preparing for, to stamp one on.
+        # --realign has to pass this exit by definition: the pagination is
+        # unchanged, which is exactly the case the exit exists to skip, and
+        # the boxes are what it has come to redo.
         exact = rows.filter(slice_key=slice_key).first()
-        if exact is not None and exact.text_key and not options["force"]:
+        if (exact is not None and exact.text_key and not options["force"]
+                and not options["realign"]):
             self.stdout.write(f"have {section.key}")
             return "skipped"
 
@@ -253,7 +268,8 @@ class Command(BaseCommand):
         prep = prepare(html, pdf_path.read_bytes(), math=math)
         text_key = text_key_for(prep.text, voice, engine)
 
-        if exact is not None and not options["force"]:
+        if exact is not None and not options["force"] \
+                and not options["realign"]:
             # Nothing moved and nothing changed; the row simply never learned
             # its own text key. Stamp it so the NEXT reflow can reuse it.
             if not options["dry_run"]:
@@ -281,8 +297,24 @@ class Command(BaseCommand):
                     f"{cloze_count(prep)} blanks")
             return "skipped"
 
+        # A re-alignment that cannot reuse must stop, not fall through: the
+        # whole point of the flag is that it cannot spend money, and a silent
+        # slide into synthesis would re-buy the book at the moment an operator
+        # believed they were only moving boxes.
+        if options["realign"] and prior is None:
+            self.stderr.write(
+                f"skip {section.key}: nothing to re-align onto "
+                "(no stored timings for these words); leave it to a run "
+                "without --realign")
+            return "skipped"
+
         track = reuse(prep, prior.words) if prior is not None else None
         if track is None:
+            if options["realign"]:
+                self.stderr.write(
+                    f"skip {section.key}: stored timings do not fit this "
+                    "script; leave it to a run without --realign")
+                return "skipped"
             if prior is not None:
                 # Belt and braces behind the token-count guard: a stored token
                 # that does not index this script would silently box words in

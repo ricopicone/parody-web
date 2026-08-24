@@ -65,6 +65,30 @@ def _is_local(tokens: int, page_words: int) -> bool:
     return tokens <= MAX_LOCAL_TOKENS and page_words <= MAX_LOCAL_WORDS
 
 
+def _is_equation(placed: list, i1: int, i2: int) -> bool:
+    """One display-math token, whatever extent the page gave it.
+
+    A display equation is a SINGLE token that typesets as MANY extracted
+    chunks — a line, a relation symbol, the fragments either side of a blank —
+    and its alignment key is the whole LaTeX string, which can never equal any
+    one of them. The local-replace hatch below is therefore the only route by
+    which maths is ever placed, and a cap sized for a hyphenated line break
+    denies it to anything longer than a one-liner: on the primer's opamp
+    section six of twelve derivations extracted as 5 to 48 chunks and so took
+    no box at all. An equation with no box freezes the karaoke mark for the
+    whole minute SRE spends narrating it, which reads as the highlight
+    skipping the passage.
+
+    Widened for ONE token only, deliberately. What the cap exists to prevent
+    is hundreds of TOKENS sharing a box spanning half a page while counting as
+    placed; a single token taking the extent it typeset to is its own box by
+    construction. Prose keeps the tight cap, where a long run really is a
+    divergence and unplaced is the honest outcome.
+    """
+    return (i2 - i1 == 1 and placed[i1].token.kind == "math"
+            and placed[i1].token.display)
+
+
 def _join(boxes):
     return (min(b[0] for b in boxes), min(b[1] for b in boxes),
             max(b[2] for b in boxes), max(b[3] for b in boxes))
@@ -159,7 +183,8 @@ def _align_window(placed, words, a, b, si, ei, sj, ej):
         if tag == "equal":
             for offset in range(i2 - i1):
                 _place(placed[i1 + offset], [words[j1 + offset]])
-        elif tag == "replace" and _is_local(i2 - i1, j2 - j1):
+        elif tag == "replace" and (_is_local(i2 - i1, j2 - j1)
+                                   or _is_equation(placed, i1, i2)):
             # ONLY a small local disagreement — a hyphenated line break, a
             # ligature, a symbol that extracted oddly. Give every token in the
             # run the run's whole extent rather than guessing a split.
@@ -178,8 +203,13 @@ def _align_window(placed, words, a, b, si, ei, sj, ej):
 def _place(p: Placed, run: list):
     if p.token.kind in ("cloze", "figure_cloze"):
         return                     # never takes a box from prose
-    p.page = run[0].page
-    p.box = _join([(w.x0, w.y0, w.x1, w.y1) for w in run])
+    # The run's FIRST page only. An equation broken over a page break
+    # extracts as chunks on both, and a box joined across them describes
+    # nowhere at all — it spans the gutter and lands on neither page.
+    page = run[0].page
+    here = [w for w in run if w.page == page]
+    p.page = page
+    p.box = _join([(w.x0, w.y0, w.x1, w.y1) for w in here])
 
 
 def _attach_rules(placed: list, rules: list):

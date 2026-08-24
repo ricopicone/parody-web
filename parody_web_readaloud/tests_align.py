@@ -138,3 +138,58 @@ class PatienceAnchorTests(SimpleTestCase):
         rare = [p for p in placed if p.token.text in ("quadrature", "phasor")]
         self.assertTrue(all(p.box for p in rare),
                         "unique words must anchor across the interpolation")
+
+
+class DisplayMathExtentTests(SimpleTestCase):
+    """A display equation is ONE token that typesets as many extracted chunks.
+
+    Its LaTeX can never match the page glyph by glyph, so the only route to a
+    box is the local-replace escape hatch — which was sized for a hyphenated
+    line break (one token, a few page words). A multi-line derivation exceeds
+    that easily, and an equation with no box freezes the karaoke mark for the
+    whole minute SRE spends narrating it.
+    """
+
+    def test_a_multiline_equation_takes_the_extent_it_typeset_to(self):
+        tokens = [Token("word", "so"),
+                  Token("math", latex=r"\begin{aligned} v_o &= A (v_+ - v_-)"
+                                      r"\\ &= A (v_i - v_o) \end{aligned}",
+                        display=True),
+                  Token("word", "rearranged")]
+        glyphs = ["\U0001d463\U0001d45c=", "\U0001d434(\U0001d463+",
+                  "−\U0001d463−)", "=", "⇒",
+                  "\U0001d463\U0001d45c=", "\U0001d434(\U0001d463\U0001d456",
+                  "−\U0001d463\U0001d45c)"]
+        words = ([_w("so", x0=0)]
+                 + [_w(g, x0=10 + 5 * i) for i, g in enumerate(glyphs)]
+                 + [_w("rearranged", x0=90)])
+        placed = align(tokens, words, [])
+        self.assertIsNotNone(placed[1].box,
+                             "a display equation must carry its own extent")
+        self.assertEqual(placed[1].box, (10.0, 10.0, 53.0, 20.0))
+
+    def test_a_long_run_of_prose_is_still_left_unplaced(self):
+        """Only maths absorbs a long run. A word token doing so would take a
+        box spanning the page while counting as placed."""
+        tokens = [Token("word", "alpha"), Token("word", "ghost"),
+                  Token("word", "omega")]
+        words = ([_w("alpha", x0=0)]
+                 + [_w(f"x{i}", x0=10 + i) for i in range(20)]
+                 + [_w("omega", x0=90)])
+        placed = align(tokens, words, [])
+        self.assertIsNone(placed[1].box)
+
+    def test_an_equation_broken_over_a_page_stays_on_one_page(self):
+        """A box joined across a page break describes nowhere at all."""
+        tokens = [Token("word", "so"),
+                  Token("math", latex=r"\begin{aligned} a &= b \\ &= c"
+                                      r"\end{aligned}", display=True),
+                  Token("word", "then")]
+        words = [_w("so", x0=0),
+                 _w("\U0001d44e=", page=0, x0=10),
+                 _w("\U0001d44f=", page=0, x0=20),
+                 _w("\U0001d450", page=1, x0=5),
+                 _w("then", page=1, x0=30)]
+        placed = align(tokens, words, [])
+        self.assertEqual(placed[1].page, 0)
+        self.assertEqual(placed[1].box, (10.0, 10.0, 28.0, 20.0))

@@ -576,7 +576,7 @@ surface in front of a student.)
 ```
 python manage.py generate_readalong <book_slug> [--section KEY] [--voice Matthew]
                                     [--engine neural|standard] [--skip-math]
-                                    [--force] [--dry-run]
+                                    [--force] [--realign] [--dry-run]
 ```
 
 `--dry-run` reports, per section, whether it would be synthesised and at what
@@ -595,6 +595,8 @@ to a section and only the last costs anything:
 | `moved` | the section moved on the page; boxes re-derived, mp3 kept   | ~1 s |
 | `made`  | the words changed — synthesised                             | Polly |
 
+(`--realign` produces `moved` too: the pages are the same, the boxes are not.)
+
 `moved` is why editing chapter 1 does not re-buy chapter 12. A track has two
 identities and they invalidate independently: `slice_key` is the identity of
 its **boxes**, and must move whenever the page does, because a reader's ink is
@@ -612,6 +614,15 @@ disagreement synthesises rather than places words by an index that has moved.
 **`--force` is not the tool for a content edit.** It re-buys every section,
 including the ones whose text is untouched, and exists for when the *generator*
 changed. To redo one section, name it: `--section <key>`.
+
+**`--realign` is the tool for when the *aligner* changed.** Nothing about the
+book has moved, so every section reports `have` and the run does nothing; the
+only other way past that exit is `--force`, which re-buys a book's worth of
+recordings to correct geometry that costs nothing to recompute. `--realign`
+re-boxes each existing track against the pages it already sits on, keeps its
+audio and its timings, and reports `moved`. It never calls the engine: a
+section it cannot re-align onto is skipped and named, rather than quietly
+synthesised.
 
 Audio files are named from the text key, so two paginations of one section
 share one recording rather than storing it twice.

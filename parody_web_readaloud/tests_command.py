@@ -227,6 +227,37 @@ class RepaginationTests(TestCase):
         self._run(force=True)
         self.assertEqual(len(self.polly.calls), 2)
 
+    def test_realign_re_boxes_the_same_pages_without_paying(self):
+        """An aligner fix reaches readers only if the boxes can be redone.
+
+        Nothing about the pagination has changed, so the cheap exit skips the
+        section and --force is the only other way past it — and --force re-buys
+        every recording in the book to correct geometry that costs nothing.
+        """
+        self._run()
+        before = self._track()
+
+        out, _ = self._run(realign=True)
+
+        self.assertIn("moved al", out)
+        self.assertEqual(len(self.polly.calls), 1, "Polly was asked twice")
+        after = self._track()
+        self.assertEqual(after.slice_key, before.slice_key)
+        self.assertEqual(after.audio_name, before.audio_name)
+        self.assertEqual(after.duration_ms, before.duration_ms)
+        self.assertEqual([(w["word"], w["start_ms"], w["token"])
+                          for w in after.words],
+                         [(w["word"], w["start_ms"], w["token"])
+                          for w in before.words])
+
+    def test_realign_never_falls_through_to_synthesis(self):
+        """The flag's whole promise is that it cannot spend money. A section
+        with nothing to re-align onto must stop, not quietly be bought."""
+        out, err = self._run(realign=True)
+        self.assertIn("skip al", err)
+        self.assertEqual(self.polly.calls, [])
+        self.assertIsNone(self._track())
+
     def test_dry_run_says_which_sections_would_cost_money(self):
         self._run()
         self._repaginate(seed=5, sha="d")
