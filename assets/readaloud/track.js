@@ -108,9 +108,15 @@ export function nextSentence(words, ms, fallbackMs = 6000) {
   const list = words || [];
   if (!list.length) return null;
 
+  // Scanned, not filtered. This is called from the frame loop, and building an
+  // array of every word ahead — a section is a few thousand — allocated that
+  // much garbage sixty times a second for one number at the end of it.
+  let lastEnd = null;
+  for (let i = 0; i < list.length; i += 1) {
+    if (list[i].start_ms > ms) lastEnd = list[i].end_ms;
+  }
   // Nothing ahead at all — the genuine end, whatever the track's length.
-  const ahead = list.filter((w) => w.start_ms > ms);
-  if (!ahead.length) return null;
+  if (lastEnd === null) return null;
 
   for (let i = 1; i < list.length; i += 1) {
     if (list[i].start_ms <= ms) continue;
@@ -119,5 +125,5 @@ export function nextSentence(words, ms, fallbackMs = 6000) {
   }
   // Clamped to where the audio ENDS, not to the last word's start — a long
   // final word would otherwise pull every fallback jump back to it.
-  return Math.min(ms + fallbackMs, ahead[ahead.length - 1].end_ms);
+  return Math.min(ms + fallbackMs, lastEnd);
 }

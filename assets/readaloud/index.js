@@ -7,6 +7,7 @@
  */
 import { BlankMarks, blanksOnPage } from './blanks.js';
 import { Clock } from './clock.js';
+import { Follower } from './follow.js';
 import { Highlight } from './highlight.js';
 import { Reveal } from './reveal.js';
 import { isRendered, pageAt } from './pageview.js';
@@ -132,6 +133,14 @@ async function boot() {
   let holding = -1;                     // cloze index we are stopped at
   let announced = -1;
   let following = true;
+  const follower = new Follower();
+  // The word the mark is currently drawn for, and the page the others were
+  // last cleared against — so a frame that changes neither does nothing.
+  let painted = -1;
+  let marked = -1;
+  // The word the skip affordance was last decided for, and what it decided.
+  let skipFor = -2;
+  let skipAvailable = false;
 
   root.dataset.readalong = 'idle';
 
@@ -459,6 +468,12 @@ async function boot() {
       const active = current >= 0 ? (clozes[current] || {}).token : -1;
       mark.setActive(active);
     }
+    // The karaoke layers too: a zoom changes every box on the page, and while
+    // paused there are no frames to notice. Free when the size is unchanged.
+    layers.forEach((layer, index) => {
+      const page = pageAt(root, index, track.pages);
+      if (page) layer.fit(page);
+    });
     refitReveal();
   }
 
@@ -487,22 +502,37 @@ async function boot() {
   function follow(page, y0) {
     if (!following || !scroller) return;
     const row = page.el.parentElement || page.el;
-    const target = row.offsetTop + y0 - scroller.clientHeight / 2;
-    if (Math.abs(scroller.scrollTop - target) > scroller.clientHeight / 3) {
+    const top = row.offsetTop + y0 - scroller.clientHeight / 2;
+    // Through the Follower, not straight to scrollTo: a smooth scroll is an
+    // animation, and re-issuing it every frame restarts it from wherever it
+    // had got to, so it crawls and never arrives.
+    const target = follower.target(top, scroller.scrollTop,
+                                   scroller.clientHeight);
+    if (target !== null) {
       scroller.scrollTo({ top: target, behavior: 'smooth' });
     }
   }
 
+  /** Returns the index of the word being spoken, or -1. */
   function paint(ms) {
     const index = wordAt(track.words, ms);
-    if (index < 0) return;
+    if (index < 0) return -1;
+    // A word lasts a dozen frames or more and nothing about the mark changes
+    // for any of them. The whole of this function's work is per-WORD work, so
+    // it runs per word.
+    if (index === painted) return index;
+    painted = index;
     const word = track.words[index];
-    if (!Number.isFinite(word.page)) return;
+    if (!Number.isFinite(word.page)) return index;
     const layer = layerFor(word.page);
-    if (!layer) return;
+    if (!layer) return index;
     layer.show([word.x0, word.y0, word.x1, word.y1]);
-    clearOthers(word.page);
+    if (word.page !== marked) {
+      clearOthers(word.page);
+      marked = word.page;
+    }
     follow(layer.page, word.y0 * layer.page.scale);
+    return index;
   }
 
   function hold(index) {
@@ -534,11 +564,18 @@ async function boot() {
       audio.pause();
       audio.dispatch('ended');
     }
-    paint(ms);
+    const index = paint(ms);
     // Offered always, not only over maths: wanting to move on is not
     // something that only happens during an equation.
-    skipButton.hidden = holding >= 0
-      || skipTarget(regions, ms, track.words) === null;
+    //
+    // Recomputed per WORD, not per frame: skipTarget scans the section's
+    // regions and then every word in it, and the answer cannot change while
+    // the same word is being spoken.
+    if (index !== skipFor) {
+      skipFor = index;
+      skipAvailable = skipTarget(regions, ms, track.words) !== null;
+    }
+    skipButton.hidden = holding >= 0 || !skipAvailable;
 
     // The answer appears WHILE it is read, not after. Hearing a term and only
     // then seeing it made the two feel unconnected.
@@ -574,13 +611,21 @@ async function boot() {
   setInterval(syncMarks, 1000);
   syncMarks();
 
-  scroller?.addEventListener('wheel', () => { following = false; },
-                             { passive: true });
-  scroller?.addEventListener('touchmove', () => { following = false; },
-                             { passive: true });
+  scroller?.addEventListener('wheel', () => {
+    following = false;
+    follower.reset();
+  }, { passive: true });
+  scroller?.addEventListener('touchmove', () => {
+    following = false;
+    follower.reset();
+  }, { passive: true });
+  // A zoom changes every box on the page, so the mark must be redrawn even
+  // though the word has not moved. Same for a resize.
+  window.addEventListener('resize', () => { painted = -1; }, { passive: true });
 
   function play() {
     following = true;
+    follower.reset();
     delete root.dataset.readalongResume;
     root.dataset.readalong = 'playing';
     audio.play();
@@ -595,6 +640,9 @@ async function boot() {
   }
 
   function restart() {
+    painted = -1;
+    skipFor = -2;
+    follower.reset();
     delete root.dataset.readalongResume;
     try { localStorage.removeItem(RESUME_KEY); } catch (err) { /* ignore */ }
     announced = -1;

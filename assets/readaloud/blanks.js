@@ -48,11 +48,23 @@ export class BlankMarks {
     this.fit(page);
   }
 
+  /**
+   * Re-fit to the page. Runs on every scroll event and on the marker timer,
+   * so it must be free when nothing has actually changed: assigning
+   * `canvas.width` reallocates and zeroes the whole backing store even when
+   * the value is unchanged, and a smooth scroll fires scroll every frame.
+   */
   fit(page) {
     this.page = page;
     const width = page.el.offsetWidth;
     const height = page.el.offsetHeight;
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    if (this.ctx && width === this.cssWidth && height === this.cssHeight
+        && dpr === this.dpr) {
+      return;
+    }
+    this.cssWidth = width;
+    this.cssHeight = height;
     this.dpr = dpr;
     this.canvas.width = Math.floor(width * dpr);
     this.canvas.height = Math.floor(height * dpr);
