@@ -12,7 +12,8 @@ import { Follower } from './follow.js';
 import { Highlight } from './highlight.js';
 import { Reveal } from './reveal.js';
 import { isRendered, pageAt } from './pageview.js';
-import { clozeAt, revealAt, showable, skipTarget, wordAt } from './track.js';
+import { clozeAt, regionAt, revealAt, showable, skipTarget,
+         wordAt } from './track.js';
 
 async function boot() {
   const root = document.querySelector('[data-ink-root]');
@@ -153,8 +154,15 @@ async function boot() {
     + '<span data-play-glyph>\u25b6</span> <span data-play-label>Read aloud</span>'
     + '</button>'
     + '<button type="button" data-here class="readalong-here">Read from\u2026</button>'
-    + '<button type="button" data-speed class="readalong-speed" '
-    + 'aria-label="Reading speed" title="Reading speed">1\u00d7</button>';
+    + '<label class="readalong-speed"><span class="readalong-speed-label">'
+    + 'Speed</span><select data-speed aria-label="Reading speed">'
+    + '<option value="0.75">0.75\u00d7</option>'
+    + '<option value="0.9">0.9\u00d7</option>'
+    + '<option value="1" selected>1\u00d7</option>'
+    + '<option value="1.15">1.15\u00d7</option>'
+    + '<option value="1.35">1.35\u00d7</option>'
+    + '<option value="1.6">1.6\u00d7</option>'
+    + '</select></label>';
   root.appendChild(nav);
   const playButton = nav.querySelector('[data-play]');
   const playGlyph = nav.querySelector('[data-play-glyph]');
@@ -193,38 +201,34 @@ async function boot() {
   /**
    * Reading speed.
    *
-   * Cycles rather than opening a menu: there are five sensible values and a
-   * reader picks one and leaves it. Remembered across sections — a pace that
-   * suits someone is a property of them, not of the section.
+   * A menu, not a cycle. Cycling made a reader who wanted 1.6x press four
+   * times and pass through three speeds they did not want, each of which took
+   * effect on the voice as they went by.
    *
-   * playbackRate does not disturb the timings: the highlight is driven from
-   * audio.currentTime, which advances in real seconds whatever the rate.
+   * Remembered across sections — a pace that suits someone is a property of
+   * them, not of the section. playbackRate does not disturb the timings: the
+   * highlight is driven from audio.currentTime, which advances in real seconds
+   * whatever the rate.
    */
   const SPEEDS = [0.75, 0.9, 1, 1.15, 1.35, 1.6];
   const SPEED_KEY = 'parody-readalong-speed';
-  const speedButton = nav.querySelector('[data-speed]');
-
-  function showSpeed() {
-    const rate = audio.playbackRate;
-    speedButton.textContent = `${rate === 1 ? '1' : String(rate)}\u00d7`;
-  }
+  const speedMenu = nav.querySelector('[data-speed]');
 
   function setSpeed(rate) {
     audio.playbackRate = rate;
+    speedMenu.value = String(rate);
     try { localStorage.setItem(SPEED_KEY, String(rate)); } catch (err) { /* ignore */ }
-    showSpeed();
   }
 
   let savedSpeed = 1;
   try {
     savedSpeed = parseFloat(localStorage.getItem(SPEED_KEY)) || 1;
   } catch (err) { savedSpeed = 1; }
-  if (SPEEDS.includes(savedSpeed)) audio.playbackRate = savedSpeed;
-  showSpeed();
+  setSpeed(SPEEDS.includes(savedSpeed) ? savedSpeed : 1);
 
-  speedButton.addEventListener('click', () => {
-    const at = SPEEDS.indexOf(audio.playbackRate);
-    setSpeed(SPEEDS[(at + 1) % SPEEDS.length]);
+  speedMenu.addEventListener('change', () => {
+    const rate = parseFloat(speedMenu.value);
+    if (SPEEDS.includes(rate)) setSpeed(rate);
   });
 
   /**
@@ -503,16 +507,26 @@ async function boot() {
   function paint(ms) {
     const index = wordAt(track.words, ms);
     if (index < 0) return -1;
-    // A word lasts a dozen frames or more and nothing about the mark changes
-    // for any of them. The whole of this function's work is per-WORD work, so
-    // it runs per word.
-    if (index === painted) return index;
-    painted = index;
     const word = track.words[index];
+    // Inside a display equation the mark must keep moving even though the word
+    // has not changed: one equation is one token with one box, and the voice
+    // can be inside it for a minute. showProgress quantises to whole pixels,
+    // so this stays cheap — most frames still decide to do nothing.
+    const region = regionAt(regions, ms);
+    const inEquation = !!(region && region.display
+                          && region.token === word.token);
+    if (index === painted && !inEquation) return index;
+    painted = index;
     if (!Number.isFinite(word.page)) return index;
     const layer = layerFor(word.page);
     if (!layer) return index;
-    layer.show([word.x0, word.y0, word.x1, word.y1]);
+    const box = [word.x0, word.y0, word.x1, word.y1];
+    if (inEquation) {
+      const span = region.end_ms - region.start_ms;
+      layer.showProgress(box, span > 0 ? (ms - region.start_ms) / span : 0);
+    } else {
+      layer.show(box);
+    }
     if (word.page !== marked) {
       clearOthers(word.page);
       marked = word.page;

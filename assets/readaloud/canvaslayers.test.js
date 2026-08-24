@@ -140,3 +140,47 @@ test('marker layers do not redraw when nothing became active', () => {
   marks.setActive(2);
   assert.ok(counts.fills > fills, 'a new active blank must redraw');
 });
+
+test('an equation being read shows progress, and still costs almost nothing', () => {
+  // One equation is one token with one box, and the voice can be inside it for
+  // a minute — so the mark has to move without the word changing. It must not
+  // undo the frame-loop work: progress is quantised to whole pixels, so most
+  // frames decide to do nothing.
+  const { counts, page } = stubDom();
+  const layer = new Highlight(page);
+  const box = [0, 0, 100, 12];              // a one-line equation, 100pt wide
+  let painted = 0;
+  const before = counts.fills;
+  // 600 frames across ten seconds of narration
+  for (let i = 0; i < 600; i += 1) layer.showProgress(box, i / 600);
+  painted = counts.fills - before;
+  assert.ok(painted > 0, 'the mark must move');
+  // 100 CSS px of travel: at most one repaint per pixel, each drawing the
+  // faint whole-equation wash plus the filled part.
+  assert.ok(painted <= 100 * 2 + 2,
+            `repainted ${painted} times for 100px of travel`);
+  assert.equal(counts.widthSets, 1, 'the canvas must not be rebuilt');
+});
+
+test('progress fills downwards for a derivation and rightwards for one line', () => {
+  const { page } = stubDom();
+  const layer = new Highlight(page);
+  const rects = [];
+  layer.ctx.fillRect = (x, y, w, h) => rects.push([x, y, w, h]);
+  layer.showProgress([0, 0, 100, 12], 0.5);        // one line
+  const wide = rects.pop();
+  rects.length = 0;
+  layer.showProgress([0, 0, 100, 200], 0.5);       // a tall derivation
+  const tall = rects.pop();
+  assert.ok(wide[2] < 100, 'a single line fills rightwards');
+  assert.ok(tall[3] < 200 && tall[2] > 100, 'a derivation fills downwards');
+});
+
+test('leaving the equation returns to an ordinary mark', () => {
+  const { counts, page } = stubDom();
+  const layer = new Highlight(page);
+  layer.showProgress([0, 0, 100, 12], 0.5);
+  const fills = counts.fills;
+  layer.show([0, 0, 100, 12]);
+  assert.ok(counts.fills > fills, 'the plain mark must repaint over the band');
+});

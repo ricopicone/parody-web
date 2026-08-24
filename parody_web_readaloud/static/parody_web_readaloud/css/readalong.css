@@ -162,8 +162,39 @@
 }
 
 .readalong-here { border-left: 1px solid rgb(27 26 23 / 20%); border-radius: 0; }
-.readalong-speed { border-left: 1px solid rgb(27 26 23 / 20%); border-radius: 0;
-  min-width: 2.6em; font-variant-numeric: tabular-nums; }
+
+/* The speed control is a real <select>, so a reader goes straight to a value
+   instead of cycling through the ones they did not want — each of which used
+   to take effect on the voice on the way past. The label is a wrapper, so the
+   bar's button styling does not apply to it. */
+.readalong-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-left: 1px solid rgb(27 26 23 / 20%);
+  border-radius: 0;
+}
+
+.readalong-speed-label {
+  opacity: 0.7;
+}
+
+.readalong-speed select {
+  font: inherit;
+  font-size: 1em;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0.1rem 0.2rem;
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.readalong-speed select:focus-visible {
+  outline: 2px solid rgb(66 133 244 / 70%);
+  outline-offset: 1px;
+}
 
 /* Armed: the next tap picks a place to read from instead of drawing. */
 [data-readalong-arming='1'] .ink-page { cursor: crosshair; }
@@ -181,6 +212,9 @@
 [data-dark='1'] .readalong-bar button:hover { background: rgb(255 255 255 / 12%); }
 [data-dark='1'] .readalong-here,
 [data-dark='1'] .readalong-speed { border-left-color: rgb(242 238 228 / 20%); }
+/* The menu's own list is drawn by the browser in ITS colours, so the option
+   text needs a background that is not the dark bar behind the closed control. */
+[data-dark='1'] .readalong-speed select option { color: #1b1a17; background: #f2eee4; }
 
 /* Armed for "read from here". The gesture is two-step on a page where a bare
    tap draws, so the state says so rather than relying on a changed label. */

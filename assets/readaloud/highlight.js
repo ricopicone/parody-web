@@ -20,6 +20,7 @@ export class Highlight {
     this.canvas.className = 'readalong-highlight';
     page.el.appendChild(this.canvas);
     this.box = null;
+    this.filled = null;
     this.fit(page);
   }
 
@@ -52,12 +53,12 @@ export class Highlight {
     this.canvas.style.height = `${height}px`;
     this.ctx = this.canvas.getContext('2d');
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (this.box) this._paint();
+    if (this.box) { this.filled = null; this._paint(); }
   }
 
   setDark(dark) {
     this.dark = dark;
-    if (this.box) this._paint();
+    if (this.box) { this.filled = null; this._paint(); }
   }
 
   /**
@@ -68,23 +69,69 @@ export class Highlight {
    * box identical to the one already up is nothing to do.
    */
   show(box) {
-    if (this.box && same(this.box, box)) return;
+    if (this.box && same(this.box, box) && this.filled === null) return;
     this.box = box;
+    this.filled = null;
     this._paint();
   }
 
-  _paint() {
+  /**
+   * The same box, but reading as PROGRESS through it.
+   *
+   * A whole spoken equation is one script token with one box, so the mark used
+   * to sit dead still for as long as SRE took to narrate it — up to 78 seconds
+   * on this book, and 32% of all playback. There are no per-symbol boxes to
+   * move between and inventing them would be a lie, so this claims something
+   * weaker and true: how far through THIS equation the voice has got.
+   *
+   * `fraction` is 0..1. A tall box fills downwards, which is the direction a
+   * derivation is read; a single line fills rightwards.
+   *
+   * Quantised to whole pixels, because this is called on every frame and a
+   * repaint that moves the edge less than a pixel is a repaint nobody can see.
+   */
+  showProgress(box, fraction) {
+    const { x0, y0, x1, y1 } = toCss(box, this.page.scale);
+    const down = (y1 - y0) > (x1 - x0) / 4;
+    const span = down ? y1 - y0 : x1 - x0;
+    const edge = Math.round(Math.max(0, Math.min(1, fraction)) * span);
+    if (this.box && same(this.box, box) && edge === this.filled) return;
+    this.box = box;
+    this.filled = edge;
+    this._paint(down, edge);
+  }
+
+  _paint(down, edge) {
     const { x0, y0, x1, y1 } = toCss(this.box, this.page.scale);
     this._wipe();
+    // A touch of bleed so descenders and the leading are covered evenly.
+    const bleed = [x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2];
+    if (edge === undefined) {
+      this.ctx.fillStyle = this.dark
+        ? 'rgba(255, 214, 102, 0.26)'
+        : 'rgba(255, 214, 102, 0.52)';
+      this.ctx.fillRect(...bleed);
+      return;
+    }
+    // The whole equation stays lit, faintly, so it reads as one thing being
+    // read rather than a band crawling over unrelated paper.
+    this.ctx.fillStyle = this.dark
+      ? 'rgba(255, 214, 102, 0.10)'
+      : 'rgba(255, 214, 102, 0.20)';
+    this.ctx.fillRect(...bleed);
     this.ctx.fillStyle = this.dark
       ? 'rgba(255, 214, 102, 0.26)'
       : 'rgba(255, 214, 102, 0.52)';
-    // A touch of bleed so descenders and the leading are covered evenly.
-    this.ctx.fillRect(x0 - 1, y0 - 1, x1 - x0 + 2, y1 - y0 + 2);
+    if (down) {
+      this.ctx.fillRect(x0 - 1, y0 - 1, x1 - x0 + 2, edge + 1);
+    } else {
+      this.ctx.fillRect(x0 - 1, y0 - 1, edge + 1, y1 - y0 + 2);
+    }
   }
 
   clear() {
     this.box = null;
+    this.filled = null;
     this._wipe();
   }
 
