@@ -6,6 +6,7 @@
  * become a precondition for annotating.
  */
 import { BlankMarks, blanksOnPage } from './blanks.js';
+import { bodyType } from './bodytype.js';
 import { Clock } from './clock.js';
 import { Follower } from './follow.js';
 import { Highlight } from './highlight.js';
@@ -30,25 +31,10 @@ async function boot() {
 
   const clozes = showable(track.clozes);
 
-  /**
-   * The book's body type, in PDF points, so the revealed answer is the size it
-   * would have been printed — at any zoom.
-   *
-   * Measured from the median word BOX, which spans ascender to descender and
-   * so runs about half again the type size; BOX_TO_TYPE brings it back. Using
-   * the box height raw made the reveal noticeably larger than the page.
-   */
-  const BOX_TO_TYPE = 0.66;
-  const bodyPt = (() => {
-    const heights = track.words
-      .filter((w) => Number.isFinite(w.y0))
-      .map((w) => w.y1 - w.y0)
-      .sort((a, b) => a - b);
-    const median = heights.length
-      ? heights[Math.floor(heights.length / 2)]
-      : 15;
-    return median * BOX_TO_TYPE;
-  })();
+  // The book's body type, in PDF points, so the revealed answer is the size it
+  // would have been printed — at any zoom. See bodytype.js for what is
+  // measured and, more to the point, what is left out of the measurement.
+  const bodyPt = bodyType(track);
   const regions = track.regions || [];
   // A preview track has timings but no audio. A clock stands in for the
   // element so everything downstream — the frame loop, the holds, the
