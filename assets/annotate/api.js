@@ -1,4 +1,5 @@
 /** Talking to the ink endpoints. */
+import { maybeGzip, Downgrade } from './compress.js';
 
 function csrf() {
   const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
@@ -22,6 +23,9 @@ export const KEEPALIVE_MAX_BYTES = 64 * 1024;
 export class InkApi {
   constructor(base) {
     this.base = base;            // e.g. /one/alpha/
+    // Shared across every save on this page, so one rejection switches
+    // compression off for the session rather than per request.
+    this.downgrade = new Downgrade();
   }
 
   async load(version) {
@@ -40,11 +44,18 @@ export class InkApi {
    * nothing: the payload carried it and this method quietly dropped it.
    */
   async save(state) {
-    const resp = await fetch(`${this.base}ink/`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
-      body: JSON.stringify(_body(state)),
-    });
+    const { body, encoding } = await maybeGzip(JSON.stringify(_body(state)),
+                                               { downgrade: this.downgrade });
+    const headers = { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() };
+    if (encoding) headers['Content-Encoding'] = encoding;
+    const resp = await fetch(`${this.base}ink/`, { method: 'PUT', headers, body });
+    if (!resp.ok && encoding) {
+      // The server could not read what we sent. Remember that, then send this
+      // save again as plain bytes rather than making the reader wait for a
+      // retry loop that would fail the same way.
+      this.downgrade.note(resp.status);
+      if (this.downgrade.off) return this.save(state);
+    }
     return resp.ok;
   }
 

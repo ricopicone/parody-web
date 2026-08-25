@@ -9,6 +9,7 @@ structural rather than a check someone can forget to write.
 """
 
 import json
+import zlib
 
 from django.conf import settings
 from django.http import Http404, HttpResponseForbidden, JsonResponse
@@ -51,8 +52,37 @@ class _TooBig(Exception):
     """The body is past the ink ceiling — answer 413, don't raise."""
 
 
+class _BadEncoding(Exception):
+    """The body claims an encoding it does not actually have — answer 400."""
+
+
+class _UnsupportedEncoding(Exception):
+    """An encoding we do not speak — answer 415."""
+
+
+def _gunzip_capped(raw, limit):
+    """Decompress `raw`, stopping AT the ceiling rather than past it.
+
+    Returns the bytes, or None if the payload inflates beyond `limit`.
+
+    The cap has to be applied to the decompressed size — 25 MB of gzip is
+    hundreds of megabytes of ink, so a ceiling measured on the compressed
+    bytes would be no ceiling at all. And it has to be applied *during*
+    decompression: refusing a bomb only after building it in memory would be
+    its own outage on a 2 GB box. `max_length` is what makes that true — zlib
+    stops producing at the cap and leaves the rest in `unconsumed_tail`.
+    """
+    machine = zlib.decompressobj(16 + zlib.MAX_WBITS)     # 16 = gzip wrapper
+    out = machine.decompress(raw, limit + 1)
+    if len(out) > limit or machine.unconsumed_tail:
+        return None
+    if not machine.eof:
+        raise _BadEncoding("truncated gzip body")
+    return out
+
+
 def _read_ink_body(request):
-    """The request body, read past DATA_UPLOAD_MAX_MEMORY_SIZE.
+    """The request body, read past DATA_UPLOAD_MAX_MEMORY_SIZE, decompressed.
 
     `request.read()` is the same stream `request.body` would drain, minus that
     setting's check; the stream is already bounded by CONTENT_LENGTH, and the
@@ -62,10 +92,24 @@ def _read_ink_body(request):
     declared = int(request.META.get("CONTENT_LENGTH") or 0)
     if declared > limit:
         raise _TooBig
+
     body = request.read(limit + 1)
     if len(body) > limit:
         raise _TooBig
-    return body
+
+    encoding = (request.META.get("HTTP_CONTENT_ENCODING") or "").strip().lower()
+    if not encoding or encoding == "identity":
+        return body
+    if encoding != "gzip":
+        raise _UnsupportedEncoding(encoding)
+
+    try:
+        out = _gunzip_capped(body, limit)
+    except zlib.error as exc:
+        raise _BadEncoding(str(exc)) from exc
+    if out is None:
+        raise _TooBig
+    return out
 
 
 def _section_or_404(request, chapter_slug, section_slug):
@@ -139,6 +183,15 @@ def ink(request, chapter_slug, section_slug):
         return JsonResponse(
             {"error": "too much ink in one section to save at once",
              "limit_bytes": _ink_max_body_bytes()}, status=413)
+    except _UnsupportedEncoding as exc:
+        return JsonResponse(
+            {"error": f"unsupported content encoding: {exc}",
+             "supported": ["gzip", "identity"]}, status=415)
+    except _BadEncoding:
+        # A proxy mangled the body, or the client mislabelled it. Say so
+        # plainly: the client downgrades to uncompressed on seeing this rather
+        # than retrying the same broken request forever.
+        return JsonResponse({"error": "body is not valid gzip"}, status=400)
     except ValueError:
         return JsonResponse({"error": "malformed json"}, status=400)
 

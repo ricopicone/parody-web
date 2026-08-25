@@ -119,6 +119,79 @@ class InkEndpointTests(TestCase):
         self.assertIn("error", resp.json())
         self.assertFalse(InkLayer.objects.filter(user=self.reader).exists())
 
+    # ---- compressed uploads ------------------------------------------
+
+    def _gzip(self, obj):
+        import gzip, json as _json
+        return gzip.compress(_json.dumps(obj).encode())
+
+    def _put_gz(self, raw, encoding="gzip"):
+        return self.client.generic(
+            "PUT", self.url, raw, content_type="application/json",
+            HTTP_CONTENT_ENCODING=encoding)
+
+    def test_a_gzipped_body_is_understood(self):
+        """A save carries the whole section, so it is worth compressing: a
+        dense one measured 2.89x smaller gzipped."""
+        self.client.force_login(self.reader)
+        with self._settings():
+            resp = self._put_gz(self._gzip(self.body))
+        self.assertEqual(resp.status_code, 200)
+        layer = InkLayer.objects.get(user=self.reader)
+        self.assertEqual(layer.strokes["1"][0]["tool"], "pen")
+
+    def test_an_uncompressed_body_still_works(self):
+        """The client compresses only above a size threshold, and falls back to
+        plain bytes if compression ever fails — both must land."""
+        self.client.force_login(self.reader)
+        with self._settings():
+            self.assertEqual(self._put().status_code, 200)
+
+    def test_a_body_that_lies_about_being_gzipped_is_a_400(self):
+        """A mangling proxy must produce a clear answer, not a 500 and an
+        admin email."""
+        self.client.force_login(self.reader)
+        with self._settings():
+            resp = self._put_gz(b"this is not gzip at all")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("error", resp.json())
+
+    def test_a_truncated_gzip_body_is_a_400(self):
+        self.client.force_login(self.reader)
+        raw = self._gzip(self.body)
+        with self._settings():
+            resp = self._put_gz(raw[:len(raw) // 2])
+        self.assertEqual(resp.status_code, 400)
+
+    def test_the_ceiling_applies_to_what_it_decompresses_to(self):
+        """THE point of care here. 25 MB of gzip inflates to far more, so a
+        ceiling measured on the compressed bytes would be no ceiling at all."""
+        self.client.force_login(self.reader)
+        # ~4 MB of compressible payload; a 4 KB ceiling must refuse it even
+        # though the compressed body sails under the limit.
+        bomb = {"strokes": {"1": [{"tool": "pen", "d": "M 1 2 " + "L 3 4 " * 20000}]}}
+        raw = self._gzip(bomb)
+        self.assertLess(len(raw), 4096)
+        with self._settings(PARODY_WEB_INK_MAX_BODY_BYTES=4096):
+            resp = self._put_gz(raw)
+        self.assertEqual(resp.status_code, 413)
+        self.assertFalse(InkLayer.objects.filter(user=self.reader).exists())
+
+    def test_it_does_not_inflate_the_bomb_before_measuring_it(self):
+        """Refusing after building a 400 MB string in memory would be its own
+        outage. Decompression must stop at the ceiling, not past it."""
+        from parody_web_annotate import views
+        raw = self._gzip({"strokes": {"1": [{"d": "L 3 4 " * 200000}]}})
+        produced = views._gunzip_capped(raw, 4096)
+        self.assertIsNone(produced)
+
+    def test_an_unknown_content_encoding_is_refused_clearly(self):
+        self.client.force_login(self.reader)
+        with self._settings():
+            resp = self._put_gz(self._gzip(self.body), encoding="br")
+        self.assertEqual(resp.status_code, 415)
+        self.assertIn("error", resp.json())
+
     def test_put_then_get_round_trips(self):
         self.client.force_login(self.reader)
         with self._settings():
