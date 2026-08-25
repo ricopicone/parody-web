@@ -13,6 +13,7 @@ from pathlib import Path
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.utils.html import escape, strip_tags
 from django.utils.safestring import mark_safe
 
@@ -517,8 +518,15 @@ def _print_context(request, book, section=None):
     return ctx
 
 
+@xframe_options_sameorigin
 def section_pdf(request, chapter_slug, section_slug):
     """This section's pages, cut out of the full print PDF.
+
+    Same-origin framing is allowed because the shipped viewer frames this very
+    URL: `_pdf_view_stage.html` is an <iframe> around it. A host inherits
+    Django's X_FRAME_OPTIONS = "DENY", which forbids framing even same-origin,
+    so without this the default stage renders its chrome around a frame the
+    browser refuses. SAMEORIGIN still blocks cross-origin framing.
 
     404 covers every unavailable case — no page range, no PDF on disk, no
     pypdf, or refused by the policy. A refusal must not distinguish itself from

@@ -583,6 +583,18 @@ class PdfViewTests(TestCase):
         self.assertEqual(resp["Content-Type"], "application/pdf")
         self.assertEqual(len(PdfReader(io.BytesIO(self._body(resp))).pages), 5)
 
+    def test_the_pdf_may_be_framed_by_its_own_viewer(self):
+        # The default stage in _pdf_view_stage.html is an <iframe> around this
+        # very URL, and a host inherits Django's X_FRAME_OPTIONS = "DENY",
+        # which forbids framing even same-origin. Without an explicit
+        # same-origin exemption the shipped viewer renders its chrome around a
+        # frame the browser refuses. SAMEORIGIN still blocks cross-origin
+        # framing, which is the clickjacking that matters.
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            resp = self.client.get("/one/alpha/pdf/?inline=1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.headers.get("X-Frame-Options"), "SAMEORIGIN")
+
     def test_the_filename_names_the_section(self):
         with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
             resp = self.client.get("/one/alpha/pdf/")
