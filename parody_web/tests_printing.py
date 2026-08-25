@@ -719,6 +719,47 @@ class PdfViewerTests(TestCase):
             self.assertEqual(
                 self.client.get("/one/beta/pdf/view/").status_code, 404)
 
+    # ---- the bar's three zones -------------------------------------------
+    # The bar was one flat flex row, and a long section title wrapped inside
+    # it: six lines on a tablet, a 148px bar, and 600px of content — the way
+    # back and the download among it — pushed past the right edge with no
+    # scrollbar to reach it by. Layout is not unit-testable, but the structure
+    # that fixes it is, and it is the part a later edit would flatten again.
+
+    def _bar(self):
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            return self.client.get("/one/alpha/pdf/view/").content.decode()
+
+    def test_the_bar_is_three_zones(self):
+        html = self._bar()
+        for zone in ("pdf-id", "pdf-tools", "pdf-exits"):
+            self.assertIn(f'class="{zone}"', html, zone)
+
+    def test_the_section_number_is_its_own_element(self):
+        """It is the one part of the identity that never truncates, so it
+        cannot share a box with the title that does."""
+        Section.objects.filter(book=self.book, slug="alpha").update(number="1.1")
+        html = self._bar()
+        self.assertIn('<span class="pdf-num">1.1</span>', html)
+
+    def test_the_title_carries_its_full_text_as_a_tooltip(self):
+        """It truncates to an ellipsis, so the whole name has to survive
+        somewhere the reader can still get at it."""
+        section = Section.objects.get(book=self.book, slug="alpha")
+        self.assertIn(f'title="{section.title}"', self._bar())
+
+    def test_the_toolbar_seam_is_inside_the_scrolling_track(self):
+        """A host toolbar may be any width — the annotating one is 24 controls
+        wide. It scrolls in its own track instead of pushing the exits off."""
+        html = self._bar()
+        self.assertLess(html.index('class="pdf-tools"'),
+                        html.index('class="pdf-exits"'))
+
+    def test_the_exits_can_shed_their_qualifiers(self):
+        """`.pdf-exit-tail` is the part of a link label a narrow bar drops."""
+        self.assertIn('<span class="pdf-exit-tail"> to the section</span>',
+                      self._bar())
+
 
 class SectionRailTests(TestCase):
     def setUp(self):

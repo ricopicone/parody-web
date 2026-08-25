@@ -1,5 +1,13 @@
+{% comment %}
+Shadows parody_web/_pdf_view_download.html: a reader who has annotated this
+section should download the copy with their marks on it.
+
+" with notes" is wrapped in .pdf-exit-tail — the class pdf_view.html gives a
+link for the part of its label it can afford to lose. Without it this is the
+longest thing in the bar, and on a narrow screen it squeezes the tools.
+{% endcomment %}
 {% load parody_web_annotate %}{% ink_context as ink %}{% if ink.download_url %}
-  <a href="{{ ink.download_url }}">Download with notes</a>
+  <a href="{{ ink.download_url }}">Download<span class="pdf-exit-tail"> with notes</span></a>
 {% else %}
   <a href="{{ pdf_url }}">Download</a>
 {% endif %}

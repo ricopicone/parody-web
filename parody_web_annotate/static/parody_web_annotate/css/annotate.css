@@ -98,14 +98,21 @@
 .ink-layer { position: absolute; inset: 0; }
 .ink-layer canvas { touch-action: none; }
 
-/* Toolbar, rendered into parody-web's PDF bar. */
-.ink-toolbar { display: flex; align-items: center; gap: .75rem; }
+/* Toolbar, rendered into parody-web's PDF bar.
+
+   Sized against that bar's .9rem type: an 18px glyph in a 34px box read as
+   oversized beside it, and 24 of them measured 858px — wider than a tablet.
+   The bar gives this a scrolling track of its own now (.pdf-tools), so the
+   toolbar must never wrap: a second row inside a fixed-height bar is clipped,
+   not revealed. */
+.ink-toolbar { display: flex; align-items: center; gap: .4rem; flex-wrap: nowrap; }
 .ink-tool-group { display: inline-flex; gap: .15rem; }
 
 .ink-toolbar button {
   font: inherit;
   line-height: 1;
-  padding: .3rem .45rem;
+  position: relative;
+  padding: .25rem .3rem;
   border: 1px solid transparent;
   border-radius: 4px;
   background: none;
@@ -114,25 +121,35 @@
   opacity: .65;
 }
 .ink-toolbar button:hover { opacity: 1; }
+/* A neutral tint, NOT --paper-panel: that token deliberately stays light in
+   dark mode because it backs figures with a white background baked in by
+   LaTeX, so the selected tool was painted as a glaring white chip on a dark
+   bar. This one is the same weight in both themes. */
 .ink-toolbar button.is-on {
   opacity: 1;
   border-color: var(--rule, #ccc);
-  background: var(--paper-panel, rgba(127, 127, 127, .18));
+  background: rgb(127 127 127 / .22);
 }
 
-.ink-toolbar button svg { display: block; }
+.ink-toolbar button svg { display: block; width: 1rem; height: 1rem; }
+
+/* The glyph shrank; the target must not. This extends each button's hit area
+   to the full height of the bar without changing what is drawn — the reader
+   on a tablet is aiming with a thumb. Vertical only, or neighbouring tools
+   would steal each other's taps. */
+.ink-toolbar button::after { content: ""; position: absolute; inset: -.45rem 0; }
 
 /* Groups are separated by a hairline rather than by space alone, so tools,
    widths, colours and zoom read as four things and not one long row. */
 .ink-tool-group + .ink-tool-group {
-  padding-left: .7rem;
-  margin-left: .1rem;
+  padding-left: .45rem;
+  margin-left: 0;
   border-left: 1px solid var(--rule, rgba(127, 127, 127, .35));
 }
 .ink-tool-group[hidden] { display: none; }
 
 .ink-swatch {
-  width: 1.05rem; height: 1.05rem; border-radius: 50%; padding: 0;
+  width: .9rem; height: .9rem; border-radius: 50%; padding: 0;
   border: 1px solid rgba(127, 127, 127, .4);
   opacity: 1;
 }
@@ -140,7 +157,7 @@
 
 /* A width swatch is a dot the size of the stroke it selects. */
 .ink-width { padding: .2rem .25rem; }
-.ink-width.is-on { opacity: 1; background: var(--paper-panel, rgba(127,127,127,.18)); }
+.ink-width.is-on { opacity: 1; background: rgb(127 127 127 / .22); }
 
 .ink-zoom-level {
   font-variant-numeric: tabular-nums;
@@ -150,6 +167,33 @@
 }
 
 .ink-versions { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; }
+
+/* Left alone, a native <select> renders in the platform's own chrome — a
+   white slab with a system font, in the middle of a bar set in the book's
+   display face. This borrows the bar's type and colour and draws its own
+   chevron, so it reads as one of the tools beside it. */
+.ink-versions select {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--rule, rgb(127 127 127 / 45%));
+  border-radius: 4px;
+  padding: .1rem 1.3rem .1rem .4rem;
+  opacity: .8;
+  cursor: pointer;
+  -webkit-appearance: none;
+          appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right .62rem center, right .43rem center;
+  background-size: .3rem .3rem, .3rem .3rem;
+  background-repeat: no-repeat;
+}
+.ink-versions select:hover, .ink-versions select:focus-visible { opacity: 1; }
+/* The dropped list is drawn by the browser in ITS colours, so the options
+   need a background that is not the transparent bar behind the closed one. */
+.ink-versions select option { color: #1b1a17; background: #f2eee4; }
 
 /* Carry-forward prompt: offered once, never automatic. */
 .ink-carry {
@@ -162,7 +206,9 @@
 .ink-carry button { font: inherit; cursor: pointer; }
 
 @media (max-width: 40rem) {
-  .ink-toolbar { gap: .4rem; flex-wrap: wrap; }
+  /* No flex-wrap here any more. The toolbar lives in .pdf-tools, a
+     fixed-height scrolling track, so wrapping to a second row put half the
+     tools where nothing could reach them. */
   .ink-pages { padding: .5rem 0 2rem; }
 }
 

@@ -500,7 +500,10 @@ class DownloadLinkTests(TestCase):
             self._ink()
             html = self.client.get("/one/alpha/pdf/view/").content.decode()
         self.assertIn("/one/alpha/pdf/annotated/", html)
-        self.assertIn("Download with notes", html)
+        # " with notes" sits in a .pdf-exit-tail span so a narrow bar can drop
+        # it — the reader still reads "Download with notes".
+        self.assertIn(
+            'Download<span class="pdf-exit-tail"> with notes</span>', html)
 
     def test_without_notes_it_offers_the_plain_pdf(self):
         self.client.force_login(self.reader)
