@@ -8,6 +8,7 @@
  * touching Python as well as JavaScript.
  */
 import { getStroke } from 'perfect-freehand';
+import { simplify, SIMPLIFY_TOLERANCE } from './simplify.js';
 
 export const FREEHAND_OPTIONS = {
   smoothing: 0.5,
@@ -17,11 +18,18 @@ export const FREEHAND_OPTIONS = {
   simulatePressure: true,
 };
 
-const n = (v) => (Math.round(v * 100) / 100);
+// One decimal: 0.035 mm in PDF points, an order of magnitude finer than the
+// line being drawn. The second decimal was 16% of every path and could not
+// be seen at any zoom the viewer offers.
+const n = (v) => (Math.round(v * 10) / 10);
 
 /** perfect-freehand's outline as an SVG path — the shape the ink really is. */
 export function freehandPath(points, size) {
-  const outline = getStroke(points, { ...FREEHAND_OPTIONS, size });
+  // Thin the outline, never the input samples: perfect-freehand derives width
+  // from sample spacing, so dropping samples moves the drawn edge by millimetres
+  // however tight the tolerance. See simplify.js.
+  const outline = simplify(getStroke(points, { ...FREEHAND_OPTIONS, size }),
+                           SIMPLIFY_TOLERANCE);
   if (!outline.length) return '';
   const d = outline.reduce((acc, [x0, y0], i, arr) => {
     const [x1, y1] = arr[(i + 1) % arr.length];
@@ -65,6 +73,7 @@ export function buildStroke(tool, { points, from, to, color, size, opacity }) {
     // they cost about a third of every stroke on the wire, unrounded pressure
     // floats and all. A save carries the whole section, so that third is what
     // pushed a well-annotated one past the request-body ceiling (task #667).
+    //
     return { ...common, size, d: freehandPath(points, size) };
   }
   const shape = { ...common, mode: 'stroke', width: size };
