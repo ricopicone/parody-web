@@ -1,8 +1,15 @@
 {% comment %}
-The PDF view's download link. Its own partial for the same reason as
+The PDF view's download control. Its own partial for the same reason as
 _section_download.html: parody_web_annotate shadows it so a reader who has
 annotated this section downloads the copy with their marks on it.
 
+A shadow must keep the .pdf-exit shape — icon, then a .pdf-exit-label the bar
+hides when it goes compact — and must carry an aria-label, because below
+70rem the label is the only name the control has.
+
 Context: book, chapter, section, pdf_url.
 {% endcomment %}
-<a href="{{ pdf_url }}">Download</a>
+<a class="pdf-exit" href="{{ pdf_url }}"
+   aria-label="Download this section" title="Download this section">
+  {% include "parody_web/_icon.html" with icon="download" %}<span class="pdf-exit-label">Download</span>
+</a>

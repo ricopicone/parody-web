@@ -1,13 +1,21 @@
 {% comment %}
 Shadows parody_web/_pdf_view_download.html: a reader who has annotated this
-section should download the copy with their marks on it.
+section should download the copy with their marks on it, not a clean one.
 
-" with notes" is wrapped in .pdf-exit-tail — the class pdf_view.html gives a
-link for the part of its label it can afford to lose. Without it this is the
-longest thing in the bar, and on a narrow screen it squeezes the tools.
+"with your notes" lives in the aria-label rather than the visible label. The
+bar drops .pdf-exit-label entirely below 70rem, so a qualifier shown only on a
+wide screen would be a distinction the tablet reader — the one who actually
+made the notes — never sees. The accessible name carries it at every width.
 {% endcomment %}
 {% load parody_web_annotate %}{% ink_context as ink %}{% if ink.download_url %}
-  <a href="{{ ink.download_url }}">Download<span class="pdf-exit-tail"> with notes</span></a>
+  <a class="pdf-exit" href="{{ ink.download_url }}"
+     aria-label="Download this section with your notes"
+     title="Download this section with your notes">
+    {% include "parody_web/_icon.html" with icon="download" %}<span class="pdf-exit-label">Download</span>
+  </a>
 {% else %}
-  <a href="{{ pdf_url }}">Download</a>
+  <a class="pdf-exit" href="{{ pdf_url }}"
+     aria-label="Download this section" title="Download this section">
+    {% include "parody_web/_icon.html" with icon="download" %}<span class="pdf-exit-label">Download</span>
+  </a>
 {% endif %}

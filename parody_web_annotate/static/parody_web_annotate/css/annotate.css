@@ -105,14 +105,14 @@
    The bar gives this a scrolling track of its own now (.pdf-tools), so the
    toolbar must never wrap: a second row inside a fixed-height bar is clipped,
    not revealed. */
-.ink-toolbar { display: flex; align-items: center; gap: .4rem; flex-wrap: nowrap; }
-.ink-tool-group { display: inline-flex; gap: .15rem; }
+.ink-toolbar { display: flex; align-items: center; gap: .3rem; flex-wrap: nowrap; }
+.ink-tool-group { display: inline-flex; gap: .1rem; }
 
 .ink-toolbar button {
   font: inherit;
   line-height: 1;
   position: relative;
-  padding: .25rem .3rem;
+  padding: .2rem .25rem;
   border: 1px solid transparent;
   border-radius: 4px;
   background: none;
@@ -137,36 +137,37 @@
    to the full height of the bar without changing what is drawn — the reader
    on a tablet is aiming with a thumb. Vertical only, or neighbouring tools
    would steal each other's taps. */
-.ink-toolbar button::after { content: ""; position: absolute; inset: -.45rem 0; }
+.ink-toolbar button::after { content: ""; position: absolute; inset: -.4rem 0; }
 
 /* Groups are separated by a hairline rather than by space alone, so tools,
    widths, colours and zoom read as four things and not one long row. */
 .ink-tool-group + .ink-tool-group {
-  padding-left: .45rem;
+  padding-left: .35rem;
   margin-left: 0;
   border-left: 1px solid var(--rule, rgba(127, 127, 127, .35));
 }
 .ink-tool-group[hidden] { display: none; }
 
 .ink-swatch {
-  width: .9rem; height: .9rem; border-radius: 50%; padding: 0;
+  width: .85rem; height: .85rem; border-radius: 50%; padding: 0;
   border: 1px solid rgba(127, 127, 127, .4);
   opacity: 1;
 }
 .ink-swatch.is-on { outline: 2px solid currentColor; outline-offset: 2px; }
 
 /* A width swatch is a dot the size of the stroke it selects. */
-.ink-width { padding: .2rem .25rem; }
+.ink-width { padding: .2rem; }
 .ink-width.is-on { opacity: 1; background: rgb(127 127 127 / .22); }
 
 .ink-zoom-level {
   font-variant-numeric: tabular-nums;
-  min-width: 3.4em;
+  min-width: 2.9em;
   text-align: center;
   opacity: .8;
+  font-size: .8rem;
 }
 
-.ink-versions { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; }
+.ink-versions { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; }
 
 /* Left alone, a native <select> renders in the platform's own chrome — a
    white slab with a system font, in the middle of a bar set in the book's
@@ -178,16 +179,20 @@
   background: transparent;
   border: 1px solid var(--rule, rgb(127 127 127 / 45%));
   border-radius: 4px;
-  padding: .1rem 1.3rem .1rem .4rem;
+  padding: .15rem 1.05rem .15rem .3rem;
   opacity: .8;
   cursor: pointer;
+  /* The options are "Current" and a date; capped so the picker cannot become
+     the widest thing in a bar it is the least important part of. */
+  max-width: 6.5rem;
+  text-overflow: ellipsis;
   -webkit-appearance: none;
           appearance: none;
   background-image:
     linear-gradient(45deg, transparent 50%, currentColor 50%),
     linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: right .62rem center, right .43rem center;
-  background-size: .3rem .3rem, .3rem .3rem;
+  background-position: right .5rem center, right .33rem center;
+  background-size: .28rem .28rem, .28rem .28rem;
   background-repeat: no-repeat;
 }
 .ink-versions select:hover, .ink-versions select:focus-visible { opacity: 1; }

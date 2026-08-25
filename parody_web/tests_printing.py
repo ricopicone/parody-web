@@ -755,10 +755,23 @@ class PdfViewerTests(TestCase):
         self.assertLess(html.index('class="pdf-tools"'),
                         html.index('class="pdf-exits"'))
 
-    def test_the_exits_can_shed_their_qualifiers(self):
-        """`.pdf-exit-tail` is the part of a link label a narrow bar drops."""
-        self.assertIn('<span class="pdf-exit-tail"> to the section</span>',
-                      self._bar())
+    def test_the_exits_are_icon_buttons_that_keep_an_accessible_name(self):
+        """Below 70rem the bar hides .pdf-exit-label, so the aria-label is the
+        only name these controls have. An icon button without one is a
+        mystery, and the way out of the viewer must not be a mystery."""
+        html = self._bar()
+        self.assertIn('aria-label="Back to the section"', html)
+        self.assertIn('aria-label="Download this section"', html)
+        self.assertEqual(html.count('class="pdf-exit"'), 2)
+        self.assertEqual(html.count('class="pdf-exit-label"'), 2)
+
+    def test_both_exits_draw_their_glyph_from_the_one_partial(self):
+        """The download link is a seam an installed app shadows; a shadow with
+        its own copy of the glyph would drift from this one."""
+        from django.template.loader import get_template
+        get_template("parody_web/_icon.html")   # raises if missing
+        # 24-grid, same stroke weight as the annotator's tools
+        self.assertEqual(self._bar().count('viewBox="0 0 24 24"'), 2)
 
 
 class SectionRailTests(TestCase):

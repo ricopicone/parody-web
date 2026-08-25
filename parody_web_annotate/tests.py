@@ -500,17 +500,22 @@ class DownloadLinkTests(TestCase):
             self._ink()
             html = self.client.get("/one/alpha/pdf/view/").content.decode()
         self.assertIn("/one/alpha/pdf/annotated/", html)
-        # " with notes" sits in a .pdf-exit-tail span so a narrow bar can drop
-        # it — the reader still reads "Download with notes".
+        # The visible label is just "Download" — the bar drops it entirely
+        # below 70rem, so a qualifier shown only on a wide screen would be a
+        # distinction the tablet reader who made the notes never sees. The
+        # accessible name carries it at every width.
         self.assertIn(
-            'Download<span class="pdf-exit-tail"> with notes</span>', html)
+            'aria-label="Download this section with your notes"', html)
 
     def test_without_notes_it_offers_the_plain_pdf(self):
         self.client.force_login(self.reader)
         with self._settings():
             html = self.client.get("/one/alpha/pdf/view/").content.decode()
         self.assertNotIn("pdf/annotated/", html)
-        self.assertIn(">Download</a>", html)
+        # The exits are icon buttons now; the accessible name is what says
+        # which copy this is. The closing quote matters — without it this also
+        # matches "Download this section with your notes".
+        self.assertIn('aria-label="Download this section"', html)
 
     def test_the_section_rail_offers_it_too(self):
         """The rail is where a reader actually reaches for the download."""
@@ -536,4 +541,7 @@ class DownloadLinkTests(TestCase):
         with self._settings():
             html = self.client.get("/one/alpha/pdf/view/").content.decode()
         self.assertNotIn("pdf/annotated/", html)
-        self.assertIn(">Download</a>", html)
+        # The exits are icon buttons now; the accessible name is what says
+        # which copy this is. The closing quote matters — without it this also
+        # matches "Download this section with your notes".
+        self.assertIn('aria-label="Download this section"', html)
