@@ -24,13 +24,22 @@ test('a shape is stroked and carries its width', () => {
   assert.equal(s.width, 3);
 });
 
-test('a pen stroke is a filled outline and keeps its input points', () => {
+test('a pen stroke is a filled outline and nothing else', () => {
   const s = buildStroke('pen', { points: [[0, 0, 0.5], [5, 5, 0.6], [9, 2, 0.7]],
                                  color: '#000', size: 2, opacity: 1 });
   assert.equal(s.mode, undefined);          // filled, not stroked
-  assert.equal(s.points.length, 3);         // kept, so it can be re-edited
   assert.ok(s.d.startsWith('M'));
   assert.ok(s.d.endsWith('Z'));             // closed outline
+});
+
+test('a pen stroke does not also ship its raw input samples', () => {
+  // The samples were kept against a re-edit that never came, and nothing has
+  // ever read them: the canvas, the eraser and the PDF exporter all work from
+  // `d`. They were a third of every stroke on the wire — the bulk of what put
+  // saves past the request-body ceiling (task #667).
+  const s = buildStroke('pen', { points: [[0, 0, 0.5], [5, 5, 0.6], [9, 2, 0.7]],
+                                 color: '#000', size: 2, opacity: 1 });
+  assert.equal(s.points, undefined);
 });
 
 test('a rect drawn right-to-left still has positive extents', () => {

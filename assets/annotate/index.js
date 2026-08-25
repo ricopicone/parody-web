@@ -10,6 +10,7 @@ import { PageView, PAD_RATIO } from './pages.js';
 import { InkLayer } from './ink.js';
 import { InkStore, PAD } from './store.js';
 import { InkApi } from './api.js';
+import { Saver, OK, FAILED } from './saving.js';
 import { PointerGate } from './pointer-gate.js';
 import { isDark, themeColors } from './theme.js';
 import { bindPrint } from './print.js';
@@ -49,11 +50,37 @@ async function boot() {
     pads: store.padsToJSON(),
   });
 
-  async function save() {
-    if (await api.save(payload())) delete root.dataset.dirty;
-  }
+  // A save that does not land has to be visible. It used to set `dirty` and
+  // say nothing, so a reader whose section had outgrown the request-body
+  // ceiling went on annotating while every stroke was thrown away (task #667).
+  const notice = document.createElement('span');
+  notice.className = 'ink-save-state';
+  notice.setAttribute('role', 'status');
+  notice.hidden = true;
+  root.querySelector('[data-ink-toolbar]')?.after(notice);
+
+  const saver = new Saver(api, {
+    onState(state) {
+      root.dataset.saveState = state;
+      if (state === OK) delete root.dataset.dirty;
+      notice.hidden = state !== FAILED;
+      if (state === FAILED) {
+        notice.textContent = 'Not saved — still trying. Keep this tab open.';
+      }
+    },
+  });
+
+  const save = () => saver.save(payload);
+
+  // The last line of defence: if ink is still unsaved as the page goes away,
+  // the reader is warned rather than finding out later that it never landed.
+  window.addEventListener('beforeunload', (event) => {
+    if (!saver.pending) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
   window.addEventListener('pagehide', () => {
-    if (root.dataset.dirty) api.saveOnExit(payload());
+    if (saver.pending || root.dataset.dirty) api.saveOnExit(payload());
   });
 
   const tools = new Tools();

@@ -59,8 +59,13 @@ export function ellipsePath(cx, cy, rx, ry) {
 export function buildStroke(tool, { points, from, to, color, size, opacity }) {
   const common = { tool, color, opacity };
   if (tool === 'pen' || tool === 'highlighter') {
-    return { ...common, size, points: points.map(([x, y, p]) => [n(x), n(y), p]),
-             d: freehandPath(points, size) };
+    // The outline is the stroke. The raw samples are deliberately NOT stored:
+    // nothing reads them — the canvas draws `d`, the eraser hit-tests the
+    // bounds parsed out of `d`, and the Python exporter renders `d` — while
+    // they cost about a third of every stroke on the wire, unrounded pressure
+    // floats and all. A save carries the whole section, so that third is what
+    // pushed a well-annotated one past the request-body ceiling (task #667).
+    return { ...common, size, d: freehandPath(points, size) };
   }
   const shape = { ...common, mode: 'stroke', width: size };
   if (tool === 'line') return { ...shape, d: linePath(from.x, from.y, to.x, to.y) };

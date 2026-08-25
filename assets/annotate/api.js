@@ -16,6 +16,9 @@ export function _body({ sliceKey, bookSha, pages, strokes, pads }) {
   };
 }
 
+/** What a `keepalive` fetch is allowed to carry, per the fetch spec. */
+export const KEEPALIVE_MAX_BYTES = 64 * 1024;
+
 export class InkApi {
   constructor(base) {
     this.base = base;            // e.g. /one/alpha/
@@ -51,19 +54,29 @@ export class InkApi {
    * `keepalive` rather than sendBeacon: a plain fetch is cancelled on unload,
    * but sendBeacon cannot set the CSRF header and would need its own endpoint
    * that reads the token out of the body. keepalive keeps one route and one
-   * code path. Its payload limit is 64 KB, which a page of ink is nowhere
-   * near.
+   * code path.
+   *
+   * Its 64 KB payload limit was once described here as one a page of ink is
+   * "nowhere near". That was wrong by two orders of magnitude: a save carries
+   * the whole section, and a densely marked one measures several megabytes.
+   * Over the limit the browser rejects the request outright, so this reports
+   * whether it even tried — a section too big to leave this way is one the
+   * reader must be held on the page for instead (see the beforeunload guard in
+   * index.js).
    */
   saveOnExit(state) {
+    const body = JSON.stringify(_body(state));
+    if (body.length > KEEPALIVE_MAX_BYTES) return false;
     try {
       fetch(`${this.base}ink/`, {
         method: 'PUT',
         keepalive: true,
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
-        body: JSON.stringify(_body(state)),
+        body,
       });
+      return true;
     } catch (err) {
-      /* the page is going away regardless */
+      return false;                 // the page is going away regardless
     }
   }
 

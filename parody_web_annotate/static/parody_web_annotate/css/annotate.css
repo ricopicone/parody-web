@@ -200,6 +200,20 @@
    need a background that is not the transparent bar behind the closed one. */
 .ink-versions select option { color: #1b1a17; background: #f2eee4; }
 
+/* A save that did not land. Hidden until it happens, then impossible to miss:
+   the alternative — which is what shipped — is a reader annotating into a void
+   (task #667). */
+.ink-save-state {
+  display: inline-flex; align-items: center; gap: .35rem;
+  margin-left: .6rem; padding: .15rem .5rem;
+  border-radius: .5rem;
+  background: var(--warn-bg, #fdecea);
+  color: var(--warn-fg, #8a1c11);
+  font-size: .8rem; font-weight: 600;
+  white-space: nowrap;
+}
+.ink-save-state[hidden] { display: none; }
+
 /* Carry-forward prompt: offered once, never automatic. */
 .ink-carry {
   display: flex; align-items: center; gap: .6rem;

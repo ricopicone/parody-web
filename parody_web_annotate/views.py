@@ -10,6 +10,7 @@ structural rather than a check someone can forget to write.
 
 import json
 
+from django.conf import settings
 from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_protect
@@ -22,6 +23,49 @@ from parody_web.views import _pdf_filename, _pdf_response, _resolve_book
 
 from . import bookink, export
 from .models import InkLayer
+
+
+# A save carries the reader's whole section, not the one mark they just made,
+# so the body grows with their notes: a pen stroke serialises to ~11 KB of
+# outline path, and a densely marked section runs to several megabytes.
+#
+# DATA_UPLOAD_MAX_MEMORY_SIZE is the wrong ruler for that. It defaults to
+# 2.5 MB — a sane ceiling for a form post, reached here after a few hundred
+# strokes — and it is enforced inside `HttpRequest.body`, which raises
+# SuspiciousOperation before a view can say anything useful. In production that
+# meant a 400 the reader never saw, an admin email on every debounced save for
+# the rest of their session, and their ink quietly discarded (task #667).
+#
+# So the ink endpoint reads the stream itself and applies its own, far more
+# generous ceiling. Raising the global setting instead would hand the same
+# allowance to every form on the site.
+INK_MAX_BODY_BYTES = 25 * 1024 * 1024
+
+
+def _ink_max_body_bytes():
+    return getattr(settings, "PARODY_WEB_INK_MAX_BODY_BYTES",
+                   INK_MAX_BODY_BYTES)
+
+
+class _TooBig(Exception):
+    """The body is past the ink ceiling — answer 413, don't raise."""
+
+
+def _read_ink_body(request):
+    """The request body, read past DATA_UPLOAD_MAX_MEMORY_SIZE.
+
+    `request.read()` is the same stream `request.body` would drain, minus that
+    setting's check; the stream is already bounded by CONTENT_LENGTH, and the
+    ceiling below bounds it again in case that header lied.
+    """
+    limit = _ink_max_body_bytes()
+    declared = int(request.META.get("CONTENT_LENGTH") or 0)
+    if declared > limit:
+        raise _TooBig
+    body = request.read(limit + 1)
+    if len(body) > limit:
+        raise _TooBig
+    return body
 
 
 def _section_or_404(request, chapter_slug, section_slug):
@@ -90,7 +134,11 @@ def ink(request, chapter_slug, section_slug):
         })
 
     try:
-        payload = json.loads(request.body or b"{}")
+        payload = json.loads(_read_ink_body(request) or b"{}")
+    except _TooBig:
+        return JsonResponse(
+            {"error": "too much ink in one section to save at once",
+             "limit_bytes": _ink_max_body_bytes()}, status=413)
     except ValueError:
         return JsonResponse({"error": "malformed json"}, status=400)
 

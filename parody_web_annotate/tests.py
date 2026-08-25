@@ -85,6 +85,40 @@ class InkEndpointTests(TestCase):
         return self.client.put(self.url, body or self.body,
                                content_type="application/json")
 
+    def _big_body(self, strokes=400):
+        """A section carrying more ink than a form post is allowed to be.
+
+        Real handwriting reaches this: one pen stroke of 150 samples
+        serialises to ~11 KB of outline path, so a densely marked section
+        passes Django's 2.5 MB DATA_UPLOAD_MAX_MEMORY_SIZE default in a few
+        hundred strokes.
+        """
+        stroke = {"tool": "pen", "color": "#000", "size": 2, "opacity": 1,
+                  "d": "M 1 2 " + "Q 3.14 4.15 5.16 6.17 " * 300 + "Z"}
+        return {"strokes": {"1": [dict(stroke) for _ in range(strokes)]}}
+
+    def test_a_heavily_annotated_section_still_saves(self):
+        """The whole section is re-sent on every save, so the body grows with
+        the reader's notes. Exceeding the form-post default must not cost them
+        the work."""
+        self.client.force_login(self.reader)
+        body = self._big_body()
+        with self._settings(DATA_UPLOAD_MAX_MEMORY_SIZE=2621440):
+            self.assertEqual(self._put(body).status_code, 200)
+        layer = InkLayer.objects.get(user=self.reader)
+        self.assertEqual(len(layer.strokes["1"]), 400)
+
+    def test_a_body_past_the_ink_ceiling_is_refused_in_json(self):
+        """Beyond our own ceiling the answer is a plain 413 the reader's
+        browser can act on — not a SuspiciousOperation that pages the admins
+        and tells the reader nothing."""
+        self.client.force_login(self.reader)
+        with self._settings(PARODY_WEB_INK_MAX_BODY_BYTES=4096):
+            resp = self._put(self._big_body())
+        self.assertEqual(resp.status_code, 413)
+        self.assertIn("error", resp.json())
+        self.assertFalse(InkLayer.objects.filter(user=self.reader).exists())
+
     def test_put_then_get_round_trips(self):
         self.client.force_login(self.reader)
         with self._settings():
