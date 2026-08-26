@@ -10,6 +10,7 @@ import { bodyType } from './bodytype.js';
 import { Clock } from './clock.js';
 import { Follower } from './follow.js';
 import { MarkState } from './mark.js';
+import { paintWord } from './paint.js';
 import { Highlight } from './highlight.js';
 import { Reveal } from './reveal.js';
 import { isRendered, pageAt } from './pageview.js';
@@ -521,29 +522,29 @@ async function boot() {
     const region = regionAt(regions, ms);
     const inEquation = !!(region && region.display
                           && region.token === word.token);
-    if (!mark.needs(index, inEquation)) return index;
-    // No box anywhere: this one can never be drawn, so stop asking.
-    if (!Number.isFinite(word.page)) { mark.drew(index); return index; }
-    const layer = layerFor(word.page);
-    // The page has no canvas yet — pdf.js rasterises asynchronously, so there
-    // is a window after every scroll and every seek where the page is on
-    // screen with nothing drawn on it. NOTHING was painted, so nothing is
-    // remembered: the mark is still owed and the next frame tries again.
-    // Recording it here is what skipped the word for its whole duration.
-    if (!layer) return index;
-    const box = [word.x0, word.y0, word.x1, word.y1];
-    if (inEquation) {
-      const span = region.end_ms - region.start_ms;
-      layer.showProgress(box, span > 0 ? (ms - region.start_ms) / span : 0);
-    } else {
-      layer.show(box);
-    }
-    mark.drew(index);
-    if (word.page !== marked) {
-      clearOthers(word.page);
-      marked = word.page;
-    }
-    follow(layer.page, word.y0 * layer.page.scale);
+    paintWord(word, index, {
+      mark,
+      inEquation,
+      // The page ELEMENT, which exists at its true size from the moment the
+      // document opens — rasterised or not. That is what lets the page travel
+      // to a word before there is anything drawn there.
+      findPage: (pageIndex) => pageAt(root, pageIndex, track.pages),
+      findLayer: (pageIndex) => layerFor(pageIndex),
+      follow: (page, w) => follow(page, w.y0 * page.scale),
+      draw: (layer, w) => {
+        const box = [w.x0, w.y0, w.x1, w.y1];
+        if (inEquation) {
+          const span = region.end_ms - region.start_ms;
+          layer.showProgress(box, span > 0 ? (ms - region.start_ms) / span : 0);
+        } else {
+          layer.show(box);
+        }
+        if (w.page !== marked) {
+          clearOthers(w.page);
+          marked = w.page;
+        }
+      },
+    });
     return index;
   }
 
