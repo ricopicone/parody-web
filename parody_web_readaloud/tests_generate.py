@@ -9,12 +9,20 @@ from parody_web_readaloud.speech import SkipMath
 
 
 def fake_synth(text):
-    """One mark per word, 100ms apart, at the right character offsets."""
+    """One mark per word, 100ms apart, at the offsets POLLY WOULD GIVE.
+
+    Byte offsets, not character offsets. This stub used to compute character
+    offsets — the same assumption the code under test was making — so the pair
+    agreed with each other and disagreed with AWS, and every test passed while
+    the real thing dropped two thirds of a section's words. Verified against
+    the live API: in `alpha \u201cbeta\u201d gamma delta`, Polly puts `gamma`
+    at 17, its BYTE offset, where its character offset is 13.
+    """
     marks, offset, time_ms = [], 0, 0
     for word in text.split():
         marks.append({"type": "word", "start": offset, "time": time_ms,
                       "value": word})
-        offset += len(word) + 1
+        offset += len(word.encode("utf-8")) + 1
         time_ms += 100
     return b"ID3-fake-audio", marks
 
@@ -85,6 +93,67 @@ class BuildTrackTests(SimpleTestCase):
                             math=SkipMath())
         self.assertEqual(track["clozes"], [])
         self.assertTrue(track["words"])
+
+
+class NonAsciiOffsetTests(SimpleTestCase):
+    """Curly quotes, dashes and accents must not desynchronise the marks.
+
+    Polly reports a mark's `start` as a BYTE offset into the text it was sent.
+    Resolving those against character offsets works perfectly until the first
+    character that is not one byte wide — and typeset prose is full of them:
+    curly quotes, en and em dashes, accented names, degree signs. From there
+    the two run apart, and every later mark either matches nothing (the word is
+    dropped, and the karaoke mark sits still through it) or matches some OTHER
+    word's offset by coincidence, which puts the highlight on the wrong word
+    somewhere else on the page.
+
+    Measured on the live corpus before the fix: 46 of 183 tracks ran under 100
+    words per minute against real speech of about 150, and the worst were at
+    30. The reported section carried 1476 tokens and kept 505 words.
+    """
+
+    ASCII = "<p>the sampling rate is fixed here today</p>"
+    CURLY = "<p>the \u201csampling rate\u201d is fixed \u2014 here today</p>"
+
+    def test_plain_ascii_keeps_every_word(self):
+        track = build_track(self.ASCII, _page_pdf(), fake_synth,
+                            math=SkipMath())
+        self.assertEqual(len(track["words"]), 7)
+
+    def test_curly_quotes_and_a_dash_keep_every_word_too(self):
+        track = build_track(self.CURLY, _page_pdf(), fake_synth,
+                            math=SkipMath())
+        spoken = [w["word"] for w in track["words"]]
+        # Eight spoken words: the seven of the ascii version plus the dash,
+        # with the quotes riding on the words they hug.
+        self.assertEqual(len(spoken), 8, spoken)
+        self.assertIn("today", spoken)
+
+    def test_every_word_after_the_first_wide_character_still_arrives(self):
+        """The tail is what went missing, so the tail is what is asserted."""
+        track = build_track(self.CURLY, _page_pdf(), fake_synth,
+                            math=SkipMath())
+        spoken = [w["word"] for w in track["words"]]
+        for word in ("is", "fixed", "here", "today"):
+            self.assertIn(word, spoken)
+
+    def test_a_word_is_attributed_to_the_token_that_said_it(self):
+        """Dropping words is the visible half; mis-attributing them is worse.
+
+        A drifted offset can land on another word's cursor by coincidence, and
+        the word then takes that token's box — the highlight jumps to somewhere
+        else on the page entirely.
+        """
+        prep = prepare(self.CURLY, _page_pdf(), math=SkipMath())
+        track = synthesise(prep, fake_synth)
+        for entry in track["words"]:
+            owner = prep.tokens[entry["token"]]
+            self.assertEqual(owner.kind, "word")
+            # The spoken word, less the punctuation the page does not carry.
+            said = entry["word"].strip("\u201c\u201d,.")
+            if said and said != "\u2014":
+                self.assertEqual(said, owner.text.strip("\u201c\u201d,."),
+                                 f"{said!r} was credited to {owner.text!r}")
 
 
 class TextKeyTests(SimpleTestCase):

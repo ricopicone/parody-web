@@ -1,7 +1,7 @@
 """What gets said, and which script token said it.
 
 `build_speech` returns the text handed to the TTS engine together with an owner
-index per spoken word. Polly's speech marks are character offsets into exactly
+index per spoken word. Polly's speech marks are BYTE offsets into exactly
 this text, so the owners list is what turns a timing into a box.
 
 Math speech is a seam with two implementations. SRE is a JavaScript library, so
@@ -185,7 +185,8 @@ def build_speech(tokens, math=None):
     """Return (text_for_tts, owner_index_per_spoken_word).
 
     `len(owners) == len(text.split())` is the contract generate.py resolves
-    Polly's character offsets against.
+    Polly's BYTE offsets against — byte, because that is what Polly reports and
+    counting characters instead desynchronises at the first curly quote.
     """
     math = math or SkipMath()
 

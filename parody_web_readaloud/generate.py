@@ -171,12 +171,25 @@ def synthesise(prep: Prepared, synth) -> dict:
     """Buy the audio, and derive every timing from the marks it comes with."""
     audio_bytes, marks = synth(prep.text)
 
-    # Polly's marks are character offsets into exactly the text we sent, so the
-    # offset of each space-joined word maps straight onto `owners`.
+    # Polly reports a mark's `start` as a BYTE offset into exactly the text we
+    # sent, so the cursor that maps it onto `owners` has to count bytes too.
+    #
+    # Counting characters works perfectly until the first character that is
+    # not one byte wide, and typeset prose is full of them: curly quotes, en
+    # and em dashes, accented names, degree signs. From there the two run
+    # apart and never resynchronise, so every later mark either matches
+    # nothing — the word is dropped, and the karaoke mark sits still through
+    # it — or lands on some OTHER word's offset by coincidence and takes that
+    # word's box, putting the highlight somewhere else on the page entirely.
+    #
+    # Verified against the live API: in `alpha “beta” gamma delta`, Polly puts
+    # `gamma` at 17, which is its byte offset; its character offset is 13.
+    # Measured on the corpus this shipped to: 46 of 183 tracks ran under 100
+    # words per minute against real speech of about 150, the worst at 30.
     offsets, cursor = {}, 0
     for position, word in enumerate(prep.text.split()):
         offsets[cursor] = position
-        cursor += len(word) + 1
+        cursor += len(word.encode("utf-8")) + 1
 
     words = []
     for mark in marks:
@@ -363,7 +376,8 @@ class PollySynth:
     """Synthesise with AWS Polly, chunked, with word marks.
 
     Marks come back per chunk with offsets relative to that chunk, so each
-    chunk's offsets are shifted by the running character total and its times by
+    chunk's offsets are shifted by the running BYTE total — Polly's offsets are
+    byte offsets, and so must anything they are added to be — and its times by
     the running duration.
     """
 
@@ -399,7 +413,9 @@ class PollySynth:
                 mark["time"] += elapsed
                 marks.append(mark)
 
-            offset += len(chunk) + 1
+            # Bytes, to match the offsets it is being added to. The joining
+            # space is one byte; the chunk's own characters may not be.
+            offset += len(chunk.encode("utf-8")) + 1
             if chunk_marks:
                 elapsed = marks[-1]["time"] + GAP_MS
 
