@@ -85,3 +85,35 @@ test('sibling pages render independently but invalidate together', () => {
   assert.equal(one.canAttach(a), false);
   assert.equal(two.canAttach(b), false);
 });
+
+test('a render the reader scrolled past no longer owns the page', () => {
+  // The second leak: _release() takes the slot back when a page leaves the
+  // window, but canAttach only asks about the SCALE — so a render that settled
+  // after the reader scrolled past still announced its page, and the ink layer
+  // that announcement built belonged to a page _release had already finished
+  // with. Nothing would ever free it.
+  const slot = new RenderSlot();
+  const claim = slot.claim();
+  assert.equal(slot.superseded(claim), false, 'while it still owns the slot');
+
+  slot.release();                        // the reader scrolled past
+  assert.equal(slot.canAttach(claim), true, 'the scale never moved');
+  assert.equal(slot.superseded(claim), true, 'but the page is not ours to announce');
+});
+
+test('a render replaced by a newer one is superseded', () => {
+  const slot = new RenderSlot();
+  const stale = slot.claim();
+  slot.release();
+  const fresh = slot.claim();
+
+  assert.equal(slot.superseded(stale), true);
+  assert.equal(slot.superseded(fresh), false);
+});
+
+test('a render that runs to completion is never superseded', () => {
+  const slot = new RenderSlot();
+  const claim = slot.claim();
+  assert.equal(slot.superseded(claim), false);
+  slot.finish(claim);
+});

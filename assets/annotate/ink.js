@@ -15,6 +15,28 @@ import { displayColor } from './theme.js';
 
 const ERASER_RADIUS = 6;   // PDF points
 
+/**
+ * Bind pointer listeners to a host element, and hand back the undo.
+ *
+ * Returned as a pair on purpose. A layer does not always own its host — the
+ * margin pad draws on the page's own element — so listeners left behind
+ * outlive the layer that added them: a page scrolled past and returned to
+ * gained a second set, and handled every stroke twice.
+ *
+ * touchAction goes with them. Left at 'none' on a host we no longer draw on,
+ * the reader cannot scroll the document by dragging that strip.
+ */
+export function bindHost(host, handlers) {
+  const previousTouchAction = host.style.touchAction;
+  host.style.touchAction = 'none';
+  const bound = Object.entries(handlers);
+  for (const [type, fn] of bound) host.addEventListener(type, fn);
+  return () => {
+    for (const [type, fn] of bound) host.removeEventListener(type, fn);
+    host.style.touchAction = previousTouchAction;
+  };
+}
+
 export class InkLayer {
   constructor(entry, { store, tools, gate, theme, surface = 'page',
                        host: hostEl = null, width = null }) {
@@ -29,6 +51,10 @@ export class InkLayer {
     this.page = entry.number;
 
     let host = hostEl;
+    // Whose element this is decides what destroy() may take away. The page
+    // layer makes its own; the pad is handed the page's margin element, which
+    // outlives every layer ever drawn on it.
+    this.ownsHost = !hostEl;
     if (!host) {
       host = document.createElement('div');
       host.className = 'ink-layer';
@@ -58,8 +84,6 @@ export class InkLayer {
   }
 
   _bind(host) {
-    host.style.touchAction = 'none';
-
     const down = (event) => {
       this.gate.note(event);
       if (!this.gate.shouldDraw(event)) return;       // palm, or touch-to-pan
@@ -94,10 +118,8 @@ export class InkLayer {
       this._commit();
     };
 
-    host.addEventListener('pointerdown', down);
-    host.addEventListener('pointermove', move);
-    host.addEventListener('pointerup', up);
-    host.addEventListener('pointercancel', up);
+    this.unbind = bindHost(host, { pointerdown: down, pointermove: move,
+                                   pointerup: up, pointercancel: up });
     // NOT pointerleave. setPointerCapture already guarantees the move and up
     // events keep arriving once a stroke starts, and leave fires while the
     // pointer is merely crossing a child element — Konva's own canvas sits
@@ -196,8 +218,22 @@ export class InkLayer {
     this.layer.batchDraw();
   }
 
+  /**
+   * Give up everything this layer holds.
+   *
+   * Konva's Stage.destroy() takes its own content div back out of the host and
+   * zeroes both of its canvases, which is what actually returns the memory —
+   * a merely detached canvas keeps its backing store, and on a tablet that is
+   * the whole cost. What it does NOT do is unbind our pointer listeners or
+   * dispose of a host we were handed.
+   */
   destroy() {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.unbind();
+    // Before removing the host, so the content div is still in the document
+    // and Konva takes it out rather than leaving it inside a reused element.
     this.stage.destroy();
-    this.host.remove();
+    if (this.ownsHost) this.host.remove();
   }
 }

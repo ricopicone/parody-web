@@ -9,6 +9,7 @@
 import { PageView, PAD_RATIO } from './pages.js';
 import { InkLayer } from './ink.js';
 import { InkStore, PAD } from './store.js';
+import { LayerSet } from './layers.js';
 import { InkApi } from './api.js';
 import { Saver, OK, FAILED } from './saving.js';
 import { PointerGate } from './pointer-gate.js';
@@ -85,7 +86,17 @@ async function boot() {
 
   const tools = new Tools();
   const gate = new PointerGate();
-  const layers = new Map();
+
+  // Two ink layers per page — the page and its margin — built when the page
+  // renders and given up when it scrolls out of the window, which is the same
+  // window pdf.js's own canvases live in. Holding them all instead cost 150 MB
+  // on a six-page section at dpr 2 and never gave any of it back (task #675).
+  const layers = new LayerSet((entry) => ({
+    page: new InkLayer(entry, { store, tools, gate, theme: current }),
+    pad: new InkLayer(entry, { store, tools, gate, theme: current,
+                               surface: PAD, host: entry.pad,
+                               width: entry.viewport.width * PAD_RATIO }),
+  }));
 
   // The paper follows the reader's theme. The page itself is inverted by a
   // CSS filter on its canvas (see annotate.css) rather than re-rendered, so a
@@ -100,22 +111,21 @@ async function boot() {
 
   const view = new PageView(root.querySelector('[data-ink-pages]'), {
     onPageReady: (entry) => {
-      const padWidth = entry.viewport.width * PAD_RATIO;
-      const existing = layers.get(entry.number);
-      // After a zoom the layers are still there but drawn at the old scale.
-      if (existing) {
-        existing.page.resize(entry.viewport);
-        existing.pad.resize(entry.viewport, padWidth);
-      } else {
-        layers.set(entry.number, {
-          page: new InkLayer(entry, { store, tools, gate, theme: current }),
-          pad: new InkLayer(entry, { store, tools, gate, theme: current,
-                                     surface: PAD, host: entry.pad,
-                                     width: padWidth }),
-        });
+      const { pair, built } = layers.ensure(entry);
+      // A page is announced ready only after it has been released, so this
+      // almost always builds fresh at the current scale. Belt and braces for
+      // the case where it did not: layers the reader may be mid-stroke on are
+      // moved to the new scale rather than thrown away.
+      if (!built) {
+        pair.page.resize(entry.viewport);
+        pair.pad.resize(entry.viewport, entry.viewport.width * PAD_RATIO);
       }
       entry.pad.dataset.used = store.padUsed(entry.number) ? '1' : '0';
     },
+    // Scrolling past a page returns its stages. The strokes are safe: they
+    // live in the store, and a page scrolled back to rebuilds every path from
+    // it — the layer never held anything the store does not.
+    onPageGone: (entry) => layers.release(entry.number),
   });
 
   function applyTheme() {

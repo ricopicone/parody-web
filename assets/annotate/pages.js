@@ -125,7 +125,6 @@ export class PageView {
       row.appendChild(pad);
       this.container.appendChild(row);
       this.entries.push({ number, page, viewport, el, pad, row, canvas: null,
-                          layer: null,
                           // One slot per page: pages render independently, but
                           // a zoom invalidates all of them together.
                           slot: new RenderSlot(this.generation) });
@@ -180,6 +179,15 @@ export class PageView {
       entry.slot.finish(claim);
       return;
     }
+    // The reader scrolled past while this was drawing. _release() has already
+    // taken the canvas out and announced the page gone, so announcing it ready
+    // now would build ink layers for a page nothing will release again —
+    // exactly the leak this file's release path exists to prevent.
+    if (entry.slot.superseded(claim)) {
+      canvas.remove();
+      if (entry.canvas === canvas) entry.canvas = null;
+      return;
+    }
     entry.slot.finish(claim);
     // The scale moved while this was drawing: take the page back out rather
     // than leave it attached at the wrong size.
@@ -194,11 +202,14 @@ export class PageView {
   _release(entry) {
     // Give up the slot NOW, so the replacement render — which update() starts
     // on the very next line — is not skipped. A render still in flight is left
-    // to finish and is discarded by its generation check; cancelling it looked
-    // tidier but wedged pdf.js, whose promise then never settled at all.
+    // to finish and then finds itself superseded; cancelling it looked tidier
+    // but wedged pdf.js, whose promise then never settled at all.
     entry.slot.release();
     if (!entry.canvas) return;
-    entry.canvas.remove();          // the ink layer is handled separately
+    entry.canvas.remove();
+    // The ink drawn over this page goes with it: onPageGone is what releases
+    // the layers, and a viewer that does not listen for it keeps every page's
+    // stages for the life of the tab.
     entry.canvas = null;
     this.onPageGone(entry);
   }

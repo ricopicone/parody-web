@@ -80,4 +80,19 @@ export class RenderSlot {
   canAttach(claim) {
     return claim.generation === this.gen.value;
   }
+
+  /**
+   * Has this claim been taken away since it started?
+   *
+   * Distinct from canAttach, which only asks about the SCALE. A page released
+   * because the reader scrolled past it gives up its slot without bumping the
+   * generation, so a render settling afterwards passes canAttach and would
+   * announce a page that is no longer resident — building an ink layer that
+   * the release which already ran can never pair with.
+   *
+   * Ask BEFORE finish(), which clears the ownership this reads.
+   */
+  superseded(claim) {
+    return this.owner !== claim.token;
+  }
 }
