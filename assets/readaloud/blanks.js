@@ -29,124 +29,127 @@ export function nextBlank(clozes, index, direction = 1) {
   return ((index + direction) % count + count) % count;
 }
 
+/** A percentage of the page box, tidied so it does not read as noise. */
+const pct = (value) => `${Math.round(value * 1e4) / 1e4}%`;
+
 /**
- * A canvas of blank outlines, one per page.
+ * The blank outlines on one page.
  *
- * Its own layer rather than a second use of the karaoke canvas: that one is
- * cleared and repainted on every spoken word, and these marks have to persist
- * while the reader scrolls around with nothing playing at all.
+ * One positioned element per blank, NOT a canvas. A canvas here was a
+ * full-page backing store — 7 MB at dpr 2, 16 MB at dpr 3 — carrying a
+ * handful of small rectangles, and there was one for every page in the
+ * section that has a blank, all at once: syncMarks wants them on placeholder
+ * pages too (finding the blanks is what a reader does BEFORE pressing play),
+ * and every page element exists from the moment the document opens. Measured
+ * on a three-page section: 20 MB of 33 MB. There is no window to shrink it
+ * to without giving up the thing the marks are for.
+ *
+ * Positions are PERCENTAGES of the page box, which is what makes this cheaper
+ * than the canvas rather than merely smaller: a page laid out at
+ * `pageWidthPt * scale` puts a blank at the same percentage at every zoom, so
+ * following a zoom costs nothing at all. The canvas had to reallocate its
+ * whole surface and repaint every mark.
+ *
+ * Kept as its own layer rather than folded into the karaoke canvas: that one
+ * is cleared and repainted on every spoken word, and these marks have to
+ * persist while the reader scrolls around with nothing playing.
  */
 export class BlankMarks {
   constructor(page, { dark = false } = {}) {
     this.page = page;
     this.dark = dark;
-    this.canvas = document.createElement('canvas');
-    this.canvas.className = 'readalong-blanks';
-    page.el.appendChild(this.canvas);
+    this.host = document.createElement('div');
+    this.host.className = 'readalong-blanks';
+    this.host.dataset.dark = dark ? '1' : '0';
+    page.el.appendChild(this.host);
     this.boxes = [];
+    this.nodes = [];
     this.active = -1;
-    this.fit(page);
+    this.placed = false;
   }
 
   /**
-   * Re-fit to the page. Runs on every scroll event and on the marker timer,
-   * so it must be free when nothing has actually changed: assigning
-   * `canvas.width` reallocates and zeroes the whole backing store even when
-   * the value is unchanged, and a smooth scroll fires scroll every frame.
+   * Follow the page.
+   *
+   * Runs on every scroll event and on the marker timer, and does nothing in
+   * the common case — which is the point. It has work only when the marks
+   * have never been placed, because the page had no size the first time
+   * round: syncMarks builds a layer the moment the page ELEMENT exists, which
+   * can be before it has been laid out.
    */
   fit(page) {
     this.page = page;
-    const width = page.el.offsetWidth;
-    const height = page.el.offsetHeight;
-    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
-    if (this.ctx && width === this.cssWidth && height === this.cssHeight
-        && dpr === this.dpr) {
-      return;
-    }
-    this.cssWidth = width;
-    this.cssHeight = height;
-    this.dpr = dpr;
-    this.canvas.width = Math.floor(width * dpr);
-    this.canvas.height = Math.floor(height * dpr);
-    this.canvas.style.width = `${width}px`;
-    this.canvas.style.height = `${height}px`;
-    this.ctx = this.canvas.getContext('2d');
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.draw();
+    if (!this.placed) this._place();
   }
 
-  /** `boxes` are {token, x0, y0, x1, y1} in PDF points. */
+  /** `boxes` are {token, kind, x0, y0, x1, y1} in PDF points. */
   setBoxes(boxes) {
     this.boxes = boxes || [];
-    this.draw();
+    this.host.replaceChildren();
+    this.nodes = this.boxes.map((box) => {
+      const node = document.createElement('div');
+      node.className = 'readalong-blank';
+      // A blank inside an EQUATION is marked by its equation, because the
+      // rules within one are a mix of blanks and fraction bars and telling
+      // them apart is a problem we do not take on. That box is the whole
+      // derivation — up to 180 points tall — so the stylesheet outlines it
+      // rather than washing over it: a fill there is a slab of colour across
+      // the maths and reads as a fault, where the wash over a one-line blank
+      // reads as a space to write in.
+      node.dataset.kind = box.kind === 'math_cloze' ? 'math_cloze' : 'cloze';
+      node.dataset.on = box.token === this.active ? '1' : '0';
+      this.host.appendChild(node);
+      return node;
+    });
+    this.placed = false;
+    this._place();
   }
 
   setActive(token) {
     // Called from the marker sync, which runs on every scroll event: a smooth
-    // scroll would otherwise redraw every blank on every page, 60 times a
+    // scroll would otherwise touch every blank on every page, 60 times a
     // second, to arrive at the same picture.
     if (token === this.active) return;
     this.active = token;
-    this.draw();
+    this.boxes.forEach((box, index) => {
+      const node = this.nodes[index];
+      if (node) node.dataset.on = box.token === token ? '1' : '0';
+    });
   }
 
   setDark(dark) {
     if (dark === this.dark) return;
     this.dark = dark;
-    this.draw();
+    // One attribute. The colours are the stylesheet's, so nothing is redrawn.
+    this.host.dataset.dark = dark ? '1' : '0';
   }
 
-  draw() {
-    if (!this.ctx) return;
-    const { scale } = this.page;
-    this.ctx.clearRect(0, 0, this.canvas.width / this.dpr,
-                       this.canvas.height / this.dpr);
-    for (const box of this.boxes) {
-      const x0 = Math.min(box.x0, box.x1) * scale;
-      const x1 = Math.max(box.x0, box.x1) * scale;
-      const y0 = Math.min(box.y0, box.y1) * scale;
-      const y1 = Math.max(box.y0, box.y1) * scale;
-      const on = box.token === this.active;
-      const pad = 3;
-
-      // A blank inside an EQUATION is marked by its equation, because the
-      // rules within one are a mix of blanks and fraction bars and telling
-      // them apart is a problem we do not take on. That box is the whole
-      // derivation — up to 180 points tall — so it gets an outline rather than
-      // a wash: filling it would put a slab of colour over the maths and read
-      // as a fault, where the wash over a one-line blank reads as a space to
-      // write in.
-      if (box.kind === 'math_cloze') {
-        this.ctx.strokeStyle = this.dark
-          ? `rgba(122, 184, 255, ${on ? 0.85 : 0.35})`
-          : `rgba(66, 133, 244, ${on ? 0.8 : 0.3})`;
-        this.ctx.lineWidth = on ? 1.5 : 1;
-        this.ctx.strokeRect(x0 - pad, y0 - pad,
-                            x1 - x0 + pad * 2, y1 - y0 + pad * 2);
-        continue;
-      }
-
-      // A soft wash over the writing space, and a firmer edge on the one the
-      // navigator just moved to. Deliberately weak: the reader is going to
-      // write here, and a heavy box would fight their own handwriting.
-      this.ctx.fillStyle = this.dark
-        ? `rgba(122, 184, 255, ${on ? 0.22 : 0.10})`
-        : `rgba(66, 133, 244, ${on ? 0.20 : 0.09})`;
-      this.ctx.fillRect(x0 - pad, y0 - pad,
-                        x1 - x0 + pad * 2, y1 - y0 + pad * 2);
-
-      if (on) {
-        this.ctx.strokeStyle = this.dark
-          ? 'rgba(122, 184, 255, 0.85)'
-          : 'rgba(66, 133, 244, 0.8)';
-        this.ctx.lineWidth = 1.5;
-        this.ctx.strokeRect(x0 - pad, y0 - pad,
-                            x1 - x0 + pad * 2, y1 - y0 + pad * 2);
-      }
-    }
+  /** Place every mark as a percentage of the page box. False until the page
+   *  has a size to take a percentage of. */
+  _place() {
+    const { el, scale } = this.page;
+    const width = el.offsetWidth;
+    const height = el.offsetHeight;
+    if (!(width > 0 && height > 0 && scale > 0)) return false;
+    const widthPt = width / scale;
+    const heightPt = height / scale;
+    this.boxes.forEach((box, index) => {
+      const node = this.nodes[index];
+      if (!node) return;
+      const x0 = Math.min(box.x0, box.x1);
+      const x1 = Math.max(box.x0, box.x1);
+      const y0 = Math.min(box.y0, box.y1);
+      const y1 = Math.max(box.y0, box.y1);
+      node.style.left = pct(x0 / widthPt * 100);
+      node.style.top = pct(y0 / heightPt * 100);
+      node.style.width = pct((x1 - x0) / widthPt * 100);
+      node.style.height = pct((y1 - y0) / heightPt * 100);
+    });
+    this.placed = true;
+    return true;
   }
 
   destroy() {
-    this.canvas.remove();
+    this.host.remove();
   }
 }

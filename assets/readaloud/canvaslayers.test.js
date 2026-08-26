@@ -30,7 +30,30 @@ function stubDom(width = 540, height = 810) {
     get height() { return this._h; },
     set height(v) { counts.heightSets += 1; this._h = v; },
   };
-  global.document = { createElement: () => canvas };
+  // The blank markers are positioned elements, not a canvas, so the stub has
+  // to hand out both. `flags` counts how many times a blank's state is
+  // touched — the DOM equivalent of counting repaints.
+  counts.flags = 0;
+  const makeDiv = () => {
+    const dataset = {};
+    let on;
+    Object.defineProperty(dataset, 'on', {
+      get: () => on,
+      set(value) { counts.flags += 1; on = value; },
+      enumerable: true, configurable: true,
+    });
+    return {
+      className: '', style: {}, dataset, children: [], parentElement: null,
+      appendChild(child) {
+        this.children.push(child); child.parentElement = this; return child;
+      },
+      replaceChildren() { this.children = []; },
+      remove() {},
+    };
+  };
+  global.document = {
+    createElement: (tag) => (tag === 'canvas' ? canvas : makeDiv()),
+  };
   global.window = { devicePixelRatio: 3 };
   const page = { el: { offsetWidth: width, offsetHeight: height,
                        appendChild() {} }, scale: 1 };
@@ -72,13 +95,16 @@ test('the mark still follows the voice to a new word', () => {
   assert.equal(counts.fills, fills + 1);
 });
 
-test('blank markers do not rebuild their canvas per scroll event', () => {
+test('blank markers hold no canvas to rebuild', () => {
+  // They used to: a full-page backing store per page, for a handful of small
+  // rectangles, on every page of the section that has a blank. They are
+  // positioned elements now, so a scroll — or a zoom — costs nothing.
   const { counts, page } = stubDom();
   const marks = new BlankMarks(page);
   marks.setBoxes([{ token: 1, x0: 1, y0: 2, x1: 3, y1: 4 }]);
-  const after = counts.widthSets;
   for (let i = 0; i < 60; i += 1) marks.fit(page);
-  assert.equal(counts.widthSets, after);
+  assert.equal(counts.widthSets, 0, 'no canvas surface was ever sized');
+  assert.equal(counts.contexts, 0, 'no 2d context was ever acquired');
 });
 
 test('re-placing the same reveal does not rebuild its picture', async () => {
@@ -129,16 +155,17 @@ test('a different reveal does rebuild', async () => {
   assert.equal(htmlWrites, after + 1);
 });
 
-test('marker layers do not redraw when nothing became active', () => {
+test('marker layers do not touch a blank when nothing became active', () => {
+  // setActive runs on every scroll event; a smooth scroll fires one per frame.
   const { counts, page } = stubDom();
   const marks = new BlankMarks(page);
   marks.setBoxes([{ token: 1, x0: 1, y0: 2, x1: 3, y1: 4 }]);
   marks.setActive(1);
-  const fills = counts.fills;
+  const flags = counts.flags;
   for (let i = 0; i < 60; i += 1) marks.setActive(1);
-  assert.equal(counts.fills, fills, 'the same blank was already active');
+  assert.equal(counts.flags, flags, 'the same blank was already active');
   marks.setActive(2);
-  assert.ok(counts.fills > fills, 'a new active blank must redraw');
+  assert.ok(counts.flags > flags, 'a new active blank must be marked');
 });
 
 test('an equation being read shows progress, and still costs almost nothing', () => {

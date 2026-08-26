@@ -105,6 +105,71 @@
   pointer-events: none;
 }
 
+/* One element per blank, placed as a PERCENTAGE of the page box, so a zoom
+ * moves it with the page and nothing is recomputed. This layer used to be a
+ * full-page canvas per page — 7 MB at dpr 2, 16 MB at dpr 3 — for a handful
+ * of small rectangles, and one for every page in the section at once.
+ *
+ * The 3px outset and the colours below are the canvas painting it replaced,
+ * kept exactly: the blank is a space the reader is going to WRITE in, so the
+ * wash is deliberately weak and must not fight their handwriting. */
+.readalong-blank {
+  --blank-hue: 66 133 244;
+  --blank-wash: 0.09;
+  --blank-edge: 0;
+  --blank-edge-width: 0;
+
+  position: absolute;
+  box-sizing: content-box;
+  margin: -3px;
+  padding: 3px;
+  background: rgb(var(--blank-hue) / var(--blank-wash));
+  outline: var(--blank-edge-width) solid rgb(var(--blank-hue) / var(--blank-edge));
+  /* strokeRect straddled the edge; an outline sits wholly outside it. */
+  outline-offset: calc(-1 * var(--blank-edge-width));
+}
+
+/* The one the navigator has just stepped to gains a firmer edge. */
+.readalong-blank[data-on='1'] {
+  --blank-wash: 0.2;
+  --blank-edge: 0.8;
+  --blank-edge-width: 1.5px;
+}
+
+/* A blank inside an equation: outlined, never washed. See blanks.js. */
+.readalong-blank[data-kind='math_cloze'] {
+  --blank-wash: 0;
+  --blank-edge: 0.3;
+  --blank-edge-width: 1px;
+}
+
+.readalong-blank[data-kind='math_cloze'][data-on='1'] {
+  --blank-edge: 0.8;
+  --blank-edge-width: 1.5px;
+}
+
+/* Dark mode picks its own colour rather than being inverted with the paper:
+ * the page canvas is inverted by a CSS filter and this layer sits outside it,
+ * so an inverted mark would come out the complement of what was intended. */
+.readalong-blanks[data-dark='1'] .readalong-blank {
+  --blank-hue: 122 184 255;
+  --blank-wash: 0.1;
+}
+
+.readalong-blanks[data-dark='1'] .readalong-blank[data-on='1'] {
+  --blank-wash: 0.22;
+  --blank-edge: 0.85;
+}
+
+.readalong-blanks[data-dark='1'] .readalong-blank[data-kind='math_cloze'] {
+  --blank-wash: 0;
+  --blank-edge: 0.35;
+}
+
+.readalong-blanks[data-dark='1'] .readalong-blank[data-kind='math_cloze'][data-on='1'] {
+  --blank-edge: 0.85;
+}
+
 /* Finding the blanks without playing anything. A ruled gap looks like every
  * other rule on a typeset page, so this says how many there are and steps
  * between them. */
