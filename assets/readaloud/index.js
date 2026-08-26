@@ -9,6 +9,7 @@ import { BlankMarks, blanksOnPage } from './blanks.js';
 import { bodyType } from './bodytype.js';
 import { Clock } from './clock.js';
 import { Follower } from './follow.js';
+import { MarkState } from './mark.js';
 import { Highlight } from './highlight.js';
 import { Reveal } from './reveal.js';
 import { isRendered, pageAt } from './pageview.js';
@@ -119,11 +120,10 @@ async function boot() {
   let shown = -1;                       // blank whose plate is up
   let holding = -1;                     // cloze index we are stopped at
   let announced = -1;
-  let following = true;
   const follower = new Follower();
-  // The word the mark is currently drawn for, and the page the others were
-  // last cleared against — so a frame that changes neither does nothing.
-  let painted = -1;
+  // What the mark is currently SHOWING, and the page the others were last
+  // cleared against — so a frame that changes neither does nothing.
+  const mark = new MarkState();
   let marked = -1;
   // The word the skip affordance was last decided for, and what it decided.
   let skipFor = -2;
@@ -408,9 +408,15 @@ async function boot() {
       // audio has reached may be a bare placeholder. Drop the highlight rather
       // than draw a mark over blank paper.
       const stale = layers.get(index);
-      if (stale) { stale.destroy(); layers.delete(index); }
-      const staleMark = marks.get(index);
-      if (staleMark) { staleMark.destroy(); marks.delete(index); }
+      if (stale) {
+        stale.destroy();
+        layers.delete(index);
+        mark.invalidate();          // it is off the page; it is owed again
+      }
+      // The BLANK markers stay. They are syncMarks's business and they are
+      // wanted on a page that has not rasterised — finding the blanks is what
+      // a reader does before pressing play. Destroying them here fought
+      // syncMarks, which put them straight back a second later.
       return null;
     }
     let layer = layers.get(index);
@@ -490,7 +496,7 @@ async function boot() {
   }
 
   function follow(page, y0) {
-    if (!following || !scroller) return;
+    if (!scroller) return;
     const row = page.el.parentElement || page.el;
     const top = row.offsetTop + y0 - scroller.clientHeight / 2;
     // Through the Follower, not straight to scrollTo: a smooth scroll is an
@@ -515,10 +521,15 @@ async function boot() {
     const region = regionAt(regions, ms);
     const inEquation = !!(region && region.display
                           && region.token === word.token);
-    if (index === painted && !inEquation) return index;
-    painted = index;
-    if (!Number.isFinite(word.page)) return index;
+    if (!mark.needs(index, inEquation)) return index;
+    // No box anywhere: this one can never be drawn, so stop asking.
+    if (!Number.isFinite(word.page)) { mark.drew(index); return index; }
     const layer = layerFor(word.page);
+    // The page has no canvas yet — pdf.js rasterises asynchronously, so there
+    // is a window after every scroll and every seek where the page is on
+    // screen with nothing drawn on it. NOTHING was painted, so nothing is
+    // remembered: the mark is still owed and the next frame tries again.
+    // Recording it here is what skipped the word for its whole duration.
     if (!layer) return index;
     const box = [word.x0, word.y0, word.x1, word.y1];
     if (inEquation) {
@@ -527,6 +538,7 @@ async function boot() {
     } else {
       layer.show(box);
     }
+    mark.drew(index);
     if (word.page !== marked) {
       clearOthers(word.page);
       marked = word.page;
@@ -611,21 +623,22 @@ async function boot() {
   setInterval(syncMarks, 1000);
   syncMarks();
 
-  scroller?.addEventListener('wheel', () => {
-    following = false;
-    follower.reset();
-  }, { passive: true });
-  scroller?.addEventListener('touchmove', () => {
-    following = false;
-    follower.reset();
-  }, { passive: true });
+  // Handing the wheel over, not giving it up. The page stops steering itself
+  // so it does not fight a reader who is scrolling — and takes over again a
+  // few seconds after they stop. It used to stay off until play was pressed
+  // again, which is how the highlight could stop appearing for the rest of a
+  // section: the mark is only drawn on a rasterised page, and the viewer
+  // rasterises around the VIEWPORT, not around the voice.
+  scroller?.addEventListener('wheel', () => follower.takeOver(),
+                             { passive: true });
+  scroller?.addEventListener('touchmove', () => follower.takeOver(),
+                             { passive: true });
   // A zoom changes every box on the page, so the mark must be redrawn even
   // though the word has not moved. Same for a resize.
-  window.addEventListener('resize', () => { painted = -1; }, { passive: true });
+  window.addEventListener('resize', () => mark.invalidate(), { passive: true });
 
   function play() {
-    following = true;
-    follower.reset();
+    follower.resume();
     delete root.dataset.readalongResume;
     root.dataset.readalong = 'playing';
     audio.play();
@@ -640,7 +653,7 @@ async function boot() {
   }
 
   function restart() {
-    painted = -1;
+    mark.invalidate();
     skipFor = -2;
     follower.reset();
     delete root.dataset.readalongResume;
@@ -696,6 +709,7 @@ async function boot() {
   audio.addEventListener('ended', () => {
     root.dataset.readalong = 'done';
     layers.forEach((layer) => layer.clear());
+    mark.invalidate();                  // nothing is on the page any more
     showPlayState();
   });
 
@@ -711,7 +725,7 @@ async function boot() {
   window.parodyReadAlong = {
     audio, track, play, pause, resume, restart, toggle, step, skip, readFrom,
     refetch: refetchAudio,
-    follow: (on) => { following = on; },
+    follow: (on) => (on ? follower.resume() : follower.takeOver()),
   };
 
   requestAnimationFrame(frame);

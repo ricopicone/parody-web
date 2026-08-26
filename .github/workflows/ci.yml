@@ -23,4 +23,6 @@ jobs:
           node-version: '20'
       - run: npm ci
       - run: uv run python runtests.py
-      - run: node --test assets/annotate/*.test.js assets/readaloud/*.test.js
+      # assets/*.test.js too: what both bundles share lives at the root, and
+      # a glob that lists only the subdirectories silently runs none of it.
+      - run: node --test assets/*.test.js assets/annotate/*.test.js assets/readaloud/*.test.js

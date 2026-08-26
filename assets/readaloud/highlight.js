@@ -10,6 +10,7 @@
  * inverted highlight comes out the complement of what was intended.
  */
 import { toCss } from './reveal.js';
+import { releaseCanvas } from '../canvas.js';
 
 export class Highlight {
   /** `page` is {el, scale} from pageview.pageAt. */
@@ -141,7 +142,10 @@ export class Highlight {
   }
 
   destroy() {
-    this.canvas.remove();
+    // Released, not merely detached: layerFor() destroys this whenever the
+    // page the audio has reached stops being rendered, which on a long
+    // section is often, and a detached canvas keeps every byte.
+    releaseCanvas(this.canvas);
   }
 }
 

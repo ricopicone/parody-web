@@ -44,3 +44,71 @@ test('a manual scroll resets it', () => {
   f.reset();
   assert.equal(f.target(2000, 0, VIEW), 2000);
 });
+
+/**
+ * Handing control back.
+ *
+ * A manual scroll used to stop the page following the voice for the REST of
+ * that playback — `following` was set false by any wheel or touchmove and set
+ * true again only by pressing play. And the mark is only drawn on a page the
+ * viewer has rasterised, which is a window around the VIEWPORT, not around
+ * the voice: so once the two separated, the highlight stopped appearing and
+ * nothing brought it back. That is the "gets choppy after I scroll and then
+ * never recovers" report.
+ */
+const clockFrom = (start = 0) => {
+  const c = { t: start, now: () => c.t, tick(ms) { c.t += ms; return c; } };
+  return c;
+};
+
+test('a reader scrolling by hand takes the wheel', () => {
+  const c = clockFrom();
+  const f = new Follower({ now: c.now, resumeAfterMs: 5000 });
+  f.takeOver();
+  assert.equal(f.target(2000, 0, VIEW), null, 'the voice does not steer');
+});
+
+test('and the voice takes it back once they have stopped', () => {
+  const c = clockFrom();
+  const f = new Follower({ now: c.now, resumeAfterMs: 5000 });
+  f.takeOver();
+
+  c.tick(4999);
+  assert.equal(f.target(2000, 0, VIEW), null, 'still theirs');
+  c.tick(2);
+  assert.equal(f.target(2000, 0, VIEW), 2000, 'settled: follow again');
+});
+
+test('scrolling again while it is theirs extends the hold', () => {
+  const c = clockFrom();
+  const f = new Follower({ now: c.now, resumeAfterMs: 5000 });
+  f.takeOver();
+  c.tick(4000);
+  f.takeOver();                      // still scrolling
+  c.tick(4000);                      // 8s since the first, 4s since the last
+  assert.equal(f.target(2000, 0, VIEW), null, 'they have not finished');
+  c.tick(1001);
+  assert.equal(f.target(2000, 0, VIEW), 2000);
+});
+
+test('pressing play takes it back at once, without waiting', () => {
+  const c = clockFrom();
+  const f = new Follower({ now: c.now, resumeAfterMs: 5000 });
+  f.takeOver();
+  f.resume();
+  assert.equal(f.target(2000, 0, VIEW), 2000);
+});
+
+test('a hold that has expired is forgotten, not re-checked forever', () => {
+  const c = clockFrom();
+  const f = new Follower({ now: c.now, resumeAfterMs: 5000 });
+  f.takeOver();
+  c.tick(6000);
+  assert.equal(f.steering(), true);
+  assert.equal(f.tookOverAt, null, 'the hold is cleared once it lapses');
+});
+
+test('with nobody having scrolled, it steers from the start', () => {
+  const f = new Follower({ now: clockFrom().now });
+  assert.equal(f.steering(), true);
+});

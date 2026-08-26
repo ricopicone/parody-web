@@ -10,6 +10,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import { pageAt, windowAround } from './paged.js';
 import { Generation, RenderSlot } from './render-slot.js';
+import { releaseCanvas } from '../canvas.js';
 
 // The worker cannot be inlined into the bundle, so the template hands us its
 // hashed static URL on the script tag that loaded us.
@@ -174,7 +175,7 @@ export class PageView {
         transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0],
       }).promise;
     } catch (err) {
-      canvas.remove();
+      releaseCanvas(canvas);
       if (entry.canvas === canvas) entry.canvas = null;
       entry.slot.finish(claim);
       return;
@@ -184,7 +185,7 @@ export class PageView {
     // now would build ink layers for a page nothing will release again —
     // exactly the leak this file's release path exists to prevent.
     if (entry.slot.superseded(claim)) {
-      canvas.remove();
+      releaseCanvas(canvas);
       if (entry.canvas === canvas) entry.canvas = null;
       return;
     }
@@ -192,7 +193,7 @@ export class PageView {
     // The scale moved while this was drawing: take the page back out rather
     // than leave it attached at the wrong size.
     if (!entry.slot.canAttach(claim)) {
-      canvas.remove();
+      releaseCanvas(canvas);
       if (entry.canvas === canvas) entry.canvas = null;
       return;
     }
@@ -200,13 +201,25 @@ export class PageView {
   }
 
   _release(entry) {
+    // A render can still be drawing into this canvas: only a page with no
+    // canvas and no busy slot may start one, so a busy slot means the render
+    // in flight owns the one we are about to take away.
+    const rendering = entry.slot.busy;
     // Give up the slot NOW, so the replacement render — which update() starts
     // on the very next line — is not skipped. A render still in flight is left
     // to finish and then finds itself superseded; cancelling it looked tidier
     // but wedged pdf.js, whose promise then never settled at all.
     entry.slot.release();
     if (!entry.canvas) return;
-    entry.canvas.remove();
+    // Released, not merely detached. This is the biggest single canvas in the
+    // viewer — a page at dpr 3 is 16 MB — and `.remove()` gave none of it back.
+    //
+    // Except while it is being drawn into. Zeroing a surface mid-render makes
+    // pdf.js build zero-sized ImageData, which throws; the render is discarded
+    // when it settles anyway, and the superseded path releases it properly
+    // then. So detach now, free later.
+    if (rendering) entry.canvas.remove();
+    else releaseCanvas(entry.canvas);
     // The ink drawn over this page goes with it: onPageGone is what releases
     // the layers, and a viewer that does not listen for it keeps every page's
     // stages for the life of the tab.
