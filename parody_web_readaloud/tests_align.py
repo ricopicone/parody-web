@@ -193,3 +193,94 @@ class DisplayMathExtentTests(SimpleTestCase):
         placed = align(tokens, words, [])
         self.assertEqual(placed[1].page, 0)
         self.assertEqual(placed[1].box, (10.0, 10.0, 28.0, 20.0))
+
+
+class LoneEquationInABlockTests(SimpleTestCase):
+    """An equation grouped with a neighbour still gets its extent.
+
+    0.73.0 widened the local-replace hatch for a block that is ONE display-math
+    token. But an equation is often grouped with a stray neighbour — a word the
+    page renders differently, an inline symbol — and 13 clozed equations in the
+    electronics primer fell outside by exactly that margin. Each showed a blank
+    with no prompt under it, which is what a reader reported.
+    """
+
+    def _run(self, tokens, page_words):
+        return align(tokens, page_words, [])
+
+    def test_an_equation_beside_a_stray_token_is_still_placed(self):
+        tokens = [Token("word", "so"),
+                  Token("word", "ghost"),            # the stray neighbour
+                  Token("math", latex=r"\begin{aligned} R &= b \\ &= c"
+                                      r"\end{aligned}", display=True),
+                  Token("word", "then")]
+        words = ([_w("so", x0=0)]
+                 + [_w(f"\U0001d445{i}=", x0=10 + i) for i in range(8)]
+                 + [_w("then", x0=90)])
+        placed = self._run(tokens, words)
+        self.assertIsNotNone(placed[2].box, "the equation must carry its extent")
+
+    def test_only_the_equation_takes_the_box(self):
+        """Not every token in the block: that is what the cap exists to stop."""
+        tokens = [Token("word", "so"), Token("word", "ghost"),
+                  Token("math", latex=r"\begin{aligned} a &= b \end{aligned}",
+                        display=True),
+                  Token("word", "then")]
+        words = ([_w("so", x0=0)]
+                 + [_w(f"\U0001d44e{i}=", x0=10 + i) for i in range(8)]
+                 + [_w("then", x0=90)])
+        placed = self._run(tokens, words)
+        self.assertIsNone(placed[1].box, "the stray must stay unplaced")
+
+    def test_two_equations_in_one_block_are_left_alone(self):
+        """Which of them the run belongs to is not knowable, and a box on the
+        wrong equation is worse than none."""
+        tokens = [Token("word", "so"),
+                  Token("math", latex=r"\begin{aligned} a &= b\end{aligned}",
+                        display=True),
+                  Token("math", latex=r"\begin{aligned} c &= d\end{aligned}",
+                        display=True),
+                  Token("word", "then")]
+        words = ([_w("so", x0=0)]
+                 + [_w(f"\U0001d44e{i}=", x0=10 + i) for i in range(20)]
+                 + [_w("then", x0=90)])
+        placed = self._run(tokens, words)
+        self.assertIsNone(placed[1].box)
+        self.assertIsNone(placed[2].box)
+
+    def test_prose_alone_is_still_left_unplaced(self):
+        tokens = [Token("word", "alpha"), Token("word", "ghost"),
+                  Token("word", "omega")]
+        words = ([_w("alpha", x0=0)]
+                 + [_w(f"x{i}", x0=10 + i) for i in range(20)]
+                 + [_w("omega", x0=90)])
+        placed = self._run(tokens, words)
+        self.assertIsNone(placed[1].box)
+
+    def test_an_equation_is_not_placed_over_plain_prose(self):
+        """The run has to look like typeset maths. Otherwise an equation whose
+        glyphs are not on this page takes a box over whatever lies between its
+        neighbours — placed, and pointing at nothing."""
+        tokens = [Token("word", "so"),
+                  Token("math", latex=r"\begin{aligned} a &= b\end{aligned}",
+                        display=True),
+                  Token("word", "then")]
+        words = ([_w("so", x0=0)]
+                 + [_w(w, x0=10 + i * 9) for i, w in
+                    enumerate("nothing resembling that text at all".split())]
+                 + [_w("then", x0=90)])
+        placed = self._run(tokens, words)
+        self.assertIsNone(placed[1].box)
+
+    def test_maths_glyphs_are_what_make_it_maths(self):
+        tokens = [Token("word", "so"),
+                  Token("math", latex=r"\begin{aligned} a &= b\end{aligned}",
+                        display=True),
+                  Token("word", "then")]
+        words = [_w("so", x0=0),
+                 _w("\U0001d44e=", x0=10), _w("\U0001d44f", x0=20),
+                 _w("−\U0001d450", x0=30), _w("=", x0=40),
+                 _w("⇒", x0=50), _w("\U0001d451", x0=60),
+                 _w("then", x0=90)]
+        placed = self._run(tokens, words)
+        self.assertIsNotNone(placed[1].box)

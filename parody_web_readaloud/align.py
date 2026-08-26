@@ -65,8 +65,20 @@ def _is_local(tokens: int, page_words: int) -> bool:
     return tokens <= MAX_LOCAL_TOKENS and page_words <= MAX_LOCAL_WORDS
 
 
-def _is_equation(placed: list, i1: int, i2: int) -> bool:
-    """One display-math token, whatever extent the page gave it.
+def _sole_equation(placed: list, i1: int, i2: int):
+    """The index of the block's ONE display-math token, or None.
+
+    Not "a block that is a single token": an equation is very often grouped
+    with a stray neighbour — a word the page renders differently, an inline
+    symbol that extracted oddly — and thirteen clozed equations in the
+    electronics primer fell outside the first version of this rule by exactly
+    that margin. Each of them showed a reader a blank with no prompt beneath
+    it. Two display equations in one block stay unplaced: which of them the
+    run belongs to is not knowable, and a box on the wrong equation is worse
+    than no box.
+
+    Only that token is placed, never the block. Handing every token in a large
+    block one box is precisely what the cap exists to prevent.
 
     A display equation is a SINGLE token that typesets as MANY extracted
     chunks — a line, a relation symbol, the fragments either side of a blank —
@@ -85,8 +97,28 @@ def _is_equation(placed: list, i1: int, i2: int) -> bool:
     construction. Prose keeps the tight cap, where a long run really is a
     divergence and unplaced is the honest outcome.
     """
-    return (i2 - i1 == 1 and placed[i1].token.kind == "math"
-            and placed[i1].token.display)
+    found = [i for i in range(i1, i2)
+             if placed[i].token.kind == "math" and placed[i].token.display]
+    return found[0] if len(found) == 1 else None
+
+
+# Maths extracts as mathematical-alphanumeric codepoints and operator glyphs;
+# prose does not. That is the same fact the fold at the top of this module
+# relies on, used here for the opposite purpose.
+_MATHS_GLYPH = re.compile(r"[\U0001D400-\U0001D7FF"
+                          r"\u2200-\u22FF\u27F0-\u27FF\u2A00-\u2AFF"
+                          r"\u0391-\u03C9\u2212\u00D7\u221A\u2211\u222B]")
+
+
+def _looks_like_maths(run: list) -> bool:
+    """Whether a page run could be the typeset form of an equation.
+
+    The guard on giving a lone equation a whole block. Without it, an equation
+    whose glyphs are not on this page at all takes a box over whatever prose
+    happens to lie between its neighbours — placed, and pointing at nothing,
+    which is the failure the cap exists to prevent rather than a version of it.
+    """
+    return any(_MATHS_GLYPH.search(w.text or "") for w in run)
 
 
 def _join(boxes):
@@ -183,21 +215,27 @@ def _align_window(placed, words, a, b, si, ei, sj, ej):
         if tag == "equal":
             for offset in range(i2 - i1):
                 _place(placed[i1 + offset], [words[j1 + offset]])
-        elif tag == "replace" and (_is_local(i2 - i1, j2 - j1)
-                                   or _is_equation(placed, i1, i2)):
-            # ONLY a small local disagreement — a hyphenated line break, a
-            # ligature, a symbol that extracted oddly. Give every token in the
-            # run the run's whole extent rather than guessing a split.
-            #
-            # Bounded deliberately. Applied to any replace block, one large
-            # divergence hands hundreds of tokens a single box spanning half a
-            # page: they then count as "placed" while pointing at nothing, and
-            # every cloze after them gets a window derived from that garbage.
-            # Unplaced is the honest outcome for a run this size.
+        elif tag == "replace":
             run = words[j1:j2]
-            if run:
+            if not run:
+                continue
+            if _is_local(i2 - i1, j2 - j1):
+                # ONLY a small local disagreement — a hyphenated line break, a
+                # ligature, a symbol that extracted oddly. Give every token in
+                # the run the run's whole extent rather than guessing a split.
+                #
+                # Bounded deliberately. Applied to any replace block, one large
+                # divergence hands hundreds of tokens a single box spanning
+                # half a page: they then count as "placed" while pointing at
+                # nothing, and every cloze after them gets a window derived
+                # from that garbage. Unplaced is the honest outcome for a run
+                # this size.
                 for p in placed[i1:i2]:
                     _place(p, run)
+            else:
+                only = _sole_equation(placed, i1, i2)
+                if only is not None and _looks_like_maths(run):
+                    _place(placed[only], run)
 
 
 def _place(p: Placed, run: list):
