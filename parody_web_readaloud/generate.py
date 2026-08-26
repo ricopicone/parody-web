@@ -259,7 +259,12 @@ def _assemble(prep: Prepared, words: list, audio_bytes) -> dict:
         clozes.append({
             "token": spot.index,
             "kind": "math_cloze" if math_cloze else spot.token.kind,
-            "answer": "" if spot.token.latex else spot.token.text,
+            # The picture when there is one, the words when there is not.
+            # A maths answer whose SVG could not be drawn used to reveal an
+            # empty plate — a blank with nothing under it, which is what a
+            # reader reported.
+            "answer": ("" if (spot.token.latex and prep.svgs.get(spot.index))
+                       else spot.token.text),
             "svg": prep.svgs.get(spot.index) or "",
             "src": spot.token.src,
             "page": spot.page, "x0": spot.box[0], "y0": spot.box[1],

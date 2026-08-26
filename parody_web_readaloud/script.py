@@ -94,6 +94,45 @@ def _strip_delims(raw: str) -> str:
     return raw
 
 
+# TeX's specials, for prose being put inside \text{}.
+_TEX_SPECIAL = {"\\": "\\textbackslash{}", "{": "\\{", "}": "\\}",
+                "$": "\\$", "&": "\\&", "%": "\\%", "#": "\\#",
+                "_": "\\_", "^": "\\^{}", "~": "\\~{}"}
+
+
+def _tex_text(prose: str) -> str:
+    return "".join(_TEX_SPECIAL.get(c, c) for c in prose)
+
+
+def _inline_cloze_token(parts: list) -> Token:
+    """One inline cloze, from its prose and maths parts in order.
+
+    An answer that is partly or wholly maths becomes a MATHS cloze: the parts
+    are stitched into one expression, prose wrapped in \\text{}, so the single
+    picture the reveal shows is the whole answer and SRE speaks the whole
+    answer. A purely verbal answer is left exactly as it was.
+    """
+    if not any(kind == "math" for kind, _ in parts):
+        words = "".join(value for _, value in parts).split()
+        return Token(kind="cloze", answer=words, text=" ".join(words))
+
+    latex, readable = [], []
+    for kind, value in parts:
+        if kind == "math":
+            latex.append(value)
+            readable.append(value)
+            continue
+        if not value.strip():
+            continue
+        latex.append(f"\\text{{{_tex_text(value.strip())}}}")
+        readable.append(value.strip())
+    # `text` is the fallback the reveal falls back to if the picture cannot be
+    # drawn — better a line of source than a blank with nothing under it.
+    return Token(kind="cloze", latex=" ".join(latex),
+                 text=" ".join(readable),
+                 answer=" ".join(readable).split())
+
+
 def _block_cloze(raw: str) -> Token:
     """One `::: {.cloze}` block, as a single cloze token.
 
@@ -117,6 +156,13 @@ class _ScriptParser(HTMLParser):
         self._skip_depth = 0
         self._math = None                  # "inline" | "display" while open
         self._inline_cloze = False
+        # An inline cloze can HIDE MATHS — "\\cloze{$V_e$}" — and the answer is
+        # then a mixture of prose and expressions. Collected as parts so the
+        # maths is not lost: opening a math span used to reset the buffer, so
+        # the cloze ended up empty (invisible AND unspoken, because the answer
+        # is also what is read aloud) and the maths was emitted as a token of
+        # its own, which is never printed and so could never align.
+        self._cloze_parts = []
         self._block_depth = 0              # >0 while inside a cloze block
         self._buf = []
 
@@ -144,10 +190,13 @@ class _ScriptParser(HTMLParser):
             self._block_depth = 1
             self._buf = []
         elif tag == "span" and "math" in classes:
+            if self._inline_cloze:
+                self._cloze_parts.append(("text", "".join(self._buf)))
             self._math = "display" if "display" in classes else "inline"
             self._buf = []
         elif tag == "span" and "cloze-key" in classes:
             self._inline_cloze = True
+            self._cloze_parts = []
             self._buf = []
         elif tag == "img" and a.get("data-cloze-of"):
             self.tokens.append(Token(kind="figure_cloze", src=a.get("src", "")))
@@ -175,6 +224,12 @@ class _ScriptParser(HTMLParser):
         if tag == "span" and self._math:
             raw = "".join(self._buf).strip()
             latex = _strip_delims(raw)
+            if self._inline_cloze:
+                # Part of the answer, not a token. It is behind the blank, so
+                # the page never prints it and an alignment could only fail.
+                self._cloze_parts.append(("math", latex))
+                self._math, self._buf = None, []
+                return
             plain, blanks = strip_cloze_markers(latex)
             self.tokens.append(Token(kind="math", latex=latex,
                                      display=self._math == "display",
@@ -182,10 +237,10 @@ class _ScriptParser(HTMLParser):
                                      plain=plain if blanks else ""))
             self._math, self._buf = None, []
         elif tag == "span" and self._inline_cloze:
-            words = "".join(self._buf).split()
-            self.tokens.append(Token(kind="cloze", answer=words,
-                                     text=" ".join(words)))
+            self._cloze_parts.append(("text", "".join(self._buf)))
+            self.tokens.append(_inline_cloze_token(self._cloze_parts))
             self._inline_cloze, self._buf = False, []
+            self._cloze_parts = []
 
     def handle_data(self, data):
         if self._skip_depth:

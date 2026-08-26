@@ -158,3 +158,57 @@ class InEquationClozeTests(SimpleTestCase):
         from parody_web_readaloud.script import strip_cloze_markers
         raw = r"a = \class{cloze-key}{oops"
         self.assertEqual(strip_cloze_markers(raw), (raw, 0))
+
+
+class ClozeHidingMathsTests(SimpleTestCase):
+    """An inline cloze whose answer is maths — `\\cloze{$V_e$}`.
+
+    Opening a math span used to reset the buffer, so the cloze token came out
+    EMPTY: nothing to reveal, and nothing spoken either, because the answer is
+    also what is read aloud. The maths meanwhile became a token of its own,
+    which the page never prints and so could never align. 25 blanks in the
+    electronics primer reached readers that way (reported by a student).
+    """
+
+    def _clozes(self, html):
+        return [t for t in parse_script(html) if t.kind == "cloze"]
+
+    def test_an_all_maths_answer_survives(self):
+        html = ('<p>use <span class="cloze-key">'
+                r'<span class="math inline">\(V_e\)</span></span> here</p>')
+        clozes = self._clozes(html)
+        self.assertEqual(len(clozes), 1)
+        self.assertEqual(clozes[0].latex, "V_e")
+
+    def test_the_maths_is_not_also_a_token_of_its_own(self):
+        """It is behind the blank; the page never prints it."""
+        html = ('<p>use <span class="cloze-key">'
+                r'<span class="math inline">\(V_e\)</span></span> here</p>')
+        self.assertEqual([t for t in parse_script(html) if t.kind == "math"], [])
+
+    def test_prose_before_the_maths_is_kept(self):
+        html = ('<p>the <span class="cloze-key">voltage source '
+                r'<span class="math inline">\(V_e\)</span></span> drops</p>')
+        cloze = self._clozes(html)[0]
+        self.assertIn(r"\text{voltage source}", cloze.latex)
+        self.assertIn("V_e", cloze.latex)
+        self.assertIn("voltage source", cloze.text)
+
+    def test_prose_after_the_maths_is_kept_too(self):
+        html = ('<p>at <span class="cloze-key">'
+                r'<span class="math inline">\(10\)</span> volts</span> now</p>')
+        cloze = self._clozes(html)[0]
+        self.assertIn(r"\text{volts}", cloze.latex)
+        self.assertIn("10", cloze.latex)
+
+    def test_a_purely_verbal_answer_is_untouched(self):
+        html = ('<p>the <span class="cloze-key">sampling rate</span> sets</p>')
+        cloze = self._clozes(html)[0]
+        self.assertEqual(cloze.answer, ["sampling", "rate"])
+        self.assertEqual(cloze.latex, "")
+
+    def test_tex_specials_in_the_prose_are_escaped(self):
+        html = ('<p><span class="cloze-key">50% of '
+                r'<span class="math inline">\(x\)</span></span> so</p>')
+        cloze = self._clozes(html)[0]
+        self.assertIn(r"\%", cloze.latex)
