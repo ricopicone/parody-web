@@ -93,6 +93,20 @@ nav.edition-switcher strong { color: var(--ink); }
 .version-icon.ds { background: #2a9d8f; }
 @media (min-width: 62rem) { .version-icon { margin-right: -3.6rem; } }
 
+/* Marks a chapter that is authored and numbered but not released. Only ever
+   seen by staff — a reader who cannot see the chapter cannot see its tag —
+   but without it an unreleased chapter looks, to the one person who CAN act
+   on it, exactly like a published one.
+
+   Amber rather than the accent: the accent already means "link" and "version",
+   and this is a caution, not a destination. Both --mark values are theme
+   tokens, so it follows dark mode without a second rule. */
+.draft-tag { font-family: var(--font-display); font-size: var(--fs-xs);
+    font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--ink); background: var(--mark); border-radius: 4px;
+    padding: .05rem .35rem; margin-left: .45rem; vertical-align: .08em;
+    white-space: nowrap; }
+
 .draft-banner { font-family: var(--font-display); font-size: .85rem;
     background: var(--accent-wash); border: 1px solid var(--accent-soft); border-radius: 6px;
     padding: .5rem .8rem; margin: .3rem 0 1rem; }

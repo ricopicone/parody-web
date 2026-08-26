@@ -183,7 +183,12 @@ def _resolve_code(request, code):
         for ch in visible_chapters(book, request):
             if ch.hash and ch.hash.lower() == code:
                 return reverse("parody_web:chapter", args=[ch.slug]) + ed_q
-        for sec in book.sections.select_related("chapter"):
+        # Through the same filter as the chapter branch above. This walked
+        # every section regardless, so a code printed against a section of an
+        # unreleased chapter redirected a student straight at it — the section
+        # view then answered 404, so no prose escaped, but the redirect
+        # confirmed the code resolves and named the chapter it lives in.
+        for sec in _all_sections_ordered(book, request):
             base = reverse("parody_web:section",
                            args=[sec.chapter.slug, sec.slug])
             if sec.hash and sec.hash.lower() == code:

@@ -12,7 +12,8 @@
 {% block body %}
 <nav class="crumbs"><a href="{% index_url book %}">{{ book.title }}</a></nav>
 
-<h1>{% if chapter.number %}{% if chapter.appendix %}Appendix {% endif %}{{ chapter.number }}. {% endif %}{{ chapter.title|code_spans }}</h1>
+<h1>{% if chapter.number %}{% if chapter.appendix %}Appendix {% endif %}{{ chapter.number }}. {% endif %}{{ chapter.title|code_spans }}{% if chapter.draft %}<span class="draft-tag">Draft</span>{% endif %}</h1>
+{% if chapter.draft %}<div class="draft-banner">This chapter is <strong>in development</strong> and not yet visible to readers — you are viewing it as staff.</div>{% endif %}
 
 {% include "parody_web/_section_rail.html" %}
 

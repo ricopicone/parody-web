@@ -1,6 +1,6 @@
 {% load parody_web %}
 <nav class="side" aria-label="Chapter contents">
-  <p class="side-cap">{% if chapter.number %}{% if chapter.appendix %}Appendix {{ chapter.number }}{% else %}Chapter {{ chapter.number }}{% endif %}{% else %}Contents{% endif %}</p>
+  <p class="side-cap">{% if chapter.number %}{% if chapter.appendix %}Appendix {{ chapter.number }}{% else %}Chapter {{ chapter.number }}{% endif %}{% else %}Contents{% endif %}{% if chapter.draft %}<span class="draft-tag">Draft</span>{% endif %}</p>
   <ol class="nav-list">
   {% for s in chapter_nav %}
     <li class="nav-item{% if s.is_current %} on{% endif %}">

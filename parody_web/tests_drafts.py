@@ -248,3 +248,100 @@ class DraftCrossRefTests(TestCase):
         self.assertNotIn('<a class="xref"', html)  # but nothing to follow
         self.assertIn('<span class="xref"', html)
         self.assertNotIn("/two/", html)            # and no url leaked
+
+
+@override_settings(BOOK_SLUG="dbook",
+                   PARODY_WEB_ACCESS_POLICY="parody_web.tests_drafts.StudentPolicy")
+class DraftShortCodeTests(TestCase):
+    """The printed short code, which is the one surface that forgot to filter.
+
+    `_resolve_code` walked `book.sections` unfiltered while the CHAPTER branch
+    directly above it used visible_chapters — so a code printed against a
+    section of an unreleased chapter redirected a student straight at it. The
+    section view then answered 404, so no prose escaped; what escaped was the
+    fact that the code resolves at all, and to which chapter slug.
+    """
+
+    def setUp(self):
+        _import_drafts()
+        User = get_user_model()
+        self.anon = Client()
+        self.as_student = Client()
+        self.as_student.force_login(
+            User.objects.create_user("stu", "stu@example.com", "pw"))
+        self.as_staff = Client()
+        self.as_staff.force_login(
+            User.objects.create_superuser("boss", "boss@example.com", "pw"))
+
+    def test_a_code_for_a_draft_section_does_not_resolve(self):
+        # "twa" is chapter two's section hash; two is the draft chapter.
+        for who, c in (("anonymous", self.anon), ("student", self.as_student)):
+            with self.subTest(who=who):
+                self.assertEqual(c.get("/twa").status_code, 404)
+
+    def test_a_code_for_a_draft_chapter_does_not_resolve(self):
+        for who, c in (("anonymous", self.anon), ("student", self.as_student)):
+            with self.subTest(who=who):
+                self.assertEqual(c.get("/tw").status_code, 404)
+
+    def test_a_released_section_code_still_redirects(self):
+        """The filter must not cost the feature its point."""
+        resp = self.anon.get("/ona")
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/one/one-a/", resp["Location"])
+
+    def test_staff_can_still_follow_a_draft_code(self):
+        resp = self.as_staff.get("/twa")
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/two/two-a/", resp["Location"])
+
+
+@override_settings(BOOK_SLUG="dbook",
+                   PARODY_WEB_ACCESS_POLICY="parody_web.tests_drafts.StudentPolicy")
+class DraftIndicatorTests(TestCase):
+    """Staff see drafts, and must be able to TELL they are drafts.
+
+    A chapter that is invisible to readers looks, to the one person who can see
+    it, exactly like a published one — so the only person who can act on it is
+    the one with no way to know. Everything asserted here is staff-only by
+    construction: a reader who cannot see the chapter cannot see its marker.
+    """
+
+    def setUp(self):
+        _import_drafts()
+        User = get_user_model()
+        self.as_staff = Client()
+        self.as_staff.force_login(
+            User.objects.create_superuser("boss", "boss@example.com", "pw"))
+        self.as_student = Client()
+        self.as_student.force_login(
+            User.objects.create_user("stu", "stu@example.com", "pw"))
+
+    def test_the_contents_marks_a_draft_chapter(self):
+        self.assertContains(self.as_staff.get("/"), "draft-tag")
+
+    def test_the_contents_marks_only_the_draft_chapter(self):
+        """One tag, not one per chapter — the marker has to mean something."""
+        self.assertEqual(self.as_staff.get("/").content.count(b"draft-tag"), 1)
+
+    def test_the_chapter_page_says_so(self):
+        page = self.as_staff.get("/two/")
+        self.assertContains(page, "draft-tag")
+        self.assertContains(page, "not yet visible to readers")
+
+    def test_the_section_page_says_so(self):
+        page = self.as_staff.get("/two/two-a/")
+        self.assertContains(page, "not yet visible to readers")
+
+    def test_a_released_section_says_nothing(self):
+        page = self.as_staff.get("/one/one-a/")
+        self.assertNotContains(page, "not yet visible to readers")
+        self.assertNotContains(page, "draft-tag")
+
+    def test_a_released_chapter_says_nothing(self):
+        self.assertNotContains(self.as_staff.get("/one/"), "draft-tag")
+
+    def test_a_student_sees_no_marker_because_they_see_no_draft(self):
+        page = self.as_student.get("/")
+        self.assertNotContains(page, "draft-tag")
+        self.assertNotContains(page, "Two")
