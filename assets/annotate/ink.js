@@ -12,27 +12,39 @@ import Konva from 'konva';
 import { buildStroke, hits } from './shapes.js';
 import { screenToPdf } from './paged.js';
 import { displayColor } from './theme.js';
+import { shouldBlockTouch } from './pointer-gate.js';
 
 const ERASER_RADIUS = 6;   // PDF points
 
 /**
- * Bind pointer listeners to a host element, and hand back the undo.
+ * Bind listeners to a host element, and hand back the undo.
  *
  * Returned as a pair on purpose. A layer does not always own its host — the
  * margin pad draws on the page's own element — so listeners left behind
  * outlive the layer that added them: a page scrolled past and returned to
  * gained a second set, and handled every stroke twice.
  *
- * touchAction goes with them. Left at 'none' on a host we no longer draw on,
- * the reader cannot scroll the document by dragging that strip.
+ * touchAction goes with them. Left behind on a host we no longer draw on, it
+ * decides how the reader's finger behaves over a strip nothing is listening
+ * to. It is asked for rather than assumed: under a stylus it must leave
+ * scrolling and pinch-zoom alone (see PointerGate.touchAction).
+ *
+ * A handler may be given as a plain function, or as { fn, options } when it
+ * needs addEventListener options — the touch handlers must be non-passive to
+ * be allowed to cancel a gesture at all.
  */
-export function bindHost(host, handlers) {
+export function bindHost(host, handlers, { touchAction = 'none' } = {}) {
   const previousTouchAction = host.style.touchAction;
-  host.style.touchAction = 'none';
-  const bound = Object.entries(handlers);
-  for (const [type, fn] of bound) host.addEventListener(type, fn);
+  host.style.touchAction = touchAction;
+  const bound = Object.entries(handlers).map(([type, handler]) => (
+    typeof handler === 'function'
+      ? [type, handler, undefined]
+      : [type, handler.fn, handler.options]));
+  for (const [type, fn, options] of bound) host.addEventListener(type, fn, options);
   return () => {
-    for (const [type, fn] of bound) host.removeEventListener(type, fn);
+    for (const [type, fn, options] of bound) {
+      host.removeEventListener(type, fn, options);
+    }
     host.style.touchAction = previousTouchAction;
   };
 }
@@ -85,8 +97,7 @@ export class InkLayer {
 
   _bind(host) {
     const down = (event) => {
-      this.gate.note(event);
-      if (!this.gate.shouldDraw(event)) return;       // palm, or touch-to-pan
+      if (!this.gate.shouldDraw(event)) return;       // palm, finger, or pinch
       if (this.tools.mode === 'select') return;
       event.preventDefault();
       host.setPointerCapture(event.pointerId);
@@ -118,14 +129,41 @@ export class InkLayer {
       this._commit();
     };
 
+    // Non-passive so it may cancel the gesture: see shouldBlockTouch. A
+    // finger's gesture is never cancelled, which is how the section still
+    // scrolls and pinches while the pen is drawing on it.
+    const touch = {
+      fn: (event) => {
+        if (!shouldBlockTouch(event, { drawing: this.drawing,
+                                       fingerDraws: this.gate.fingerDraws })) {
+          return;
+        }
+        if (event.cancelable) event.preventDefault();
+      },
+      options: { passive: false },
+    };
+
     this.unbind = bindHost(host, { pointerdown: down, pointermove: move,
-                                   pointerup: up, pointercancel: up });
+                                   pointerup: up, pointercancel: up,
+                                   touchstart: touch, touchmove: touch },
+                           { touchAction: this.gate.touchAction });
     // NOT pointerleave. setPointerCapture already guarantees the move and up
     // events keep arriving once a stroke starts, and leave fires while the
     // pointer is merely crossing a child element — Konva's own canvas sits
     // inside this host — which ended the stroke one point in and threw the
     // rest away. It looked intermittent because whether a leave fires depends
     // on the path the pointer takes.
+  }
+
+  /**
+   * Take the gate's current touch-action.
+   *
+   * Called when the reader flips finger drawing: the pages already built keep
+   * the touch-action they were bound with otherwise, so the setting would
+   * only reach pages rendered after it.
+   */
+  applyTouchAction() {
+    this.host.style.touchAction = this.gate.touchAction;
   }
 
   _eraseAt(at) {

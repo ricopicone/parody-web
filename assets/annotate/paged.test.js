@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { screenToPdf, pdfToScreen, pagedTransform, pageAt, windowAround }
   from './paged.js';
-import { PointerGate } from './pointer-gate.js';
 
 test('the page origin maps to the PDF origin', () => {
   assert.deepEqual(screenToPdf(0, 0, { scale: 1 }), { x: 0, y: 0 });
@@ -48,25 +47,4 @@ test('the render window is clamped to the document', () => {
   assert.deepEqual(windowAround(0, 3), [0, 1]);
   assert.deepEqual(windowAround(1, 3), [0, 1, 2]);
   assert.deepEqual(windowAround(2, 3), [1, 2]);
-});
-
-test('touch draws until a pen appears, then never again this session', () => {
-  const gate = new PointerGate();
-  assert.equal(gate.shouldDraw({ pointerType: 'touch' }), true);
-  gate.note({ pointerType: 'pen' });
-  assert.equal(gate.shouldDraw({ pointerType: 'touch' }), false);
-  assert.equal(gate.shouldDraw({ pointerType: 'pen' }), true);
-});
-
-test('once the pen is known, touch pans instead of drawing', () => {
-  const gate = new PointerGate();
-  assert.equal(gate.shouldPan({ pointerType: 'touch' }), false);
-  gate.note({ pointerType: 'pen' });
-  assert.equal(gate.shouldPan({ pointerType: 'touch' }), true);
-});
-
-test('a mouse always draws', () => {
-  const gate = new PointerGate();
-  gate.note({ pointerType: 'pen' });
-  assert.equal(gate.shouldDraw({ pointerType: 'mouse' }), true);
 });

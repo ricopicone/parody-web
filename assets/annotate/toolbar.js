@@ -37,7 +37,8 @@ function group(label) {
 
 export function buildToolbar(root, tools,
                              { undo, redo, zoomIn, zoomOut, zoomReset,
-                               toggleTheme, print }) {
+                               toggleTheme, print,
+                               fingerDraws, toggleFingerDraws }) {
   root.innerHTML = '';
 
   const modes = group('Tools');
@@ -92,6 +93,17 @@ export function buildToolbar(root, tools,
   root.appendChild(zoom);
 
   const view = group('View');
+
+  // Touchscreens only — annotate.css hides it where there is no coarse
+  // pointer, because a reader with a mouse has nothing to decide here.
+  const fingerButton = button(ICONS.finger, '');
+  fingerButton.className = 'ink-finger';
+  fingerButton.addEventListener('click', () => {
+    toggleFingerDraws?.();
+    reflectFinger();
+  });
+  view.appendChild(fingerButton);
+
   const themeButton = button(ICONS.theme, 'Dark mode (⇧D)');
   themeButton.addEventListener('click', toggleTheme);
   view.appendChild(themeButton);
@@ -116,6 +128,22 @@ export function buildToolbar(root, tools,
       widths.appendChild(el);
     }
   }
+
+  /**
+   * Say which way the toggle currently sits, in the title as well as the
+   * highlight: what it costs is not guessable from a pressed button.
+   */
+  function reflectFinger() {
+    const on = !!fingerDraws?.();
+    fingerButton.classList.toggle('is-on', on);
+    const title = on
+      ? 'Finger draws — tap to scroll and pinch with a finger again'
+      : 'Finger scrolls and pinches — tap to draw with a finger instead';
+    fingerButton.title = title;
+    fingerButton.setAttribute('aria-label', title);
+    fingerButton.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  reflectFinger();
 
   function reflect() {
     modeButtons.forEach((el) =>

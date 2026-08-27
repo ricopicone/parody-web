@@ -19,6 +19,16 @@ import { Tools } from './tools.js';
 import { bindKeys, buildToolbar } from './toolbar.js';
 
 const SAVE_DEBOUNCE_MS = 500;
+const FINGER_DRAWS_KEY = 'parody-ink-finger-draws';
+
+/** Off unless this browser has been told otherwise: the stylus is the default. */
+function savedFingerDraws() {
+  try {
+    return localStorage.getItem(FINGER_DRAWS_KEY) === '1';
+  } catch (err) {
+    return false;                                          // private mode
+  }
+}
 
 async function boot() {
   const root = document.querySelector('[data-ink-root]');
@@ -85,7 +95,7 @@ async function boot() {
   });
 
   const tools = new Tools();
-  const gate = new PointerGate();
+  const gate = new PointerGate({ fingerDraws: savedFingerDraws() });
 
   // Two ink layers per page — the page and its margin — built when the page
   // renders and given up when it scrolls out of the window, which is the same
@@ -146,6 +156,18 @@ async function boot() {
     zoomOut: () => chrome?.showZoom(view.stepZoom(-1) * 100),
     zoomReset: () => chrome?.showZoom(view.setZoom(1) * 100),
     print: null,          // filled in below, once the root is known
+    // A tablet with no stylus: the reader trades scrolling and pinch-zoom for
+    // being able to draw with a finger, and gets both back by turning it off.
+    fingerDraws: () => gate.fingerDraws,
+    toggleFingerDraws: () => {
+      gate.fingerDraws = !gate.fingerDraws;
+      try {
+        localStorage.setItem(FINGER_DRAWS_KEY, gate.fingerDraws ? '1' : '0');
+      } catch (err) { /* private mode */ }
+      // The pages already built keep the touch-action they were bound with.
+      eachLayer((l) => l.applyTouchAction());
+      return gate.fingerDraws;
+    },
     toggleTheme: () => {
       const next = isDark() ? 'light' : 'dark';
       document.documentElement.dataset.theme = next;

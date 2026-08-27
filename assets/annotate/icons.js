@@ -57,6 +57,13 @@ export const ICONS = {
     <path d="M7 14.2h10v6.2H7z"/>
     <path d="M6.4 12.4h1.4"/>`),
 
+  // A hand: the finger-draw toggle, which is about the hand rather than the
+  // pen. Index finger raised over a fist, drawn to read at 16px.
+  finger: svg(`
+    <path d="M10 11.4V5.2a1.6 1.6 0 0 1 3.2 0v6.2"/>
+    <path d="M13.2 11.6V9.4a1.5 1.5 0 0 1 3 0v2.2"/>
+    <path d="M16.2 11.8v-1.2a1.5 1.5 0 0 1 3 0v5.2a4.8 4.8 0 0 1-4.8 4.8h-2.1a4.5 4.5 0 0 1-3.5-1.7l-3.1-3.9a1.5 1.5 0 0 1 2.2-2l1.9 1.8"/>`),
+
   // A half-filled disc: the same idea as the site's own theme toggle.
   theme: svg(`
     <circle cx="12" cy="12" r="8.2"/>

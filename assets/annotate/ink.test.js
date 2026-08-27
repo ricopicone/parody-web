@@ -7,7 +7,7 @@ function fakeHost(touchAction = '') {
   return {
     style: { touchAction },
     bound: [],
-    addEventListener(type, fn) { this.bound.push([type, fn]); },
+    addEventListener(type, fn, options) { this.bound.push([type, fn, options]); },
     removeEventListener(type, fn) {
       const at = this.bound.findIndex(([t, f]) => t === type && f === fn);
       if (at > -1) this.bound.splice(at, 1);
@@ -40,20 +40,35 @@ test('the same host bound and unbound many times accumulates nothing', () => {
   assert.equal(host.bound.length, 0);
 });
 
-test('drawing turns native scrolling off, and giving up the host turns it back on', () => {
-  // Left at 'none', a released margin becomes a strip the reader cannot
-  // scroll the document from.
+test('the host takes the touch-action asked of it, and gives it back after', () => {
+  // Left behind on a released margin, it decides how a finger behaves over a
+  // strip nothing is listening to.
   const host = fakeHost('pan-y');
-  const unbind = bindHost(host, { pointerdown: () => {} });
-  assert.equal(host.style.touchAction, 'none');
+  const unbind = bindHost(host, { pointerdown: () => {} },
+                          { touchAction: 'manipulation' });
+  assert.equal(host.style.touchAction, 'manipulation');
 
   unbind();
   assert.equal(host.style.touchAction, 'pan-y', 'exactly what it was before');
+});
+
+test('a handler may carry addEventListener options, and lose them on the way out', () => {
+  // The touch handlers must be non-passive or the browser refuses to let them
+  // cancel a stylus gesture — and a listener added with options that is
+  // removed without them is never actually removed.
+  const host = fakeHost();
+  const touch = () => {};
+  const unbind = bindHost(host, { touchstart: { fn: touch,
+                                                options: { passive: false } } });
+  assert.deepEqual(host.bound, [['touchstart', touch, { passive: false }]]);
+
+  unbind();
+  assert.deepEqual(host.bound, [], 'nothing left bound');
 });
 
 test('the handlers bound are the ones handed over', () => {
   const host = fakeHost();
   const down = () => {};
   bindHost(host, { pointerdown: down });
-  assert.deepEqual(host.bound, [['pointerdown', down]]);
+  assert.deepEqual(host.bound, [['pointerdown', down, undefined]]);
 });

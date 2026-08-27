@@ -148,6 +148,15 @@
 }
 .ink-tool-group[hidden] { display: none; }
 
+/* Finger drawing is a choice only a touchscreen offers: a reader with a mouse
+   has nothing to decide, and the button would only be one more thing to
+   wonder about. */
+.ink-finger { display: none; }
+
+@media (pointer: coarse) {
+  .ink-finger { display: inline-flex; }
+}
+
 .ink-swatch {
   width: .85rem; height: .85rem; border-radius: 50%; padding: 0;
   border: 1px solid rgba(127, 127, 127, .4);
