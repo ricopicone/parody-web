@@ -96,7 +96,19 @@
 }
 
 .ink-layer { position: absolute; inset: 0; }
-.ink-layer canvas { touch-action: none; }
+
+/* touch-action is decided on the element the finger actually HITS, and that
+   is the canvas — so a value set on the host is invisible unless the chain
+   down to the canvas passes it along, and touch-action does not inherit on
+   its own. Konva puts a .konvajs-content div of its own in between, which is
+   why both are named here: miss it and the canvas inherits 'auto' from that
+   div rather than the host's setting.
+   This read `.ink-layer canvas { touch-action: none }`, which was invisible
+   while the host said none too — and became the whole bug the moment the host
+   started saying 'manipulation': the stylus rule landed, and a finger still
+   could neither scroll the section nor pinch it (task #683, twice). */
+.ink-layer .konvajs-content, .ink-layer canvas,
+.ink-pad .konvajs-content, .ink-pad canvas { touch-action: inherit; }
 
 /* Toolbar, rendered into parody-web's PDF bar.
 
