@@ -4,11 +4,11 @@ import { Tools, TOOL_SPECS } from './tools.js';
 
 test('each tool keeps its own width', () => {
   const t = new Tools();
-  t.set('pen'); t.setSize(6);
+  t.set('pen'); t.setSize(3.5);
   t.set('line');
   assert.equal(t.size, TOOL_SPECS.line.size, 'line kept its own width');
   t.set('pen');
-  assert.equal(t.size, 6, 'the pen remembered mine');
+  assert.equal(t.size, 3.5, 'the pen remembered mine');
 });
 
 test('a shape does not inherit the highlighter width', () => {
@@ -18,22 +18,22 @@ test('a shape does not inherit the highlighter width', () => {
   assert.equal(t.size, 14);
   assert.equal(t.opacity, 0.35);
   t.set('line');
-  assert.equal(t.size, 2);
+  assert.equal(t.size, TOOL_SPECS.line.size);
   assert.equal(t.opacity, 1);
 });
 
 test('a shape does not inherit the pen width either', () => {
   const t = new Tools();
-  t.set('pen'); t.setSize(6);
+  t.set('pen'); t.setSize(3.5);
   t.set('rect');
-  assert.equal(t.size, 2);
+  assert.equal(t.size, TOOL_SPECS.rect.size);
 });
 
 test('setting a width touches only the current tool', () => {
   const t = new Tools();
   t.set('highlighter'); t.setSize(28);
   t.set('pen');
-  assert.equal(t.size, 2);
+  assert.equal(t.size, TOOL_SPECS.pen.size);
   t.set('highlighter');
   assert.equal(t.size, 28);
 });
@@ -64,4 +64,25 @@ test('colour is shared across tools, as a reader expects', () => {
   t.setColor('#dc2626');
   t.set('rect');
   assert.equal(t.color, '#dc2626');
+});
+
+test('the pen opens fine, with something finer still under it', () => {
+  // Reported by a reader annotating between the printed lines of a book: the
+  // default was the second-heaviest thing the pen could do.
+  const t = new Tools();
+  assert.equal(t.mode, 'pen');
+  assert.ok(Math.min(...t.widths) < t.size,
+            'the default is not the finest the pen offers');
+  assert.ok(t.size <= 1, 'and it is a fine line to begin with');
+});
+
+test('a shape opens at the same weight as the pen', () => {
+  // They are the same nib: a line beside a pen stroke at the same setting
+  // should not come out heavier.
+  const t = new Tools();
+  const pen = t.size;
+  for (const shape of ['line', 'rect', 'circle']) {
+    t.set(shape);
+    assert.equal(t.size, pen, shape);
+  }
 });

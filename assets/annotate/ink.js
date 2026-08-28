@@ -156,6 +156,24 @@ export class InkLayer {
   }
 
   /**
+   * Give up the stroke in flight without committing it.
+   *
+   * A second finger landing means the reader is pinching, not drawing — which
+   * only arises with finger drawing on, where the first finger did start a
+   * stroke. Committing it would leave a stray mark behind every zoom.
+   */
+  abandon() {
+    if (!this.drawing) return;
+    this.drawing = false;
+    this.points = [];
+    if (this.preview) {
+      this.preview.destroy();
+      this.preview = null;
+      this.layer.batchDraw();
+    }
+  }
+
+  /**
    * Take the gate's current touch-action.
    *
    * Called when the reader flips finger drawing: the pages already built keep

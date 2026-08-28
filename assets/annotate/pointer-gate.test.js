@@ -48,11 +48,11 @@ test('touch pans, which is what scroll and pinch-zoom are made of', () => {
 });
 
 test('the touch-action a gate asks of its host', () => {
-  // 'manipulation' is pan-x + pan-y + pinch-zoom: everything the reader needs
-  // and nothing else. The old layer hardcoded 'none', which is why a finger
-  // could neither scroll the section nor pinch it.
+  // One-finger scrolling is the browser's; the two-finger gesture is ours,
+  // because pinch drives the viewer's zoom rather than the browser's. The old
+  // layer hardcoded 'none', which is why a finger could do neither.
   const gate = new PointerGate();
-  assert.equal(gate.touchAction, 'manipulation');
+  assert.equal(gate.touchAction, 'pan-x pan-y');
 
   gate.fingerDraws = true;
   assert.equal(gate.touchAction, 'none');

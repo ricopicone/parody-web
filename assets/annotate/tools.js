@@ -19,12 +19,25 @@ export const COLORS = ['#2563eb', '#dc2626', '#16a34a',
  * a fraction of that. Offering one list for both would mean most of it is
  * useless in either mode.
  */
+/**
+ * The ink ladder sits a rung lower than it used to.
+ *
+ * 2pt was the default and 1pt the finest on offer, which is a heavy line for
+ * annotating a book — the reader who asked for this was writing between
+ * printed lines. The whole ladder shifts rather than only the default, so
+ * there is still something finer to reach for underneath it.
+ *
+ * The shapes move with the pen deliberately: they are the same nib, and a
+ * line drawn beside a pen stroke at "the same" setting should have the same
+ * weight. The highlighter and eraser are untouched — neither complaint nor
+ * relation.
+ */
 export const TOOL_SPECS = {
-  pen:         { size: 2,  opacity: 1,    widths: [1, 2, 3.5, 6] },
+  pen:         { size: 1,  opacity: 1,    widths: [0.5, 1, 2, 3.5] },
   highlighter: { size: 14, opacity: 0.35, widths: [8, 14, 20, 28] },
-  line:        { size: 2,  opacity: 1,    widths: [1, 2, 3.5, 6] },
-  rect:        { size: 2,  opacity: 1,    widths: [1, 2, 3.5, 6] },
-  circle:      { size: 2,  opacity: 1,    widths: [1, 2, 3.5, 6] },
+  line:        { size: 1,  opacity: 1,    widths: [0.5, 1, 2, 3.5] },
+  rect:        { size: 1,  opacity: 1,    widths: [0.5, 1, 2, 3.5] },
+  circle:      { size: 1,  opacity: 1,    widths: [0.5, 1, 2, 3.5] },
   erase:       { size: 12, opacity: 1,    widths: [6, 12, 24, 40] },
 };
 

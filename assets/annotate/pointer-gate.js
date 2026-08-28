@@ -32,12 +32,14 @@ export class PointerGate {
   /**
    * The touch-action an ink host must carry under this gate.
    *
-   * 'manipulation' is pan-x + pan-y + pinch-zoom — everything a reader needs
-   * from a finger, and nothing else. The layer used to hardcode 'none', which
-   * is why a finger could neither scroll the section nor pinch it.
+   * 'pan-x pan-y' hands one-finger scrolling to the browser, which does it
+   * better than we would, and keeps the two-finger gesture for ourselves:
+   * pinch drives the viewer's own zoom (see pinch.js), because the browser's
+   * pinch magnifies the whole application and takes the toolbar off-screen
+   * with it. Saying 'manipulation' instead would let the browser have it.
    */
   get touchAction() {
-    return this.fingerDraws ? 'none' : 'manipulation';
+    return this.fingerDraws ? 'none' : 'pan-x pan-y';
   }
 }
 

@@ -6,7 +6,8 @@
  * annotate; otherwise it leaves the page alone and the server's fallback
  * stands.
  */
-import { PageView, PAD_RATIO } from './pages.js';
+import { PageView, PAD_RATIO, ZOOM_STEPS } from './pages.js';
+import { pinchDistance, pinchMidpoint, stepFor, anchoredScroll } from './pinch.js';
 import { InkLayer } from './ink.js';
 import { InkStore, PAD } from './store.js';
 import { LayerSet } from './layers.js';
@@ -204,6 +205,53 @@ async function boot() {
     ticking = true;
     requestAnimationFrame(() => { view.update(); ticking = false; });
   }, { passive: true });
+
+  // Pinch zooms the VIEWER, not the browser.
+  //
+  // The browser's own pinch magnifies the whole application: the reader zooms
+  // in on a figure and the toolbar leaves with everything else. Reserved for
+  // us by the gate's touch-action ('pan-x pan-y' keeps one-finger scrolling
+  // native and holds back the rest) and mapped onto the same ZOOM_STEPS
+  // ladder the + and − buttons climb, so the readout follows too.
+  let pinch = null;
+
+  scroller.addEventListener('touchstart', (event) => {
+    if (event.touches.length !== 2) return;
+    // Two fingers are a gesture, never a stroke — this matters only with
+    // finger drawing on, where the first finger did start one.
+    eachLayer((l) => l.abandon());
+    const box = scroller.getBoundingClientRect();
+    const mid = pinchMidpoint(event.touches);
+    pinch = {
+      from: pinchDistance(event.touches),
+      zoom: view.zoom,
+      focal: { x: mid.x - box.left, y: mid.y - box.top },
+    };
+    if (event.cancelable) event.preventDefault();
+  }, { passive: false });
+
+  scroller.addEventListener('touchmove', (event) => {
+    if (!pinch || event.touches.length !== 2) return;
+    if (event.cancelable) event.preventDefault();
+    const next = stepFor(pinch.zoom,
+                         pinchDistance(event.touches) / pinch.from, ZOOM_STEPS);
+    if (next === view.zoom) return;
+    // setZoom re-anchors on the scrollbar's position, which is not where the
+    // fingers are; take the scroll back afterwards so the figure being
+    // pinched stays under them.
+    const before = { zoom: view.zoom, top: scroller.scrollTop,
+                     left: scroller.scrollLeft };
+    chrome?.showZoom(view.setZoom(next) * 100);
+    scroller.scrollTop =
+      anchoredScroll(before.top, pinch.focal.y, before.zoom, view.zoom);
+    scroller.scrollLeft =
+      anchoredScroll(before.left, pinch.focal.x, before.zoom, view.zoom);
+  }, { passive: false });
+
+  // Lifting either finger ends it; the next pinch measures itself afresh.
+  const endPinch = (event) => { if (event.touches.length < 2) pinch = null; };
+  scroller.addEventListener('touchend', endPinch);
+  scroller.addEventListener('touchcancel', endPinch);
 
   wireCarryForward(root, api);
   wireVersionSwitch();

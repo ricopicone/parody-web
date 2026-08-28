@@ -7,7 +7,14 @@
   flex: 1 1 auto;
   overflow: auto;
   /* Let a stylus draw while touch still scrolls; the pointer gate decides
-     which is which. */
+     which is which.
+     One finger scrolls, and that is the browser's job. The two-finger gesture
+     is ours: pinch drives the viewer's zoom (pinch.js), and the browser's own
+     pinch would magnify the whole application and take the toolbar with it.
+     Named here as well as on the ink hosts because the gaps between pages and
+     the padding around them are not ink layers, and a pinch that begins on
+     one of those is still a pinch. */
+  touch-action: pan-x pan-y;
   overscroll-behavior: contain;
   background: var(--paper-sunk, #4a4a4a);
   padding: 1rem 0 3rem;
