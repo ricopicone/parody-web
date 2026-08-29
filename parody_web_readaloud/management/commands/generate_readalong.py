@@ -151,7 +151,7 @@ class Command(BaseCommand):
         parser.add_argument("--wpm", type=int, default=150,
                             help="Reading pace for --no-audio.")
         parser.add_argument("--include-drafts", action="store_true",
-                            help="also voice chapters marked draft (for "
+                            help="also voice sections marked draft (for "
                                  "hearing one before releasing it). Needs a "
                                  "print PDF built WITH drafts; the ordinary "
                                  "build omits them, so their sections have no "
@@ -169,20 +169,21 @@ class Command(BaseCommand):
         # `Section.key` is a property, not a column — it prefers the authored
         # short hash and falls back to the chapter/section slug pair — so
         # selecting by it has to happen in Python.
-        # A DRAFT chapter is not released, so it is not voiced. Its sections
-        # are already absent from the print PDF and _one would skip each one
-        # with "no section pdf" — but that protection is incidental, inherited
-        # from print, and would evaporate the moment a preview PDF included
-        # drafts. Filtering here states the intent and avoids opening the PDF
-        # once per unreleased section.
+        # A DRAFT section is not released, so it is not voiced — and a draft
+        # chapter's sections are all draft, so the chapter case holds too. They
+        # are already absent from the print PDF and _one would skip each with
+        # "no section pdf" — but that protection is incidental, inherited from
+        # print, and would evaporate the moment a preview PDF included drafts.
+        # Filtering here states the intent and avoids opening the PDF once per
+        # unreleased section.
         #
-        # Nothing detects the moment a chapter is published: a released chapter
+        # Nothing detects the moment something is published: a released section
         # simply appears in this queryset on the next run, and _one's cheap exit
         # skips everything already voiced. So re-running after a publish costs
-        # only the new chapter.
+        # only the new material.
         qs = Section.objects.filter(book=book).select_related("chapter")
         if not options["include_drafts"]:
-            qs = qs.exclude(chapter__draft=True)
+            qs = qs.exclude(draft=True)
         sections = list(qs)
         if options["section"]:
             wanted = options["section"]

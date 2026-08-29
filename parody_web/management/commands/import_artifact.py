@@ -181,9 +181,14 @@ class Command(BaseCommand):
                         "online_only": bool(sec.get("online_only", False)),
                         "preview": bool(sec.get("preview"))
                         or (sec.get("hash") in self.preview_hashes),
-                        # Already resolved against the chapter's by parody:
-                        # absent means the section is released.
-                        "draft": bool(sec.get("draft", False)),
+                        # Resolved against the chapter's by parody, which
+                        # says so on EVERY section of a draft chapter — so
+                        # silence there means an artifact built before 0.55.0,
+                        # which marked only the chapter. Inherit for those, or
+                        # a book pinned to an older parody would publish every
+                        # unreleased chapter it has on the next deploy.
+                        "draft": (bool(sec["draft"]) if "draft" in sec
+                                  else bool(ch.get("draft", False))),
                         "number": sec.get("number", ""),
                         "anchors": sec.get("anchors", []),
                         # Per-exercise solutions/problems ride through

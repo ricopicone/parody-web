@@ -10,6 +10,7 @@ import re
 from html import unescape as _unescape
 from pathlib import Path
 
+from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -68,6 +69,12 @@ def _can_view_drafts(request):
 def visible_chapters(book, request):
     """The book's chapters this request may see, in reading order.
 
+    A chapter is visible when it is released, OR when it still holds a released
+    section: a section marked `draft: false` inside a draft chapter has to be
+    reachable, and it has no TOC line, no chapter page and no nav path unless
+    its chapter appears. The chapter's own section list is filtered as
+    everywhere else, so it shows only what is released.
+
     One helper rather than the same filter written out at nine call sites: a
     surface that forgets to filter leaks unreleased material to a class, so
     there should be exactly one obvious thing for a new surface to call.
@@ -75,7 +82,7 @@ def visible_chapters(book, request):
     chapters = book.chapters.all()
     if _can_view_drafts(request):
         return chapters
-    return chapters.filter(draft=False)
+    return chapters.filter(Q(draft=False) | Q(sections__draft=False)).distinct()
 
 
 def _resolve_book(request):
@@ -118,9 +125,11 @@ def _all_sections_ordered(book, request):
     """Every section this request may see, in reading order.
 
     The full TOC/nav is public; per-section gating is done at view time (full vs
-    preview), not by hiding from the index. Sections of a DRAFT chapter are the
-    exception — an unreleased chapter must not appear in the subject index, the
-    prev/next nav, the sitemap or the table export.
+    preview), not by hiding from the index. DRAFT sections are the exception —
+    unreleased material must not appear in the subject index, the prev/next nav,
+    the sitemap or the table export. The flag is the section's own, already
+    resolved against its chapter's at build time, so a draft chapter is covered
+    by the same filter.
 
     `request` is required rather than defaulting to None: a default would fail
     OPEN, and every caller has one.
@@ -129,18 +138,32 @@ def _all_sections_ordered(book, request):
           .select_related("chapter")
           .order_by("chapter__order", "order"))
     if not _can_view_drafts(request):
-        qs = qs.exclude(chapter__draft=True)
+        qs = qs.exclude(draft=True)
+    return list(qs)
+
+
+def visible_sections(chapter, request):
+    """One chapter's sections this request may see, in reading order.
+
+    The per-chapter counterpart of _all_sections_ordered, for the surfaces that
+    walk a single chapter: the contents, the rail, the chapter page. `request`
+    is required rather than defaulting to None for the same reason — a default
+    would fail OPEN.
+    """
+    qs = chapter.sections.all()
+    if not _can_view_drafts(request):
+        qs = qs.exclude(draft=True)
     return list(qs)
 
 
 _H2_ID_RE = re.compile(r'<h2\b[^>]*\bid="(?P<id>[^"]+)"[^>]*>(?P<text>.*?)</h2>', re.S)
 
 
-def _chapter_nav(book, chapter, current=None):
+def _chapter_nav(book, chapter, current=None, request=None):
     """The chapter's content sections in reading order, each flagged whether it
     is the one being read. The lead-in is intro prose, not a contents entry."""
     out = []
-    for s in chapter.sections.all():
+    for s in visible_sections(chapter, request):
         if s.slug == "lead-in":
             continue
         s.is_current = bool(current and s.pk == current.pk)
@@ -206,7 +229,7 @@ def index(request):
     public = not _is_owner(request)
     chapters = []
     for ch in visible_chapters(book, request):
-        sections = list(ch.sections.all())
+        sections = visible_sections(ch, request)
         if sections:
             chapters.append((ch, sections))
     return render(request, "parody_web/index.html", {
@@ -340,7 +363,7 @@ def search(request):
         qs = (Section.objects.filter(book=book, plain__icontains=q)
               .select_related("chapter").order_by("chapter__order", "order"))
         if not _can_view_drafts(request):
-            qs = qs.exclude(chapter__draft=True)
+            qs = qs.exclude(draft=True)
         for s in qs:
             snips = _snippets(s.plain, q)
             if not snips:
@@ -364,10 +387,11 @@ def chapter_detail(request, chapter_slug):
     the chapter's sections (as on the index), and a continue button into the
     first section. The lead-in is no longer a separate TOC line — it lives here."""
     book, editions = _resolve_book(request)
-    chapter = Chapter.objects.filter(book=book, slug=chapter_slug).first()
-    if chapter is not None and chapter.draft and not _can_view_drafts(request):
-        # 404, never 403: a 403 confirms the chapter exists and leaks its slug.
-        raise Http404("chapter not available")
+    # visible_chapters, not a bare lookup: a chapter is unavailable when it is
+    # a draft with nothing released in it, and available when it still holds one
+    # released section. 404, never 403 — a 403 confirms the chapter exists and
+    # leaks its slug.
+    chapter = visible_chapters(book, request).filter(slug=chapter_slug).first()
     if chapter is None:
         # A printed short code with a trailing slash (e.g. /q9/) lands here too;
         # try resolving it before giving up.
@@ -378,7 +402,7 @@ def chapter_detail(request, chapter_slug):
     policy = get_policy()
     public = not policy.is_owner(request)
 
-    sections = list(chapter.sections.all())
+    sections = visible_sections(chapter, request)
     # The lead-in section (slug "lead-in") is intro prose shown above the
     # contents, not listed among them; everything else is a content section.
     leadin = next((s for s in sections if s.slug == "lead-in"), None)
@@ -390,7 +414,7 @@ def chapter_detail(request, chapter_slug):
     return render(request, "parody_web/chapter.html", {
         "book": book, "editions": editions,
         "chapter": chapter, "leadin": leadin, "contents": contents,
-        "chapter_nav": _chapter_nav(book, chapter),
+        "chapter_nav": _chapter_nav(book, chapter, request=request),
         "first": first, "public": public, "preview": preview,
         "next_path": request.get_full_path(),
         "meta_description": _excerpt(leadin.html if leadin else "")
@@ -408,7 +432,7 @@ def section_detail(request, chapter_slug, section_slug):
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
     policy = get_policy()
-    if section.chapter.draft and not _can_view_drafts(request):
+    if section.draft and not _can_view_drafts(request):
         raise Http404("section not available")
     if not policy.can_view_section(request, section):
         raise Http404("section not available")
@@ -439,7 +463,8 @@ def section_detail(request, chapter_slug, section_slug):
             section.html, request=request, book=book, section=section,
             export_url=lambda tid: _table_url(book, chapter_slug, section_slug, tid),
             all_tables_url=_tables_url(book)),
-        "chapter_nav": _chapter_nav(book, section.chapter, current=section),
+        "chapter_nav": _chapter_nav(book, section.chapter, current=section,
+                                    request=request),
         "page_anchors": [] if preview else _page_anchors(section.html),
         "prev": prev_s, "next": next_s,
         # The artifact html usually carries its own <h1>; only render the
@@ -542,8 +567,8 @@ def section_pdf(request, chapter_slug, section_slug):
     book, _ = _resolve_book(request)
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
-    if section.chapter.draft and not _can_view_drafts(request):
-        # An unreleased chapter has no page range in the print PDF
+    if section.draft and not _can_view_drafts(request):
+        # An unreleased section has no page range in the print PDF
         # anyway; this makes the refusal explicit and indistinguishable
         # from an absence.
         raise Http404("section pdf not available")
@@ -571,8 +596,8 @@ def section_pdf_view(request, chapter_slug, section_slug):
     book, editions = _resolve_book(request)
     section = get_object_or_404(
         Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
-    if section.chapter.draft and not _can_view_drafts(request):
-        # An unreleased chapter has no page range in the print PDF
+    if section.draft and not _can_view_drafts(request):
+        # An unreleased section has no page range in the print PDF
         # anyway; this makes the refusal explicit and indistinguishable
         # from an absence.
         raise Http404("section pdf not available")

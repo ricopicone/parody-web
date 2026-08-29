@@ -51,8 +51,12 @@ def _artifact(chapter_drafts=("two",), section_drafts=None):
                 "anchors": [{"type": "heading", "level": 2, "is_section": True,
                              "id": slug, "hash": h, "title": title}],
             }
-            if section_drafts.get(f"{ch}/{slug}", ch in chapter_drafts):
-                sec["draft"] = True
+            # Exactly what parody emits: the key on every section of a DRAFT
+            # chapter (true or false, because silence there means a pre-0.55.0
+            # artifact), and only when true elsewhere.
+            effective = section_drafts.get(f"{ch}/{slug}", ch in chapter_drafts)
+            if effective or ch in chapter_drafts:
+                sec["draft"] = bool(effective)
             sections.append(sec)
         entry = {"title": ch.title(), "slug": ch, "hash": ch[:2],
                  "sections": sections}
@@ -331,3 +335,22 @@ class SectionDraftMarkerTests(_Readers):
         for who, c in self._readers():
             with self.subTest(who=who):
                 self.assertNotContains(c.get("/"), "draft-tag")
+
+
+@override_settings(BOOK_SLUG="sbook")
+class OlderArtifactTests(TestCase):
+    """An artifact built before 0.55.0 marks a draft CHAPTER and says nothing
+    about its sections. parody now says so on every section of a draft chapter,
+    so silence there can only mean an older artifact — and the importer has to
+    inherit for it, or a book pinned to an older parody would publish every
+    unreleased chapter it has on the next deploy.
+    """
+
+    def test_a_draft_chapter_with_unmarked_sections_still_hides_them(self):
+        art = _artifact()
+        for sec in art["chapters"][1]["sections"]:
+            sec.pop("draft")          # as a pre-0.55.0 build wrote it
+        _import(art)
+        by = {s.slug: s for s in Section.objects.all()}
+        self.assertTrue(by["two-a"].draft and by["two-b"].draft)
+        self.assertFalse(by["one-a"].draft or by["one-b"].draft)

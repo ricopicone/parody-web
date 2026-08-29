@@ -372,7 +372,12 @@ class DraftChapterTests(TestCase):
         return out.getvalue(), err.getvalue()
 
     def _draft_everything(self):
+        # Both, as the importer sets them: draft is resolved per SECTION, and a
+        # draft chapter is one whose sections all came back draft. The command
+        # filters on the section, so setting only the chapter here would test
+        # nothing (and could not happen — nothing but the importer writes these).
         self.book.chapters.all().update(draft=True)
+        self.book.sections.all().update(draft=True)
 
     def test_a_draft_chapter_is_not_considered_at_all(self):
         """Not merely skipped downstream — excluded from the section list, so
@@ -397,5 +402,6 @@ class DraftChapterTests(TestCase):
         with self.assertRaises(CommandError):
             self._run(self.book.slug, skip_math=True)
         self.book.chapters.all().update(draft=False)   # publish
+        self.book.sections.all().update(draft=False)
         out, err = self._run(self.book.slug, skip_math=True)
         self.assertNotIn("no matching sections", out + err)
