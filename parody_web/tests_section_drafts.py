@@ -379,3 +379,33 @@ class PartlyReleasedChapterMarkerTests(_Readers):
         resp = self.as_staff.get("/two/two-a/")
         self.assertNotContains(resp, "This section is <strong>in development")
         self.assertContains(resp, "the section itself is released")
+
+
+@override_settings(BOOK_SLUG="sbook")
+class MigrationBackfillTests(TestCase):
+    """`migrate` alone must be safe.
+
+    The new column defaults to False and the views gate on it, so a deploy that
+    migrated without re-importing would publish every unreleased chapter in the
+    database. The data migration inherits the chapter's flag for the rows that
+    existed before it — which is exactly right, since none of them could carry
+    a per-section flag.
+    """
+
+    def test_the_backfill_gives_a_draft_chapters_sections_its_flag(self):
+        import importlib
+
+        from django.apps import apps as django_apps
+
+        mod = importlib.import_module(
+            "parody_web.migrations.0014_section_draft")
+
+        _import()                       # chapter two draft, sections marked
+        # Undo it, standing in for rows written before the column existed.
+        Section.objects.update(draft=False)
+
+        mod.inherit_the_chapters_flag(django_apps, None)
+
+        by = {s.slug: s for s in Section.objects.all()}
+        self.assertTrue(by["two-a"].draft and by["two-b"].draft)
+        self.assertFalse(by["one-a"].draft or by["one-b"].draft)
