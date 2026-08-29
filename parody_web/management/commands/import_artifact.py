@@ -181,6 +181,9 @@ class Command(BaseCommand):
                         "online_only": bool(sec.get("online_only", False)),
                         "preview": bool(sec.get("preview"))
                         or (sec.get("hash") in self.preview_hashes),
+                        # Already resolved against the chapter's by parody:
+                        # absent means the section is released.
+                        "draft": bool(sec.get("draft", False)),
                         "number": sec.get("number", ""),
                         "anchors": sec.get("anchors", []),
                         # Per-exercise solutions/problems ride through

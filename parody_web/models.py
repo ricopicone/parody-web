@@ -104,6 +104,12 @@ class Section(models.Model):
     # preview = public sees only a truncated excerpt + sign-in (old "versionless":
     # in print, not fully online). Full sections are everything else.
     preview = models.BooleanField(default=False)
+    # draft = authored and NUMBERED, but not released. The EFFECTIVE flag:
+    # parody resolved the section's own front-matter `draft:` against its
+    # chapter's before writing the artifact, so nothing here re-derives it and
+    # every surface gates on the section alone. A wholly unreleased chapter is
+    # simply one whose sections all came back draft.
+    draft = models.BooleanField(default=False)
     # display number/label, e.g. "3.2", "Lab exercise 4", or "" (Problems/lead-in)
     number = models.CharField(max_length=32, blank=True, default="")
     anchors = models.JSONField(default=list, blank=True)
