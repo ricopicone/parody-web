@@ -190,18 +190,28 @@ def _bind_math_punctuation(html):
 def _target_url(t):
     """The href for a resolved target; chapter refs point at their first section.
 
-    A target in a DRAFT chapter gets "" — no href at all. The chapter is
+    A target in a DRAFT section gets "" — no href at all. The section is
     numbered but unreleased, so the reference keeps its number and _link renders
-    it as a span. Checked here rather than only where the target is registered,
-    because this function RECONSTRUCTS a missing url from the chapter's
-    sections, which would otherwise hand back a link into a 404.
+    it as a span. That covers a draft CHAPTER's own targets too, since every one
+    of its sections resolves draft. Checked here rather than only where the
+    target is registered, because this function RECONSTRUCTS a missing url from
+    the chapter's sections, which would otherwise hand back a link into a 404.
     """
     chapter = t.get("chapter")
-    if chapter and chapter.get("draft"):
+    if t.get("draft"):
+        return ""
+    if (chapter and chapter.get("draft")
+            and not any(not s.get("draft")
+                        for s in chapter.get("sections", []))):
+        # An unreleased chapter with nothing released in it is not reachable.
+        # One that still holds a released section IS, and its reference links
+        # there — the url below already points at the first released section.
         return ""
     url = t.get("url")
     if url is None and chapter:
-        secs = chapter.get("sections", [])
+        # the first RELEASED section: a chapter can be partly released, and its
+        # first section is not necessarily one a reader may open.
+        secs = [s for s in chapter.get("sections", []) if not s.get("draft")]
         url = f"/{chapter['slug']}/{secs[0]['slug']}/" if secs else "#"
     return url or "#"
 
@@ -1114,6 +1124,27 @@ def _promote_tagged_math(html):
         + m.group(3), html, flags=re.S)
 
 
+def resolve_section_drafts(data):
+    """Fill in the draft flag of every section that carries none. In place.
+
+    parody says so on every section of a draft chapter — but only from 0.55.0.
+    An artifact built before that marks the CHAPTER and says nothing about its
+    sections, and reading that silence as "released" would publish every
+    unreleased chapter of a book still pinned to an older parody. Inherit for
+    those; a newer artifact never reaches the fallback, so an explicitly
+    released section inside a draft chapter survives it.
+
+    Idempotent, and called by both consumers — the numbering below, whose
+    cross-reference urls depend on it, and the importer that stores the flag —
+    so neither depends on the other having run first.
+    """
+    for ch in data.get("chapters", []):
+        ch_draft = bool(ch.get("draft", False))
+        for sec in ch.get("sections", []):
+            if "draft" not in sec:
+                sec["draft"] = ch_draft
+
+
 def number_artifact(data, references=None, edition_query=""):
     """Mutate `data` in place: set chapter['number'] / section['number'] and
     rewrite section['html'] with numbered headings/figures and resolved refs.
@@ -1124,6 +1155,9 @@ def number_artifact(data, references=None, edition_query=""):
     so links inside a non-default edition stay on that edition; it is "" for the
     default (and single-edition) artifact, which lives at the bare URLs."""
     references = references or {}
+    # Before anything reads a section's draft flag: an older artifact carries
+    # none, and every url below depends on the answer.
+    resolve_section_drafts(data)
     targets = {}          # hash/id -> {"label":..., "url":...}
     heading_numbers = {}  # per-section: hash -> number string (for html rewrite)
     float_caps = {}       # per-section: float-id -> (label_word, number)
@@ -1149,7 +1183,9 @@ def number_artifact(data, references=None, edition_query=""):
         cnum = _chapter_label(ch, idx_state)
         ch["number"] = cnum
         if ch.get("hash"):
-            secs = ch.get("sections", [])
+            # The first RELEASED section: a partly released chapter is
+            # reachable, but not necessarily at its first section.
+            secs = [s for s in ch.get("sections", []) if not s.get("draft")]
             ch_url = (f"/{ch['slug']}/{secs[0]['slug']}/{edition_query}"
                       if secs else None)
             # A draft chapter is numbered but not reachable, so its target
@@ -1169,6 +1205,13 @@ def number_artifact(data, references=None, edition_query=""):
         for sec in ch.get("sections", []):
             kind = _section_kind(sec)
             url = f"/{ch['slug']}/{sec['slug']}/{edition_query}"
+            # Targets registered while walking a DRAFT section are marked after
+            # the fact: a dozen registrations below all build their href from
+            # `url`, and one post-pass cannot be forgotten by the next one
+            # someone adds. Identity, not just membership — a later section may
+            # reuse an id, replacing an entry under a key already present.
+            registered_before = ({k: id(v) for k, v in targets.items()}
+                                 if sec.get("draft") else None)
             if kind == "normal":
                 sec_m += 1
                 secnum = f"{cnum}.{sec_m}"
@@ -1431,6 +1474,13 @@ def number_artifact(data, references=None, edition_query=""):
             for anchor_id, marker in _find_list_item_anchors(sh).items():
                 targets[anchor_id] = {"label": f"Item {marker}",
                                       "url": f"{url}#{anchor_id}"}
+
+            # Everything this draft section just registered keeps its label and
+            # loses its link (see _target_url).
+            if registered_before is not None:
+                for k, v in targets.items():
+                    if registered_before.get(k) != id(v):
+                        v["draft"] = True
 
     # ---- pass 2: rewrite html (numbers in headings/figs, resolve hashrefs) ----
     for ch in data.get("chapters", []):

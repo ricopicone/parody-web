@@ -14,7 +14,7 @@ from django.utils.html import strip_tags
 
 from parody_web import printing
 from parody_web.models import Book, Chapter, Section
-from parody_web.numbering import number_artifact
+from parody_web.numbering import number_artifact, resolve_section_drafts
 
 
 def _plain_text(html):
@@ -157,6 +157,11 @@ class Command(BaseCommand):
         except Exception as exc:  # noqa: BLE001
             self.stderr.write(f"print archive skipped: {exc}")
 
+        # Called here as well as inside number_artifact: the importer must not
+        # depend on numbering having run first for a gate this load-bearing.
+        # Idempotent.
+        resolve_section_drafts(data)
+
         seen_ch, seen_sec = set(), set()
         for ci, ch in enumerate(data.get("chapters", [])):
             chapter, _ = Chapter.objects.update_or_create(
@@ -181,14 +186,10 @@ class Command(BaseCommand):
                         "online_only": bool(sec.get("online_only", False)),
                         "preview": bool(sec.get("preview"))
                         or (sec.get("hash") in self.preview_hashes),
-                        # Resolved against the chapter's by parody, which
-                        # says so on EVERY section of a draft chapter — so
-                        # silence there means an artifact built before 0.55.0,
-                        # which marked only the chapter. Inherit for those, or
-                        # a book pinned to an older parody would publish every
-                        # unreleased chapter it has on the next deploy.
-                        "draft": (bool(sec["draft"]) if "draft" in sec
-                                  else bool(ch.get("draft", False))),
+                        # Resolved by parody, and by resolve_section_drafts
+                        # above for an artifact built before 0.55.0 that
+                        # carries none.
+                        "draft": bool(sec.get("draft", False)),
                         "number": sec.get("number", ""),
                         "anchors": sec.get("anchors", []),
                         # Per-exercise solutions/problems ride through
