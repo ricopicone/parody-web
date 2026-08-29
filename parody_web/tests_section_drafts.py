@@ -354,3 +354,28 @@ class OlderArtifactTests(TestCase):
         by = {s.slug: s for s in Section.objects.all()}
         self.assertTrue(by["two-a"].draft and by["two-b"].draft)
         self.assertFalse(by["one-a"].draft or by["one-b"].draft)
+
+
+@override_settings(BOOK_SLUG="sbook", PARODY_WEB_ACCESS_POLICY=POLICY)
+class PartlyReleasedChapterMarkerTests(_Readers):
+    """A partly released chapter is the case where the per-section marker is
+    the only thing that can say which half is which — its own tag cannot."""
+
+    def setUp(self):
+        super().setUp()
+        _import(_artifact(section_drafts={"two/two-a": False}))
+
+    def test_the_contents_marks_the_draft_section_of_a_partly_released_chapter(self):
+        body = self.as_staff.get("/").content.decode()
+        # the chapter's own tag, plus one for its unreleased section
+        self.assertEqual(body.count("draft-tag"), 2)
+
+    def test_a_wholly_draft_chapter_says_it_once(self):
+        _import()   # both of chapter two's sections inherit the draft
+        body = self.as_staff.get("/").content.decode()
+        self.assertEqual(body.count("draft-tag"), 1)
+
+    def test_the_released_section_of_a_draft_chapter_is_not_called_a_draft(self):
+        resp = self.as_staff.get("/two/two-a/")
+        self.assertNotContains(resp, "This section is <strong>in development")
+        self.assertContains(resp, "the section itself is released")

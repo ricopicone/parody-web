@@ -61,7 +61,7 @@
     <ul class="toc">
     {% for section in sections %}
       {% if section.slug != "lead-in" %}
-      <li>{% if section.number %}<span class="secnum">{{ section.number }}</span>{% endif %}<a href="{% section_url book chapter.slug section.slug %}">{{ section.title|code_spans }}</a>
+      <li>{% if section.number %}<span class="secnum">{{ section.number }}</span>{% endif %}<a href="{% section_url book chapter.slug section.slug %}">{{ section.title|code_spans }}</a>{% if section.draft and not chapter.wholly_draft %}<span class="draft-tag" title="Not yet visible to readers">Draft</span>{% endif %}
         {% if public and section.preview %}<span class="note">— preview</span>{% endif %}
       </li>
       {% endif %}

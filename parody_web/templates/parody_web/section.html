@@ -13,7 +13,7 @@
 {% block rail %}{% include "parody_web/_rail.html" %}{% endblock %}
 {% block body %}
 <nav class="crumbs has-chapter"><a href="{% index_url book %}">{{ book.title }}</a><span class="crumb-sep">›</span><a class="crumb-trunc" href="{% chapter_url book chapter.slug %}" title="{{ chapter.title|cut:'`' }}">{{ chapter.title|code_spans }}</a>{% if chapter.draft %}<span class="draft-tag">Draft</span>{% endif %}</nav>
-{% if chapter.draft %}<div class="draft-banner">This section belongs to a chapter <strong>in development</strong> and is not yet visible to readers — you are viewing it as staff.</div>{% endif %}
+{% if section.draft %}<div class="draft-banner">This section is <strong>in development</strong> and not yet visible to readers — you are viewing it as staff.</div>{% elif chapter.draft %}<div class="draft-banner">This section belongs to a chapter <strong>in development</strong>; the section itself is released.</div>{% endif %}
 
 {% comment %}
 A section whose markdown doesn't open with its own heading gets its title

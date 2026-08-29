@@ -153,7 +153,15 @@ def visible_sections(chapter, request):
     qs = chapter.sections.all()
     if not _can_view_drafts(request):
         qs = qs.exclude(draft=True)
-    return list(qs)
+    out = list(qs)
+    # A wholly unreleased chapter says "Draft" once, on itself, and tagging
+    # every section beneath it would only repeat that. A PARTLY released one
+    # must tag its sections: which of them is unreleased is the one thing the
+    # chapter's own tag cannot say. Set here because this is what knows the
+    # list. (A reader who cannot view drafts has none in the list and sees no
+    # marker at all — the flag only ever reaches staff.)
+    chapter.wholly_draft = bool(out) and all(s.draft for s in out)
+    return out
 
 
 _H2_ID_RE = re.compile(r'<h2\b[^>]*\bid="(?P<id>[^"]+)"[^>]*>(?P<text>.*?)</h2>', re.S)
