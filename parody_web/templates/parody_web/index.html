@@ -54,7 +54,7 @@
   <details class="toc-chapter"{% if forloop.first %} open{% endif %}>
     <summary>
       {% if chapter.number %}<i>{% if chapter.appendix %}App. {% endif %}{{ chapter.number }}</i>{% endif %}
-      <em><a href="{% chapter_url book chapter.slug %}">{{ chapter.title|code_spans }}</a></em>{% if chapter.draft %}<span class="draft-tag" title="Not yet visible to readers">Draft</span>{% endif %}
+      <em><a href="{% chapter_url book chapter.slug %}">{{ chapter.title|code_spans }}</a></em>{% if chapter.draft %}<span class="draft-tag" title="{% if chapter.wholly_draft %}Not yet visible to readers{% else %}In development; the sections without their own mark are released{% endif %}">Draft</span>{% endif %}
       <span class="dots"></span>
       <u>{{ sections|length }} &sect;</u>
     </summary>

@@ -409,3 +409,20 @@ class MigrationBackfillTests(TestCase):
         by = {s.slug: s for s in Section.objects.all()}
         self.assertTrue(by["two-a"].draft and by["two-b"].draft)
         self.assertFalse(by["one-a"].draft or by["one-b"].draft)
+
+
+@override_settings(BOOK_SLUG="sbook", PARODY_WEB_ACCESS_POLICY=POLICY)
+class ChapterBannerAccuracyTests(_Readers):
+    """A partly released chapter IS visible to readers, so the chapter banner
+    must stop saying it is not."""
+
+    def test_a_partly_released_chapter_does_not_claim_to_be_hidden(self):
+        _import(_artifact(section_drafts={"two/two-a": False}))
+        resp = self.as_staff.get("/two/")
+        self.assertNotContains(resp, "not yet visible to readers")
+        self.assertContains(resp, "readers can see them")
+
+    def test_a_wholly_draft_chapter_still_says_it_is_hidden(self):
+        _import()
+        self.assertContains(self.as_staff.get("/two/"),
+                            "not yet visible to readers")

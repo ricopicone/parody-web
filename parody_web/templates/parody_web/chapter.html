@@ -13,7 +13,7 @@
 <nav class="crumbs"><a href="{% index_url book %}">{{ book.title }}</a></nav>
 
 <h1>{% if chapter.number %}{% if chapter.appendix %}Appendix {% endif %}{{ chapter.number }}. {% endif %}{{ chapter.title|code_spans }}{% if chapter.draft %}<span class="draft-tag">Draft</span>{% endif %}</h1>
-{% if chapter.draft %}<div class="draft-banner">This chapter is <strong>in development</strong> and not yet visible to readers — you are viewing it as staff.</div>{% endif %}
+{% if chapter.draft %}<div class="draft-banner">{% if chapter.wholly_draft %}This chapter is <strong>in development</strong> and not yet visible to readers — you are viewing it as staff.{% else %}This chapter is <strong>in development</strong>, but the sections below without a draft mark are released and readers can see them.{% endif %}</div>{% endif %}
 
 {% include "parody_web/_section_rail.html" %}
 
