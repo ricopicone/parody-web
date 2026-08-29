@@ -42,8 +42,18 @@ The chapter feature gates at import: the artifact carries every chapter and
 **the inheritance is resolved once, in `parody`, before the artifact is written.**
 
 The artifact therefore carries an *effective* `draft` flag on each section: true when
-the section declared it, or when it declared nothing and its chapter is draft. Nothing
-downstream re-derives it.
+the section declared it, or when it declared nothing and its chapter is draft.
+
+**Except that silence has to stay unambiguous.** An artifact built before this feature
+marks a draft *chapter* and says nothing at all about its sections — so a consumer
+reading that silence as "released" would publish every unreleased chapter of a book
+still pinned to an older `parody`. The fix is to make the producer say it: inside a
+draft chapter the key is emitted on **every** section, `false` included. Silence there
+can then only mean an older artifact, and `parody-web` inherits the chapter's flag for
+exactly those (`numbering.resolve_section_drafts`, called by both the numbering and the
+importer so neither depends on the other having run first). A released chapter still
+emits the key only when a section is a draft, so a book that marks nothing draft builds
+byte-identically.
 
 This is the whole reason the change is small. `parody-web` never sees the tri-state and
 never joins a section to its chapter to decide visibility: every existing
@@ -83,8 +93,13 @@ the chapter with only its released sections in it.
 The badge does not follow visibility. `chapter.draft` still drives it, and it still
 renders only for a reader who can view drafts, so a student who reaches a partially
 released chapter sees no marker on it — they are seeing published material, and the
-chapter's own status is not theirs to know. A draft *section*, shown to staff, gets the
-same badge treatment one level down.
+chapter's own status is not theirs to know.
+
+A draft *section* is badged only where the badge says something new. A wholly
+unreleased chapter already carries one "Draft", and repeating it on each of its sections
+adds nothing; a partly released chapter tags its sections, because which half is which
+is the one thing the chapter's own tag cannot say. `visible_sections` computes that
+(`chapter.wholly_draft`) as it builds the list, since that is what knows it.
 
 ## Print
 
@@ -198,6 +213,13 @@ same, one level down: a target inside a draft section registers with its label a
 url, and the chapter-target url reconstruction — which points a chapter reference at
 its first section — picks the first **non-draft** section.
 
+This *sharpens* the chapter rule rather than merely repeating it. A reference to a
+partly released chapter now links to its first released section; only a chapter with
+nothing released loses its link. And a reference to a figure or an equation inside a
+draft chapter is covered for the first time — the old rule marked the chapter's own
+target, while every target registered *within* its sections kept a url pointing at a
+page that answers 404.
+
 As with chapters, this cannot vary by reader: `number_artifact` runs at import and its
 output is stored in `Section.html`. A reference into a draft section is plain text for
 everyone, staff included. Accepted for the same reason, and staff reach it from the
@@ -215,6 +237,8 @@ Beyond the per-surface sweep, the cases that carry this feature:
 - **inheritance** — a section that says nothing follows its chapter, both ways;
 - **override up** — `draft: false` in a draft chapter is reachable by a student, and
   its chapter appears in the TOC carrying only it;
+- **an older artifact** — a draft chapter whose sections carry no key at all still hides
+  every one of them;
 - **override down** — `draft: true` in a released chapter is 404 for a student while
   its neighbours are fine;
 - **numbering is identical** with and without sections marked draft — web *and* print,
