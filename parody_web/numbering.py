@@ -730,7 +730,7 @@ def _gate_rights_figures(html):
 # box here — normalize the wrapper's classes, swap the <h3>Exercise</h3> header
 # block for a .problem-label, and rename the Tailwind body wrapper. pandoc wraps
 # long tags across lines, so every part below matches newlines too.
-def _rewrite_exercise_box(html, eid, label, is_lab):
+def _rewrite_exercise_box(html, eid, label, is_lab, is_starred=False):
     """Rewrite one exercise div (matched by `eid`) into its web presentation.
 
     The legacy header's <h3> carries a title when the source exercise had a
@@ -744,7 +744,11 @@ def _rewrite_exercise_box(html, eid, label, is_lab):
         r'(?P<bodytag>\s*<div\b[^>]*\bclass="px-4 py-3 text-sm text-gray-700"[^>]*>)?')
 
     def rep(mo):
+        # `lab` is a kind and `starred` is a modifier, so they compose rather
+        # than exclude: a starred lab problem is "exercise lab starred".
         cls = "exercise lab" if is_lab else "exercise"
+        if is_starred:
+            cls += " starred"
         open_tag = re.sub(r'\bclass="[^"]*"', f'class="{cls}"', mo.group(1),
                           count=1)
         # collapse the newlines pandoc wrapped into the opening tag
@@ -753,8 +757,14 @@ def _rewrite_exercise_box(html, eid, label, is_lab):
         title = (mo.group('h3') or "").strip()
         title_html = (f' <span class="problem-title">{title}</span>'
                       if title and title != "Exercise" else "")
-        return (open_tag + f'<div class="problem-label">{label}{title_html}'
-                '</div>' + body)
+        # The mark sits between the number and the title, never inside the
+        # label text — a cross-reference to this problem still reads
+        # "Problem 2.5", because a star describes the problem, not its name.
+        star_html = (' <span class="problem-star" role="img"'
+                     ' aria-label="starred problem">\u2605</span>'
+                     if is_starred else "")
+        return (open_tag + f'<div class="problem-label">{label}{star_html}'
+                f'{title_html}</div>' + body)
 
     return pat.sub(rep, html, count=1)
 
@@ -1168,7 +1178,7 @@ def number_artifact(data, references=None, edition_query=""):
     eq_caps = {}          # per-section: eq-id -> number (shown right of the math)
     subeq_caps = {}       # per-section: subequations parent-id -> group number N
     example_caps = {}     # per-section: example div-id -> number N.n (label inject)
-    problem_caps = {}     # per-section: exercise div-id -> (heading label, is_lab)
+    problem_caps = {}     # per-section: exercise div-id -> (label, is_lab, is_starred)
     sol_caps = {}         # (section slug, exercise id) -> {"fig"/"tbl"/"eq": …}
     env_caps = {}         # per-section: boxed-env div-id -> "Theorem 4.1"
     # chapter_start: the number the first (non-appendix) chapter takes. The
@@ -1356,7 +1366,7 @@ def number_artifact(data, references=None, edition_query=""):
                         # pass 2 injects this as the box's run-in heading and
                         # needs is_lab to set the wrapper's class
                         problem_caps.setdefault(sec["slug"], {})[a["id"]] = \
-                            (f"Problem {num}", is_lab)
+                            (f"Problem {num}", is_lab, bool(a.get("starred")))
                     continue
                 if (a.get("id") in sf_subids or a.get("id") in st_subids
                         or a.get("id") in subeq_subids):
@@ -1600,8 +1610,10 @@ def number_artifact(data, references=None, edition_query=""):
 
             # exercises/lab problems: rewrite the filter's Tailwind box into the
             # web's run-in "Problem N.n" heading (see _rewrite_exercise_box).
-            for eid, (label, is_lab) in problem_caps.get(sec["slug"], {}).items():
-                html = _rewrite_exercise_box(html, eid, label, is_lab)
+            for eid, (label, is_lab, is_starred) in \
+                    problem_caps.get(sec["slug"], {}).items():
+                html = _rewrite_exercise_box(html, eid, label, is_lab,
+                                             is_starred)
 
             # every other boxed environment (definition/theorem/comment/infobox
             # and any later addition): a semantic header content.css can draw.

@@ -756,6 +756,8 @@ def solution_detail(request, chapter_slug, section_slug, exercise_id):
     base = {"book": book, "editions": editions, "section": section,
             "chapter": section.chapter, "exercise_id": exercise_id,
             "exercise_title": entry.get("title") or "Exercise",
+            # so the solution page shows the same mark the problem does
+            "exercise_starred": bool(entry.get("starred")),
             "canonical_url": request.build_absolute_uri(request.path)}
     if not policy.can_view_solution(request, section, exercise_id):
         ctx = dict(base)

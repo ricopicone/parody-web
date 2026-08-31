@@ -5,7 +5,7 @@
 {% block body %}
 <nav class="crumbs has-chapter"><a href="{% index_url book %}">{{ book.title }}</a><span class="crumb-sep">›</span><a class="crumb-trunc" href="{% chapter_url book chapter.slug %}" title="{{ chapter.title|cut:'`' }}">{{ chapter.title|code_spans }}</a><span class="crumb-sep">›</span><a class="crumb-trunc" href="{% section_url book chapter.slug section.slug %}" title="{{ section.title|cut:'`' }}">{{ section.title|code_spans }}</a></nav>
 
-<h1>Solution: {{ exercise_title|code_spans }}</h1>
+<h1>Solution: {{ exercise_title|code_spans }}{% if exercise_starred %} <span class="problem-star" role="img" aria-label="starred problem">&#9733;</span>{% endif %}</h1>
 
 {{ solution_html|render_book }}
 
