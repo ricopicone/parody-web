@@ -47,6 +47,21 @@ class DefaultPolicy:
         return self.is_owner(request)
 
 
+    def can_view_staff_notes(self, request):
+        """May this reader see `.staff-only` blocks — marking guidance, answer
+        rubrics — that ship *inside* content they are otherwise allowed?
+
+        This is not a page gate. A solution opens to a student when the
+        assignment falls due, which is the point of posting it; the marking
+        notes at the end of that same solution must not open with it. So the
+        block travels in the artifact and is removed here, per reader.
+
+        Defaults to is_owner. **A host with real users must override this**,
+        for the same reason can_view_drafts says so: is_owner returns True for
+        any authenticated user, which on a course site is every student.
+        """
+        return self.is_owner(request)
+
     def can_view_section(self, request, section):
         """Hard gate: may this reader have the section page at all?
 

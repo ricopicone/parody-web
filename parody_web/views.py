@@ -20,7 +20,7 @@ from django.utils.safestring import mark_safe
 
 from django.utils import timezone
 
-from . import editable_tables
+from . import editable_tables, staffonly
 from .access import get_policy
 
 # The reader's own data leaves here in a documented shape, and something on the
@@ -468,7 +468,8 @@ def section_detail(request, chapter_slug, section_slug):
         # The reader's own copy of the section: data-entry tables carry what
         # they saved. Identical to section.html for every other book.
         "section_html": editable_tables.materialise(
-            section.html, request=request, book=book, section=section,
+            staffonly.for_reader(request, section.html),
+            request=request, book=book, section=section,
             export_url=lambda tid: _table_url(book, chapter_slug, section_slug, tid),
             all_tables_url=_tables_url(book)),
         "chapter_nav": _chapter_nav(book, section.chapter, current=section,
@@ -484,7 +485,9 @@ def section_detail(request, chapter_slug, section_slug):
             section_own_heading(section.html or "", section.hash)),
         "preview": preview,
         "next_path": request.get_full_path(),
-        "meta_description": _excerpt(section.html),
+        # the description is served to crawlers, so it must be the public
+        # text even when the reader in front of us is staff
+        "meta_description": _excerpt(staffonly.strip_staff_only(section.html)),
         "canonical_url": request.build_absolute_uri(request.path),
         **_print_context(request, book, section),
     })
@@ -764,7 +767,8 @@ def solution_detail(request, chapter_slug, section_slug, exercise_id):
         ctx.update(policy.solution_denied_context(request, section, exercise_id))
         return render(request, "parody_web/solution_denied.html", ctx, status=403)
     return render(request, "parody_web/solution.html",
-                  dict(base, solution_html=entry.get("content") or ""))
+                  dict(base, solution_html=staffonly.for_reader(
+                      request, entry.get("content") or "")))
 
 
 def systems(request, version):

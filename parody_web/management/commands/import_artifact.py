@@ -15,6 +15,7 @@ from django.utils.html import strip_tags
 from parody_web import printing
 from parody_web.models import Book, Chapter, Section
 from parody_web.numbering import number_artifact, resolve_section_drafts
+from parody_web.staffonly import strip_staff_only
 
 
 def _plain_text(html):
@@ -181,7 +182,14 @@ class Command(BaseCommand):
                         "order": si + 1,
                         "hash": sec.get("hash", ""),
                         "html": sec.get("html", ""),
-                        "plain": _plain_text(sec.get("html", "")),
+                        # Search snippets come from this column and there is no
+                        # per-reader variant of it, so staff notes are
+                        # kept OUT rather than gated later. The cost is
+                        # real: staff cannot full-text-search their own
+                        # marking notes. The alternative leaks them in a
+                        # highlighted snippet to anyone who searches.
+                        "plain": _plain_text(
+                            strip_staff_only(sec.get("html", ""))),
                         "online_resources": sec.get("online_resources", ""),
                         "online_only": bool(sec.get("online_only", False)),
                         "preview": bool(sec.get("preview"))

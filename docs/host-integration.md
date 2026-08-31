@@ -57,6 +57,8 @@ than at first render.
 | hook | question | default |
 |---|---|---|
 | `is_owner(request)` | is this the book's owner? | `request.user.is_authenticated` |
+| `can_view_drafts(request)` | may they see chapters/sections marked draft? | `is_owner(...)` |
+| `can_view_staff_notes(request)` | may they see `.staff-only` blocks inside content they are otherwise allowed? | `is_owner(...)` |
 | `can_view_section(request, section)` | may they have this page at all? | `True` |
 | `section_is_preview(request, section)` | show a teaser instead of the full text? | `section.preview and not is_owner(...)` |
 | `can_view_solution(request, section, exercise_id)` | may they read this solution? | `is_owner(...)` |
@@ -75,6 +77,48 @@ previews into denials:
 - **`section_is_preview`** is the *soft* gate: a truncated excerpt plus a
   sign-in call to action. This is `Section.preview` — in print, not fully
   online. The page still renders, and the excerpt still opens with the prose.
+
+### Staff-only blocks
+
+Some of a book is written for whoever *teaches* from it: the marking guidance at
+the end of a worked solution — what to insist on, which slip to watch for, what
+partial credit is worth. It belongs beside the answer it is about, and it must
+not reach the reader that answer is for.
+
+Author it as a div carrying `staff-only`, beside any presentational class you
+like:
+
+```
+::: {.staff-only .grading-notes}
+Insist on the sign. Half credit for the magnitude alone.
+:::
+```
+
+parody carries the div into the artifact with its class intact — deliberately
+unlike `.solutions-only`, which parody *deletes* at build time. One artifact
+serves both audiences, so the decision has to be made per reader, here.
+
+`can_view_staff_notes` is not a page gate, and that is the whole reason it
+exists. A solution opens to a student when the assignment falls due, which is
+the point of posting it; `can_view_solution` has already said yes by then. This
+hook is what keeps the marking notes at the end of that same solution closed.
+
+**A host with real users must override it.** The default is `is_owner`, which
+returns True for any authenticated user — on a course site, every student.
+
+It is applied on four surfaces, three of which are easy to forget:
+
+| surface | when |
+|---|---|
+| the solution body | per reader |
+| the section body | per reader |
+| the section's `<meta name="description">` | **always stripped** — it is served to crawlers |
+| `Section.plain`, which backs search snippets | **stripped at import** |
+
+The last is a deliberate trade. Snippets are matched against a stored column
+with no per-reader variant, so the safe answer is that staff content never
+enters it. The cost: staff cannot full-text-search their own marking notes.
+They can still read them on the page.
 
 ### Why `request` and not `user`
 
