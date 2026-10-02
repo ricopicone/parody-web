@@ -134,6 +134,44 @@ class CrossRefResolutionTests(TestCase):
             self.assertIn('<a class="xref" href="/two/t1/">chapter 2</a>', body)
             self.assertNotIn('class="hashref"', body)
 
+    def test_typed_crossrefs_resolve_inside_problems_and_solutions(self):
+        # A cross-reference typed [@eq:x] reaches the artifact as a pandoc
+        # citation span, not a hashref, and the bucket pass resolved hashrefs
+        # only — so a solution printed the raw "[@eq:M-through-exponential]"
+        # that the same reference in section prose resolved (task #772).
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [
+                {"id": "eq:euler", "type": "equation"}], "html": "<p>x</p>"}]}]}
+        sec = data["chapters"][0]["sections"][0]
+        body = ('<p>by <span class="citation" data-cites="eq:euler">'
+                '[@eq:euler]</span>, or <span class="citation" '
+                'data-cites="eq:euler">[Equation @eq:euler]</span>, '
+                '<span class="math inline">\\(\\tag{\\cref{eq:euler}}\\)</span></p>')
+        sec["problems"] = {"exe:a": {"title": "A", "content": body}}
+        sec["solutions"] = {"exe:a": {"title": "A", "content": body}}
+        number_artifact(data)
+        for bucket in ("problems", "solutions"):
+            out = sec[bucket]["exe:a"]["content"]
+            self.assertIn('href="/c/s/#eq:euler">equation (1.1)</a>', out)
+            self.assertIn('or Equation <a class="xref"', out)
+            self.assertNotIn("@eq:euler", out)
+            self.assertNotIn("\\cref", out)
+
+    def test_a_bibliography_citation_in_a_bucket_is_left_alone(self):
+        # A solution page carries no References list for an Author (Year) link
+        # to land on, and a section must not be credited with a citation that
+        # is not in its prose — so bucket bodies resolve cross-refs only.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [],
+                          "html": "<p>x</p>"}]}]}
+        sec = data["chapters"][0]["sections"][0]
+        cite = '<span class="citation" data-cites="k11">[@k11]</span>'
+        sec["solutions"] = {"exe:a": {"title": "A", "content": f"<p>{cite}</p>"}}
+        number_artifact(data, references={"k11": {"label": "Kreyszig (2011)",
+                                                  "full": "Kreyszig, E. 2011."}})
+        self.assertIn(cite, sec["solutions"]["exe:a"]["content"])
+        self.assertNotIn("References", sec["html"])
+
     def test_bucket_resolution_tolerates_odd_shapes(self):
         # Buckets are artifact-supplied, so a missing/blank content field or a
         # non-dict entry must not take the whole numbering pass down.

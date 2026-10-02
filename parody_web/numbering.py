@@ -1134,6 +1134,70 @@ def _promote_tagged_math(html):
         + m.group(3), html, flags=re.S)
 
 
+def _resolve_citations(html, targets, references, cited):
+    """Resolve pandoc citation spans: cross-reference keys ([@eq:x],
+    [@Fig:x], "[Equation @eq:x]") against `targets`, bibliography keys
+    against `references` (appending each to `cited` for the References
+    list). A span with any key it cannot place is left exactly as it was."""
+    def resolve_cite(mo):
+        keys = mo.group(1).split()
+        # a citation made entirely of cross-ref keys ([@eq:a;@eq:b;@eq:c])
+        # renders grouped + sort&compressed, exactly like \cref{a,b,c}
+        # ("equations (9.7) to (9.9)") rather than a repeated-word list.
+        if keys and all(_lookup_target(k, targets) for k in keys):
+            grouped = _render_refs(",".join(keys), targets)
+            if grouped is not None:
+                return grouped
+        parts = []
+        for k in keys:
+            t = _lookup_target(k, targets)
+            if t:  # cross-reference written as [@fig:x]/[@Fig:x]/[@s4]
+                label = _recase_label(t["label"], k[:1].isupper())
+                parts.append(_link(label, t["url"]))
+            elif k in references:  # real bibliography citation
+                if k not in cited:
+                    cited.append(k)
+                parts.append(f'<a class="cite" href="#ref-{k}">'
+                             f'{_esc(references[k]["label"])}</a>')
+            else:
+                return mo.group(0)  # unknown key → leave span as-is
+        return ", ".join(parts)
+
+    def resolve_any_cite(mo):
+        body = mo.group(1)
+        # "[Equation @eq:x]" — the phrase names the kind already, so the
+        # reference contributes only its number, and the brackets that
+        # marked the citation for pandoc are not the author's prose.
+        bracketed = body.startswith("[") and body.endswith("]")
+        inner = body[1:-1] if bracketed else body
+        prefixed = bool(_AT_KEY_RE.search(inner)) and \
+            inner[:_AT_KEY_RE.search(inner).start()].strip()
+        resolved = [True]
+
+        def one(m):
+            key = m.group(1)
+            t = _lookup_target(key, targets)
+            if t:
+                label = t["label"]
+                if prefixed and " " in label:
+                    label = label.split(" ", 1)[1]
+                return _link(label, t["url"])
+            if key in references:
+                if key not in cited:
+                    cited.append(key)
+                return (f'<a class="cite" href="#ref-{key}">'
+                        f'{_esc(references[key]["label"])}</a>')
+            resolved[0] = False
+            return m.group(0)
+
+        out = _AT_KEY_RE.sub(one, inner)
+        # an unresolvable key keeps the span exactly as it was, so
+        # nothing silently changes shape around a name we cannot place
+        return out if resolved[0] else mo.group(0)
+    html = _CITE_RE.sub(resolve_cite, html)
+    return _ANY_CITE_RE.sub(resolve_any_cite, html)
+
+
 def resolve_section_drafts(data):
     """Fill in the draft flag of every section that carries none. In place.
 
@@ -1501,9 +1565,11 @@ def number_artifact(data, references=None, edition_query=""):
             # here — above the empty-html guard, because extracting the problems
             # can leave a section with buckets and almost no prose.
             #
-            # Hashrefs only, deliberately: resolve_cite below also appends to
-            # `cited`, which builds the per-section References list, and running
-            # it here would credit a section with citations not in its prose.
+            # Cross-references only, deliberately — hashrefs, typed [@eq:x]
+            # citation spans, and \cref in maths. A bibliography key stays
+            # as it is: the section's `cited` builds its References list, and
+            # crediting it with a citation not in its prose would be wrong, and
+            # a solution page has no list for an Author (Year) link to land on.
             def _resolve_bucket_ref(mo):
                 out = _render_refs(mo.group(2), targets,
                                    cap_class=mo.group(1) == "Hashref")
@@ -1518,6 +1584,8 @@ def number_artifact(data, references=None, edition_query=""):
                         continue
                     body = _HASHREF_RE.sub(_resolve_bucket_ref,
                                            entry["content"])
+                    body = _resolve_citations(body, targets, {}, [])
+                    body = _resolve_cref_in_math(body, targets)
                     # and the S-numbers themselves, so a reference to
                     # "figure S4.1" lands on something that says S4.1
                     caps = sol_caps.get((sec["slug"], ex_id))
@@ -1682,63 +1750,7 @@ def number_artifact(data, references=None, edition_query=""):
 
             cited = []  # bib keys cited in this section, in order
 
-            def resolve_cite(mo):
-                keys = mo.group(1).split()
-                # a citation made entirely of cross-ref keys ([@eq:a;@eq:b;@eq:c])
-                # renders grouped + sort&compressed, exactly like \cref{a,b,c}
-                # ("equations (9.7) to (9.9)") rather than a repeated-word list.
-                if keys and all(_lookup_target(k, targets) for k in keys):
-                    grouped = _render_refs(",".join(keys), targets)
-                    if grouped is not None:
-                        return grouped
-                parts = []
-                for k in keys:
-                    t = _lookup_target(k, targets)
-                    if t:  # cross-reference written as [@fig:x]/[@Fig:x]/[@s4]
-                        label = _recase_label(t["label"], k[:1].isupper())
-                        parts.append(_link(label, t["url"]))
-                    elif k in references:  # real bibliography citation
-                        if k not in cited:
-                            cited.append(k)
-                        parts.append(f'<a class="cite" href="#ref-{k}">'
-                                     f'{_esc(references[k]["label"])}</a>')
-                    else:
-                        return mo.group(0)  # unknown key → leave span as-is
-                return ", ".join(parts)
-            html = _CITE_RE.sub(resolve_cite, html)
-
-            def resolve_any_cite(mo):
-                body = mo.group(1)
-                # "[Equation @eq:x]" — the phrase names the kind already, so the
-                # reference contributes only its number, and the brackets that
-                # marked the citation for pandoc are not the author's prose.
-                bracketed = body.startswith("[") and body.endswith("]")
-                inner = body[1:-1] if bracketed else body
-                prefixed = bool(_AT_KEY_RE.search(inner)) and \
-                    inner[:_AT_KEY_RE.search(inner).start()].strip()
-                resolved = [True]
-
-                def one(m):
-                    key = m.group(1)
-                    t = _lookup_target(key, targets)
-                    if t:
-                        label = t["label"]
-                        if prefixed and " " in label:
-                            label = label.split(" ", 1)[1]
-                        return _link(label, t["url"])
-                    if key in references:
-                        if key not in cited:
-                            cited.append(key)
-                        return (f'<a class="cite" href="#ref-{key}">'
-                                f'{_esc(references[key]["label"])}</a>')
-                    resolved[0] = False
-                    return m.group(0)
-
-                out = _AT_KEY_RE.sub(one, inner)
-                # an unresolvable key keeps the span exactly as it was, so
-                # nothing silently changes shape around a name we cannot place
-                return out if resolved[0] else mo.group(0)
-            html = _ANY_CITE_RE.sub(resolve_any_cite, html)
+            html = _resolve_citations(html, targets, references, cited)
 
             # .plaincite entry → its linked "Author (Year)" label (registered for
             # the References list, like a normal citation) plus any note(s). Unknown
