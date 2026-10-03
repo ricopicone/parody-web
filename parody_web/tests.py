@@ -157,20 +157,41 @@ class CrossRefResolutionTests(TestCase):
             self.assertNotIn("@eq:euler", out)
             self.assertNotIn("\\cref", out)
 
-    def test_a_bibliography_citation_in_a_bucket_is_left_alone(self):
+    def test_a_bibliography_citation_in_a_bucket_reads_as_text(self):
         # A solution page carries no References list for an Author (Year) link
         # to land on, and a section must not be credited with a citation that
-        # is not in its prose — so bucket bodies resolve cross-refs only.
+        # is not in its prose — so a bucket sets the label as unlinked text,
+        # locator included. "[@lynch2017, ex. 4.5]" shipped raw on a problem.
         data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
             "sections": [{"title": "S", "slug": "s", "anchors": [],
                           "html": "<p>x</p>"}]}]}
         sec = data["chapters"][0]["sections"][0]
-        cite = '<span class="citation" data-cites="k11">[@k11]</span>'
-        sec["solutions"] = {"exe:a": {"title": "A", "content": f"<p>{cite}</p>"}}
+        sec["solutions"] = {"exe:a": {"title": "A", "content":
+            '<p><span class="citation" data-cites="k11">[@k11]</span> and '
+            '<span class="citation" data-cites="k11">[@k11, ex. 4.5]</span></p>'}}
         number_artifact(data, references={"k11": {"label": "Kreyszig (2011)",
                                                   "full": "Kreyszig, E. 2011."}})
-        self.assertIn(cite, sec["solutions"]["exe:a"]["content"])
+        out = sec["solutions"]["exe:a"]["content"]
+        self.assertIn('<span class="cite">Kreyszig (2011)</span> and '
+                      '<span class="cite">Kreyszig (2011, ex. 4.5)</span>', out)
+        self.assertNotIn("@k11", out)
+        self.assertNotIn("href", out)
         self.assertNotIn("References", sec["html"])
+
+    def test_a_citation_locator_survives_in_prose(self):
+        # [@k11, sec. 2.1] rendered "Kreyszig (2011)" — the section the reader
+        # was sent to vanished. 96 of these on the Robotics notes.
+        data = {"chapters": [{"title": "C", "slug": "c", "hash": "c1",
+            "sections": [{"title": "S", "slug": "s", "anchors": [], "html":
+                '<p>see <span class="citation" data-cites="k11 k12">'
+                '[@k11, sec. 2.1; @k12]</span></p>'}]}]}
+        number_artifact(data, references={
+            "k11": {"label": "Kreyszig (2011)", "full": "Kreyszig, E. 2011."},
+            "k12": {"label": "Strang (2016)", "full": "Strang, G. 2016."}})
+        html = data["chapters"][0]["sections"][0]["html"]
+        self.assertIn('<a class="cite" href="#ref-k11">Kreyszig (2011, sec. 2.1)'
+                      '</a>, <a class="cite" href="#ref-k12">Strang (2016)</a>',
+                      html)
 
     def test_bucket_resolution_tolerates_odd_shapes(self):
         # Buckets are artifact-supplied, so a missing/blank content field or a

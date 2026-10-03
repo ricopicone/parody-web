@@ -53,6 +53,9 @@ _CITE_RE = re.compile(
 _ANY_CITE_RE = re.compile(
     r'<span class="citation" data-cites="[^"]+">(.*?)</span>', re.S)
 _AT_KEY_RE = re.compile(r'@([A-Za-z][\w:.-]*)')
+# One ;-separated part of a bracketed citation body: its key, then any locator
+# after the comma ("@lynch2017, ex. 4.5" → lynch2017, "ex. 4.5").
+_CITE_PART_RE = re.compile(r'-?@([^\s,;]+)\s*,?\s*(.*)', re.S)
 
 # Further-reading boxes (::: {.freadinglist}) list recommended sources as
 # [key]{.plaincite post="…"} spans, which pandoc renders as
@@ -1138,9 +1141,32 @@ def _resolve_citations(html, targets, references, cited):
     """Resolve pandoc citation spans: cross-reference keys ([@eq:x],
     [@Fig:x], "[Equation @eq:x]") against `targets`, bibliography keys
     against `references` (appending each to `cited` for the References
-    list). A span with any key it cannot place is left exactly as it was."""
+    list). A span with any key it cannot place is left exactly as it was.
+
+    With `cited` None there is no References list to link to — a problem or
+    solution body — so a bibliography key is set as unlinked text and nothing
+    is credited to the section."""
+    def bib(k, loc=""):
+        label = _esc(references[k]["label"])
+        # [@k, sec. 2.1] → "Author (2017, sec. 2.1)", as \textcite[sec. 2.1]{k};
+        # the locator is pandoc's html already, so it is not escaped again
+        if loc:
+            label = (label[:-1] + ", " + loc + ")" if label.endswith(")")
+                     else label + ", " + loc)
+        if cited is None:
+            return f'<span class="cite">{label}</span>'
+        if k not in cited:
+            cited.append(k)
+        return f'<a class="cite" href="#ref-{k}">{label}</a>'
+
     def resolve_cite(mo):
         keys = mo.group(1).split()
+        # each key's locator, from the body pandoc kept: "k11, sec. 2.1; @k12"
+        locs = {}
+        for part in ("@" + mo.group(2)).split(";"):
+            m = _CITE_PART_RE.match(part.strip())
+            if m:
+                locs.setdefault(m.group(1), m.group(2).strip())
         # a citation made entirely of cross-ref keys ([@eq:a;@eq:b;@eq:c])
         # renders grouped + sort&compressed, exactly like \cref{a,b,c}
         # ("equations (9.7) to (9.9)") rather than a repeated-word list.
@@ -1155,10 +1181,7 @@ def _resolve_citations(html, targets, references, cited):
                 label = _recase_label(t["label"], k[:1].isupper())
                 parts.append(_link(label, t["url"]))
             elif k in references:  # real bibliography citation
-                if k not in cited:
-                    cited.append(k)
-                parts.append(f'<a class="cite" href="#ref-{k}">'
-                             f'{_esc(references[k]["label"])}</a>')
+                parts.append(bib(k, locs.get(k, "")))
             else:
                 return mo.group(0)  # unknown key → leave span as-is
         return ", ".join(parts)
@@ -1183,10 +1206,7 @@ def _resolve_citations(html, targets, references, cited):
                     label = label.split(" ", 1)[1]
                 return _link(label, t["url"])
             if key in references:
-                if key not in cited:
-                    cited.append(key)
-                return (f'<a class="cite" href="#ref-{key}">'
-                        f'{_esc(references[key]["label"])}</a>')
+                return bib(key)
             resolved[0] = False
             return m.group(0)
 
@@ -1565,11 +1585,11 @@ def number_artifact(data, references=None, edition_query=""):
             # here — above the empty-html guard, because extracting the problems
             # can leave a section with buckets and almost no prose.
             #
-            # Cross-references only, deliberately — hashrefs, typed [@eq:x]
-            # citation spans, and \cref in maths. A bibliography key stays
-            # as it is: the section's `cited` builds its References list, and
-            # crediting it with a citation not in its prose would be wrong, and
-            # a solution page has no list for an Author (Year) link to land on.
+            # Hashrefs, typed [@eq:x] citation spans, and \cref in maths. A
+            # bibliography key is set as unlinked text (cited=None): the
+            # section's `cited` builds its References list, crediting it with a
+            # citation not in its prose would be wrong, and a solution page has
+            # no list for an Author (Year) link to land on.
             def _resolve_bucket_ref(mo):
                 out = _render_refs(mo.group(2), targets,
                                    cap_class=mo.group(1) == "Hashref")
@@ -1584,7 +1604,7 @@ def number_artifact(data, references=None, edition_query=""):
                         continue
                     body = _HASHREF_RE.sub(_resolve_bucket_ref,
                                            entry["content"])
-                    body = _resolve_citations(body, targets, {}, [])
+                    body = _resolve_citations(body, targets, references, None)
                     body = _resolve_cref_in_math(body, targets)
                     # and the S-numbers themselves, so a reference to
                     # "figure S4.1" lands on something that says S4.1
