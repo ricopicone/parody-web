@@ -15,12 +15,13 @@ from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.clickjacking import xframe_options_sameorigin
+from django.utils.cache import patch_cache_control
 from django.utils.html import escape, strip_tags
 from django.utils.safestring import mark_safe
 
 from django.utils import timezone
 
-from . import editable_tables, staffonly
+from . import answerkey, editable_tables, staffonly
 from .access import get_policy
 
 # The reader's own data leaves here in a documented shape, and something on the
@@ -419,20 +420,33 @@ def chapter_detail(request, chapter_slug):
     first = contents[0] if contents else None
     # A preview lead-in teases the public exactly like a preview section.
     preview = bool(leadin and policy.section_is_preview(request, leadin))
-    return render(request, "parody_web/chapter.html", {
+    # The lead-in is section prose like any other, so it gets the same answer
+    # key toggle and the same staff-only strip — which it went without until
+    # 0.99.0, serving a lead-in's .staff-only block to every reader.
+    if request.method == "GET" and (target := answerkey.toggle(request)):
+        return redirect(target)
+    answers, leadin_html = None, ""
+    if leadin is not None:
+        html, answers = answerkey.for_reader(request, leadin)
+        leadin_html = staffonly.for_reader(request, html)
+    response = render(request, "parody_web/chapter.html", {
         "book": book, "editions": editions,
         "chapter": chapter, "leadin": leadin, "contents": contents,
         "chapter_nav": _chapter_nav(book, chapter, request=request),
+        "leadin_html": leadin_html,
         "first": first, "public": public, "preview": preview,
         "next_path": request.get_full_path(),
-        "meta_description": _excerpt(leadin.html if leadin else "")
+        "meta_description": _excerpt(
+            staffonly.strip_staff_only(leadin.html) if leadin else "")
         or f"{chapter.title} — {book.title}.",
         "canonical_url": request.build_absolute_uri(request.path),
+        **_answers_context(request, answers),
         # The chapter title + lead-in prose is one print unit, and the lead-in
         # is read HERE rather than at /<ch>/lead-in/ — so this is the only page
         # its PDF can be offered on.
         **_print_context(request, book, leadin),
     })
+    return _no_store_if_answers(response, answers)
 
 
 def section_detail(request, chapter_slug, section_slug):
@@ -448,6 +462,12 @@ def section_detail(request, chapter_slug, section_slug):
     # teaser + sign-in; everything else is full. The owner sees all full.
     preview = policy.section_is_preview(request, section)
 
+    # Staff switching the answer key on or off; never anyone else (see
+    # answerkey.toggle). Redirects so the parameter does not stay in the url.
+    if request.method == "GET" and (target := answerkey.toggle(request)):
+        return redirect(target)
+    html, answers = answerkey.for_reader(request, section)
+
     # A data-entry table posts to its own page. Save, then redirect to the
     # table's anchor so a refresh cannot re-submit and the reader lands back on
     # the row they were filling in.
@@ -462,13 +482,14 @@ def section_detail(request, chapter_slug, section_slug):
     idx = next((i for i, s in enumerate(flat) if s.pk == section.pk), None)
     prev_s = flat[idx - 1] if idx else None
     next_s = flat[idx + 1] if idx is not None and idx + 1 < len(flat) else None
-    return render(request, "parody_web/section.html", {
+    response = render(request, "parody_web/section.html", {
         "book": book, "editions": editions,
         "section": section, "chapter": section.chapter,
         # The reader's own copy of the section: data-entry tables carry what
-        # they saved. Identical to section.html for every other book.
+        # they saved. Identical to section.html for every other book. For
+        # staff showing the answers, it is the key's html instead.
         "section_html": editable_tables.materialise(
-            staffonly.for_reader(request, section.html),
+            staffonly.for_reader(request, html),
             request=request, book=book, section=section,
             export_url=lambda tid: _table_url(book, chapter_slug, section_slug, tid),
             all_tables_url=_tables_url(book)),
@@ -489,8 +510,26 @@ def section_detail(request, chapter_slug, section_slug):
         # text even when the reader in front of us is staff
         "meta_description": _excerpt(staffonly.strip_staff_only(section.html)),
         "canonical_url": request.build_absolute_uri(request.path),
+        **_answers_context(request, answers),
         **_print_context(request, book, section),
     })
+    return _no_store_if_answers(response, answers)
+
+
+def _answers_context(request, answers):
+    """Template context for the staff answer-key toggle (empty for students)."""
+    if answers is None:
+        return {}
+    return {"answers": answers,
+            "answers_toggle_url": answerkey.toggle_url(request, answers)}
+
+
+def _no_store_if_answers(response, answers):
+    """A page carrying the key must not be kept by any cache between us and
+    the reader — a shared one would hand it to the next student."""
+    if answers == "shown":
+        patch_cache_control(response, private=True, no_store=True)
+    return response
 
 
 def _pdf_response(path, download_name, inline=False):

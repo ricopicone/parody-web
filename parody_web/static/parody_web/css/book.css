@@ -111,6 +111,20 @@ nav.edition-switcher strong { color: var(--ink); }
     background: var(--accent-wash); border: 1px solid var(--accent-soft); border-radius: 6px;
     padding: .5rem .8rem; margin: .3rem 0 1rem; }
 
+/* The answer-key toggle (staff only; see parody_web/answerkey.py). Quiet when
+   the key is off: it is an offer, and most staff visits are not teaching.
+   Loud when it is on — the amber of .draft-tag, because a page of filled-in
+   blanks looks like a finished page, and the one thing that must never happen
+   is forgetting it is on while screen-sharing to a class. */
+.answers-banner { font-family: var(--font-display); font-size: .8rem;
+    display: flex; flex-wrap: wrap; gap: .3rem .8rem; justify-content: space-between;
+    align-items: baseline; color: var(--ink-muted);
+    border: 1px dashed var(--accent-soft); border-radius: 6px;
+    padding: .35rem .8rem; margin: .3rem 0 1rem; }
+.answers-banner a { white-space: nowrap; }
+.answers-banner.is-shown { font-size: .85rem; color: var(--ink);
+    background: var(--mark); border: 1px solid var(--mark); }
+
 /* search inside */
 .search-form { display: flex; gap: .5rem; margin: 1rem 0 1.5rem; max-width: 34rem; }
 .search-form input[type=search] { flex: 1; padding: .45rem .7rem; font-size: 1rem;

@@ -19,7 +19,7 @@
 
 {% if leadin %}
   {% if preview %}
-    {% if leadin.html %}<div class="preview">{{ leadin.html|render_book|truncatewords_html:150 }}</div>{% endif %}
+    {% if leadin_html %}<div class="preview">{{ leadin_html|render_book|truncatewords_html:150 }}</div>{% endif %}
     <div class="signin-gate">
       {% with ed=book.book_metadata.editions.0 %}
       <p><strong>This is a preview.</strong> Read the full book in print or ebook —
@@ -27,8 +27,9 @@
       {% endwith %}
       <p class="note">Instructor with access? <a href="{% url 'login' %}?next={{ next_path|urlencode }}">Instructor login</a>.</p>
     </div>
-  {% elif leadin.html %}
-    {{ leadin.html|render_book }}
+  {% elif leadin_html %}
+    {% include "parody_web/_answers_toggle.html" %}
+    {{ leadin_html|render_book }}
   {% endif %}
 {% endif %}
 

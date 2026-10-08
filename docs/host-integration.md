@@ -111,7 +111,8 @@ It is applied on four surfaces, three of which are easy to forget:
 | surface | when |
 |---|---|
 | the solution body | per reader |
-| the section body | per reader |
+| the section body, and a chapter's lead-in (from 0.99.0; before that a lead-in's block reached everyone) | per reader |
+| a preview section's teaser | per reader |
 | the section's `<meta name="description">` | **always stripped** — it is served to crawlers |
 | `Section.plain`, which backs search snippets | **stripped at import** |
 
@@ -119,6 +120,42 @@ The last is a deliberate trade. Snippets are matched against a stored column
 with no per-reader variant, so the safe answer is that staff content never
 enters it. The cost: staff cannot full-text-search their own marking notes.
 They can still read them on the page.
+
+### The answer key
+
+A book with fill-in-the-blanks ships two builds from one commit: `<slug>.json`
+(`parody build --clozes blank`, answers removed at build time) and
+`<slug>-key.json` (`--clozes key`, every answer in place — inline, block and
+inside maths). Give the importer both and staff can show a page with its blanks
+filled, for teaching from it live:
+
+```
+python manage.py import_artifact book.json --key book-key.json
+```
+
+The key's html is stored per section in `Section.key_html` (only for sections
+that have blanks) and served by the section and chapter views in place of
+`Section.html` when **both** hold:
+
+- the reader passes `can_view_staff_notes` — asked on every request, so the
+  session flag below is a preference, never a permission; and
+- they switched it on with `?answers=on` (off with `?answers=off`). The choice
+  is kept in the session, so it follows them from page to page through a
+  lecture. The views redirect to drop the parameter; for anyone who is not
+  staff the parameter does nothing at all.
+
+Staff see a "Show answers" offer on every page that has a key, and an amber
+"Answers shown" banner while it is on. A page with the answers shown is sent
+`Cache-Control: private, no-store`. Students never receive key html by any
+route: it is not CSS-hidden on their page, and `Section.plain` (search) is
+always built from the student html.
+
+The import **refuses** a key — raising `CommandError` before writing anything —
+unless it is the key to *this* artifact: same slug, `source_commit` and
+edition, the same sections, and each section's text identical once every blank
+and every answer is reduced to a placeholder. A key from another release would
+put answers to blanks that have moved in front of a class. An import without
+`--key` clears any stored key, for the same reason.
 
 ### Why `request` and not `user`
 

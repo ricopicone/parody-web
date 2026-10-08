@@ -12,7 +12,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.html import strip_tags
 
-from parody_web import printing
+from parody_web import answerkey, printing
 from parody_web.models import Book, Chapter, Section
 from parody_web.numbering import number_artifact, resolve_section_drafts
 from parody_web.staffonly import strip_staff_only
@@ -49,6 +49,12 @@ class Command(BaseCommand):
             "--cover", help="media filename for the cover image (e.g. cover.jpg)")
         parser.add_argument(
             "--errata", help="path to a rendered errata HTML fragment to serve at /errata")
+        parser.add_argument(
+            "--key",
+            help="path to the book's instructor build (<slug>-key.json, from "
+            "`parody build --clozes key` at the SAME commit). Its sections, "
+            "blanks answered, are stored for staff to show on demand. Refused, "
+            "with nothing imported, unless it is the key to this artifact.")
 
     def handle(self, *args, **opts):
         path = opts["artifact"]
@@ -109,10 +115,46 @@ class Command(BaseCommand):
         edition_id = str(edition.get("id", ""))
         is_default = bool(edition.get("default", False)) or not edition_id
         edition_query = "" if is_default else f"?ed={edition_id}"
+        # The key is checked before anything is written, and against the
+        # artifact as built: numbering rewrites both, and a key that fails is a
+        # release that is broken, which must stop here rather than put another
+        # page's answers in front of a class.
+        key = self._read_key(opts.get("key"), data)
+
         number_artifact(data, references=references, edition_query=edition_query)
+        self.key_html = {}
+        if key is not None:
+            number_artifact(key, references=references,
+                            edition_query=edition_query)
+            self.key_html = {
+                (ch.get("slug"), sec.get("slug")): sec.get("html", "")
+                for ch in key.get("chapters", [])
+                for sec in ch.get("sections", [])
+                if answerkey.has_answers(sec.get("html", ""))}
 
         with transaction.atomic():
             self._import(slug, data)
+
+    def _read_key(self, path, data):
+        """The instructor build at `path`, verified to be this artifact's key;
+        None when no key was given."""
+        if not path:
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                key = json.load(f)
+        except (OSError, ValueError) as e:
+            raise CommandError(f"could not read key artifact {path}: {e}")
+        problems = answerkey.mismatches(data, key)
+        if problems:
+            shown = "\n  ".join(problems[:20])
+            more = (f"\n  … and {len(problems) - 20} more"
+                    if len(problems) > 20 else "")
+            raise CommandError(
+                f"{path} is not the answer key to this artifact "
+                f"({len(problems)} problem(s)); nothing imported:\n  "
+                f"{shown}{more}")
+        return key
 
     def _import(self, slug, data):
         # Edition metadata (parody build emits `edition` per-edition artifacts +
@@ -182,6 +224,8 @@ class Command(BaseCommand):
                         "order": si + 1,
                         "hash": sec.get("hash", ""),
                         "html": sec.get("html", ""),
+                        "key_html": self.key_html.get(
+                            (ch["slug"], sec["slug"]), ""),
                         # Search snippets come from this column and there is no
                         # per-reader variant of it, so staff notes are
                         # kept OUT rather than gated later. The cost is
@@ -220,6 +264,8 @@ class Command(BaseCommand):
 
         n_sec = book.sections.count()
         label = f"{slug} / {book.edition_id}" if book.edition_id else slug
+        keyed = (f", answer key for {len(self.key_html)}"
+                 if self.key_html else "")
         self.stdout.write(self.style.SUCCESS(
             f"imported '{book.title}' ({label}): {book.chapters.count()} chapters, "
-            f"{n_sec} sections"))
+            f"{n_sec} sections{keyed}"))

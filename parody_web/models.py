@@ -97,6 +97,12 @@ class Section(models.Model):
     # per-section records (see the `key` property and docs/host-integration.md)
     hash = models.CharField(max_length=100, blank=True, default="", db_index=True)
     html = models.TextField(blank=True)
+    # The same section from the book's instructor build (`--clozes key`), every
+    # fill-in-the-blank answered in place. Empty when the import was given no
+    # key, or the section has no blanks. Served only to a reader
+    # can_view_staff_notes admits — see parody_web/answerkey.py — and never
+    # copied into `plain`, whose search snippets go to anyone.
+    key_html = models.TextField(blank=True, default="")
     # plain-text rendering of `html`, for the "search inside" feature (icontains)
     plain = models.TextField(blank=True, default="")
     online_resources = models.TextField(blank=True)
