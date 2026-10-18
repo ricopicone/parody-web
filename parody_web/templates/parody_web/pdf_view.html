@@ -105,6 +105,21 @@ book stylesheets style prose this page does not have.
   .pdf-bar .pdf-exit svg { display: block; flex: none; }
   .pdf-bar .pdf-exit-label { font-size: .82rem; }
 
+  /* Translations: a <details>, so it opens with no script. The bar clips
+     anything that overflows it, so the list is fixed to the viewport, which
+     escapes that clip, rather than hung from the summary. */
+  .pdf-bar .pdf-translations > summary { display: inline-flex; align-items: center;
+             gap: .3rem; list-style: none; cursor: pointer; }
+  .pdf-bar .pdf-translations > summary::-webkit-details-marker { display: none; }
+  .pdf-bar .pdf-translations[open] { opacity: 1; border-color: var(--rule, #ccc); }
+  .pdf-translations-menu { position: fixed; top: 2.8rem; right: .6rem; z-index: 10;
+             display: flex; flex-direction: column; gap: .35rem;
+             padding: .5rem .75rem; border: 1px solid var(--rule, #ddd);
+             border-radius: 4px; background: var(--paper, #fff);
+             box-shadow: 0 6px 20px rgb(0 0 0 / 12%); font-size: .85rem; }
+  .pdf-translations-menu a { color: var(--accent, inherit); text-decoration: none; }
+  .pdf-translations-menu a:hover { text-decoration: underline; }
+
   /* Narrower than this a truncated title is noise rather than information —
      two words and an ellipsis identify nothing. The number still does. */
   @media (max-width: 34rem) { .pdf-bar .pdf-title { display: none; } }
@@ -139,6 +154,7 @@ book stylesheets style prose this page does not have.
         {% include "parody_web/_icon.html" with icon="back" %}<span class="pdf-exit-label">Back</span>
       </a>
       {% include "parody_web/_pdf_view_download.html" %}
+      {% include "parody_web/_translations_download.html" with variant="bar" %}
     </span>
   </nav>
   <div class="pdf-stage" data-section-key="{{ section.key }}">

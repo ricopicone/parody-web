@@ -583,7 +583,8 @@ def _print_context(request, book, section=None):
 
     policy = get_policy()
     ctx = {"section_pdf_url": "", "section_pdf_view_url": "",
-           "section_pdf_pages": None, "book_pdf_url": ""}
+           "section_pdf_pages": None, "book_pdf_url": "",
+           "translations": _translation_links(request, book, section)}
     if book_pdf_path(book) and policy.can_download_book_pdf(request, book):
         ctx["book_pdf_url"] = reverse("parody_web:book_pdf")
     if section is not None \
@@ -596,6 +597,100 @@ def _print_context(request, book, section=None):
             args=[section.chapter.slug, section.slug])
         ctx["section_pdf_pages"] = section.print_page_count
     return ctx
+
+
+def _translation_links(request, book, section=None):
+    """One entry per translated twin this reader may have, for the chrome.
+
+    With ``section``, the twins that cover it, if the reader may download
+    that section; without, the whole-book twins, if they may download the
+    book. Empty otherwise, so a template renders on truthiness alone.
+    """
+    from .printing import translations_available, twin_pdf_path
+    from .twins import LANGUAGE_NAMES
+
+    policy = get_policy()
+    if section is None:
+        if not policy.can_download_book_pdf(request, book):
+            return []
+        twins = translations_available(book)
+        pdf, sbs = "parody_web:book_twin_pdf", "parody_web:book_twin_sbs"
+        args = []
+    else:
+        if section.draft or not policy.can_download_section_pdf(request, section):
+            return []
+        key = f"{section.chapter.slug}/{section.slug}"
+        twins = [t for t in translations_available(book) if key in (t.sections or {})]
+        pdf, sbs = "parody_web:section_twin_pdf", "parody_web:section_twin_sbs"
+        args = [section.chapter.slug, section.slug]
+    return [{
+        "language": t.language,
+        "name": LANGUAGE_NAMES[t.language],
+        "pdf_url": reverse(pdf, args=args + [t.language]),
+        "sbs_url": (reverse(sbs, args=args + [t.language])
+                    if twin_pdf_path(t, side_by_side=True) else ""),
+    } for t in twins]
+
+
+def _twin_filename(name, language, side_by_side):
+    """``book-3-2-alpha.pdf`` → ``book-3-2-alpha-de[-side-by-side].pdf``."""
+    stem = name[:-len(".pdf")] if name.endswith(".pdf") else name
+    return f"{stem}-{language}{'-side-by-side' if side_by_side else ''}.pdf"
+
+
+def _section_twin(request, chapter_slug, section_slug, language, side_by_side):
+    """A section's pages of a translated twin, gated exactly as its English
+    PDF is; every refusal or absence is the same 404."""
+    from .printing import twin_for, twin_section_pdf_path
+
+    book, _ = _resolve_book(request)
+    section = get_object_or_404(
+        Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
+    if section.draft and not _can_view_drafts(request):
+        raise Http404("section pdf not available")
+    if not get_policy().can_download_section_pdf(request, section):
+        raise Http404("no pdf for this section")
+    twin = twin_for(book, language)
+    path = twin and twin_section_pdf_path(book, section, twin, side_by_side)
+    if not path:
+        raise Http404("no translation of this section")
+    return _pdf_response(path, _twin_filename(_pdf_filename(book, section), language, side_by_side),
+                         inline=bool(request.GET.get("inline")))
+
+
+@xframe_options_sameorigin
+def section_twin_pdf(request, chapter_slug, section_slug, language):
+    """This section's pages of the translated twin (parody twin)."""
+    return _section_twin(request, chapter_slug, section_slug, language, False)
+
+
+@xframe_options_sameorigin
+def section_twin_sbs(request, chapter_slug, section_slug, language):
+    """This section's English and twin pages, side by side on landscape sheets."""
+    return _section_twin(request, chapter_slug, section_slug, language, True)
+
+
+def _book_twin(request, language, side_by_side):
+    from .printing import twin_for, twin_pdf_path
+
+    book, _ = _resolve_book(request)
+    if not get_policy().can_download_book_pdf(request, book):
+        raise Http404("no pdf for this book")
+    twin = twin_for(book, language)
+    path = twin and twin_pdf_path(twin, side_by_side)
+    if not path:
+        raise Http404("no translation of this book")
+    return _pdf_response(path, _twin_filename(_pdf_filename(book), language, side_by_side))
+
+
+def book_twin_pdf(request, language):
+    """The whole translated twin."""
+    return _book_twin(request, language, False)
+
+
+def book_twin_sbs(request, language):
+    """The whole book, English and twin side by side."""
+    return _book_twin(request, language, True)
 
 
 @xframe_options_sameorigin
@@ -663,6 +758,7 @@ def section_pdf_view(request, chapter_slug, section_slug):
         # stage does not have to know parody-web's URL names.
         "pdf_url": reverse("parody_web:section_pdf",
                            args=[chapter_slug, section_slug]),
+        "translations": _translation_links(request, book, section),
     })
 
 

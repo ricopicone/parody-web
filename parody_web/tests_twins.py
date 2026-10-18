@@ -9,7 +9,7 @@ from django.core.management import call_command
 from django.test import TestCase, override_settings
 
 from parody_web import printing, twins
-from parody_web.models import Book, TwinPdf
+from parody_web.models import Book, Section, TwinPdf
 from parody_web.tests_printing import ARTIFACT
 
 ENGLISH_SHA = ARTIFACT["print"]["sha256"]
@@ -194,3 +194,122 @@ class TwinSliceTests(TestCase):
 
     def test_translations_available_lists_the_valid_twins(self):
         self.assertEqual(printing.translations_available(self.book), [self.twin])
+
+
+class TwinViewTests(TestCase):
+    """The reader's side: URLs, gating, and the links in the chrome."""
+
+    def setUp(self):
+        from django.test import Client
+
+        from parody_web.tests_printing import make_pdf
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.settings = override_settings(PARODY_WEB_PRINT_ROOT=str(self.root))
+        self.settings.enable()
+        make_pdf(self.root / "print-book.pdf", 20)
+        self.book, _ = import_artifact(twin=[str(write_twin(
+            self.root, content=pdf_bytes(4, 100), sbs_content=pdf_bytes(4, 300)))])
+        self.client = Client()
+
+    def tearDown(self):
+        self.settings.disable()
+        self.tmp.cleanup()
+
+    def _body(self, resp):
+        return b"".join(resp.streaming_content) if resp.streaming else resp.content
+
+    def _widths(self, resp):
+        from io import BytesIO
+
+        from pypdf import PdfReader
+        return [int(p.mediabox.width) for p in PdfReader(BytesIO(self._body(resp))).pages]
+
+    def _login(self):
+        from django.contrib.auth import get_user_model
+        get_user_model().objects.create_user("owner", password="pw")
+        self.client.login(username="owner", password="pw")
+
+    def test_section_twin_served_inline_and_download(self):
+        resp = self.client.get("/one/alpha/pdf/de/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._widths(resp), [102, 103, 104])
+        self.assertIn("attachment", resp["Content-Disposition"])
+        self.assertIn("alpha-de.pdf", resp["Content-Disposition"])
+        resp = self.client.get("/one/alpha/pdf/de/side-by-side/?inline=1")
+        self.assertEqual(self._widths(resp), [302, 303, 304])
+        self.assertIn("inline", resp["Content-Disposition"])
+        self.assertIn("alpha-de-side-by-side.pdf", resp["Content-Disposition"])
+
+    def test_book_twin_and_side_by_side(self):
+        resp = self.client.get("/pdf/de/")
+        self.assertEqual(self._widths(resp), [101, 102, 103, 104])
+        self.assertIn("print-book-de.pdf", resp["Content-Disposition"])
+        resp = self.client.get("/pdf/de/side-by-side/")
+        self.assertEqual(self._widths(resp), [301, 302, 303, 304])
+
+    def test_draft_or_policy_refusal_404s(self):
+        Section.objects.filter(book=self.book, slug="alpha").update(preview=True)
+        self.assertEqual(self.client.get("/one/alpha/pdf/de/").status_code, 404)
+        self.assertEqual(self.client.get("/one/alpha/pdf/de/side-by-side/").status_code, 404)
+        Section.objects.filter(book=self.book, slug="alpha").update(preview=False, draft=True)
+        self.assertEqual(self.client.get("/one/alpha/pdf/de/").status_code, 404)
+        with override_settings(PARODY_WEB_PUBLIC_BOOK_PDF=False):
+            self.assertEqual(self.client.get("/pdf/de/").status_code, 404)
+            self.assertEqual(self.client.get("/pdf/de/side-by-side/").status_code, 404)
+            self._login()
+            self.assertEqual(self.client.get("/pdf/de/").status_code, 200)
+
+    def test_stale_twin_404s_and_no_link(self):
+        Book.objects.filter(pk=self.book.pk).update(print_sha256="d" * 64)
+        for url in ("/one/alpha/pdf/de/", "/one/alpha/pdf/de/side-by-side/",
+                    "/pdf/de/", "/pdf/de/side-by-side/"):
+            self.assertEqual(self.client.get(url).status_code, 404, url)
+        self.assertNotIn("/pdf/de/", self.client.get("/one/alpha/").content.decode())
+        self.assertNotIn("/pdf/de/", self.client.get("/").content.decode())
+
+    def test_section_the_twin_does_not_cover_404s(self):
+        self.assertEqual(self.client.get("/one/beta/pdf/de/").status_code, 404)
+
+    def test_bad_language_404s(self):
+        for lang in ("xx", "DE", "zh", "..", "%2e%2e", "view%2F.."):
+            for url in (f"/one/alpha/pdf/{lang}/", f"/pdf/{lang}/", f"/pdf/{lang}/side-by-side/"):
+                self.assertEqual(self.client.get(url).status_code, 404, url)
+
+    def test_rail_lists_translations_only_when_available(self):
+        html = self.client.get("/one/alpha/").content.decode()
+        self.assertIn('href="/one/alpha/pdf/de/"', html)
+        self.assertIn('href="/one/alpha/pdf/de/side-by-side/"', html)
+        self.assertIn("Deutsch", html)
+        self.assertIn('lang="de"', html)
+        TwinPdf.objects.all().delete()
+        html = self.client.get("/one/alpha/").content.decode()
+        self.assertNotIn("/pdf/de/", html)
+        self.assertNotIn("Deutsch", html)
+
+    def test_rail_hides_translations_from_a_reader_refused_the_section(self):
+        self._login()  # the owner sees a preview section, and its translations
+        Section.objects.filter(book=self.book, slug="alpha").update(preview=True)
+        self.assertIn("/one/alpha/pdf/de/", self.client.get("/one/alpha/").content.decode())
+        self.client.logout()
+        self.assertNotIn("/one/alpha/pdf/de/", self.client.get("/one/alpha/").content.decode())
+
+    def test_home_lists_the_book_translations(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn('href="/pdf/de/"', html)
+        self.assertIn('href="/pdf/de/side-by-side/"', html)
+
+    def test_pdf_view_bar_lists_translations(self):
+        html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertIn('href="/one/alpha/pdf/de/"', html)
+        self.assertIn('href="/one/alpha/pdf/de/side-by-side/"', html)
+        TwinPdf.objects.all().delete()
+        html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertNotIn("/pdf/de/", html)
+
+    def test_side_by_side_link_absent_without_the_file(self):
+        TwinPdf.objects.update(side_by_side_pdf="")
+        html = self.client.get("/one/alpha/").content.decode()
+        self.assertIn('href="/one/alpha/pdf/de/"', html)
+        self.assertNotIn("side-by-side", html)
+        self.assertEqual(self.client.get("/one/alpha/pdf/de/side-by-side/").status_code, 404)

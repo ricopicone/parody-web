@@ -348,6 +348,8 @@ form.codebox input { color: var(--ink); background: var(--paper); }
     letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint); }
 .util-rail-note { display: block; font-size: var(--fs-xs);
     color: var(--ink-faint); }
+/* a second caption in the same card (Translations under Print version) */
+.util-rail-cap-next { margin-top: .4rem; }
 
 /* On a phone the float would crowd the measure; park it out of the flow. */
 @media (max-width: 900px) {

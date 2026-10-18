@@ -1,0 +1,29 @@
+{% comment %}
+Links to the translated twins of this section (or, on the home page, of the
+book): each language's twin PDF, and the English and twin side by side on
+landscape sheets. Renders nothing when there is no twin this reader may have.
+
+`variant` picks the setting: "rail" (the section rail's card), "bar" (the PDF
+view's exits) or "home" (under the full-book link).
+
+Context: translations — [{language, name, pdf_url, sbs_url}], from
+views._translation_links; sbs_url is "" when the sheets are not on disk.
+{% endcomment %}
+{% if translations %}{% if variant == "bar" %}
+<details class="pdf-exit pdf-translations">
+  <summary aria-label="Translations" title="Translations">
+    {% include "parody_web/_icon.html" with icon="translate" %}<span class="pdf-exit-label">Translations</span>
+  </summary>
+  <span class="pdf-translations-menu">
+    {% for t in translations %}<span><a href="{{ t.pdf_url }}" lang="{{ t.language }}" hreflang="{{ t.language }}">{{ t.name }}</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}">side by side</a>{% endif %}</span>
+    {% endfor %}
+  </span>
+</details>
+{% elif variant == "home" %}
+<p class="book-pdf-link">Translations:
+  {% for t in translations %}<a href="{{ t.pdf_url }}" lang="{{ t.language }}" hreflang="{{ t.language }}">{{ t.name }}</a>{% if t.sbs_url %} <span class="book-pdf-note">(<a href="{{ t.sbs_url }}">side by side</a>)</span>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
+</p>
+{% else %}
+<p class="util-rail-cap util-rail-cap-next">Translations</p>
+{% for t in translations %}<span><a href="{{ t.pdf_url }}" lang="{{ t.language }}" hreflang="{{ t.language }}">{{ t.name }}</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}">side by side</a>{% endif %}</span>
+{% endfor %}{% endif %}{% endif %}

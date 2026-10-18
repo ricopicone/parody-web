@@ -27,6 +27,11 @@ urlpatterns = [
     # policy: print PDFs are never served off disk by nginx, because that tree
     # has no auth and the PDF holds the full text of gated sections.
     path("pdf/", views.book_pdf, name="book_pdf"),
+    # /pdf/<lang>/ — the book's translated twin (parody twin), and the English
+    # and twin side by side. Gated like /pdf/; before the bare section pattern,
+    # which would otherwise read them as chapter "pdf", section "<lang>".
+    path("pdf/<str:language>/", views.book_twin_pdf, name="book_twin_pdf"),
+    path("pdf/<str:language>/side-by-side/", views.book_twin_sbs, name="book_twin_sbs"),
     # /tables.json — every data-entry table this reader has filled in, book-wide
     # (reserved segment, like "pdf" and "index").
     path("tables.json", views.tables_export, name="tables_export"),
@@ -42,6 +47,12 @@ urlpatterns = [
     # so the reserved "pdf" segment reads first.
     path("<slug:chapter_slug>/<slug:section_slug>/pdf/", views.section_pdf,
          name="section_pdf"),
+    # This section's pages of a translated twin, and side by side with the
+    # English. After pdf/view/, so "view" is never read as a language.
+    path("<slug:chapter_slug>/<slug:section_slug>/pdf/<str:language>/",
+         views.section_twin_pdf, name="section_twin_pdf"),
+    path("<slug:chapter_slug>/<slug:section_slug>/pdf/<str:language>/side-by-side/",
+         views.section_twin_sbs, name="section_twin_sbs"),
     # One data-entry table's saved values, as JSON. Before the bare section
     # pattern so the reserved "table" segment reads first.
     path("<slug:chapter_slug>/<slug:section_slug>/table/<str:table_id>.json",
