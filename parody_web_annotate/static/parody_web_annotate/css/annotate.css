@@ -18,6 +18,9 @@
   overscroll-behavior: contain;
   background: var(--paper-sunk, #4a4a4a);
   padding: 1rem 0 3rem;
+  /* Between a page and the translation beside it (pages.js reads it too, to
+     fit the row on screen). */
+  --ink-twin-gap: 12px;
 }
 
 .ink-page {
@@ -33,6 +36,29 @@
 .ink-root[data-dark="1"] .ink-page {
   background: var(--paper, #16171a);
   box-shadow: 0 1px 6px rgba(0, 0, 0, .6);
+}
+
+/* ---- the translation beside the page -----------------------------------
+   Paper like the page, because it is one: the twin PDF's page, drawn by
+   pdf.js the same way and inverted the same way in dark mode (its canvas is
+   an .ink-page-canvas too). Deliberately NOT an .ink-page: read-along finds
+   the English pages by that class, and the voice reads the English. */
+.ink-twin {
+  position: relative;
+  flex: none;
+  margin-left: var(--ink-twin-gap, 12px);
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .35);
+}
+.ink-root[data-dark="1"] .ink-twin {
+  background: var(--paper, #16171a);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .6);
+}
+/* A tablet in portrait, a phone: two pages to a row would each be too small
+   to read, so the translation goes under its page instead. */
+@media (max-width: 48rem) {
+  .ink-spread[data-twin] { flex-direction: column; align-items: center; }
+  .ink-spread[data-twin] .ink-twin { margin: var(--ink-twin-gap, 12px) 0 0; }
 }
 
 /* Dark mode inverts the PAGE only — never the ink layer above it, whose
@@ -287,17 +313,18 @@
      DOM would put it on its own sheet. */
   .ink-pad { display: none !important; }
 
-  .ink-page {
+  .ink-page, .ink-twin {
     break-after: page;
     page-break-after: always;
     margin: 0 auto !important;
     box-shadow: none !important;
     background: #fff !important;
   }
-  .ink-page:last-child { break-after: auto; page-break-after: auto; }
+  .ink-page:last-child, .ink-twin:last-child { break-after: auto; page-break-after: auto; }
 
   /* Ink is stored in the colour the reader chose; print it that way, and
      never print the page inverted. */
   .ink-root[data-dark="1"] .ink-page-canvas { filter: none !important; }
-  .ink-root[data-dark="1"] .ink-page { background: #fff !important; }
+  .ink-root[data-dark="1"] .ink-page,
+  .ink-root[data-dark="1"] .ink-twin { background: #fff !important; }
 }

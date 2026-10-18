@@ -119,6 +119,8 @@ book stylesheets style prose this page does not have.
              box-shadow: 0 6px 20px rgb(0 0 0 / 12%); font-size: .85rem; }
   .pdf-translations-menu a { color: var(--accent, inherit); text-decoration: none; }
   .pdf-translations-menu a:hover { text-decoration: underline; }
+  /* the translation beside the English now */
+  .pdf-translations-menu a[aria-current] { font-weight: 700; text-decoration: underline; }
 
   /* Narrower than this a truncated title is noise rather than information —
      two words and an ellipsis identify nothing. The number still does. */

@@ -110,3 +110,15 @@ test('too much ink is not treated as an encoding problem', async () => {
     assert.equal(api.downgrade.off, false);
   });
 });
+
+test('ink on a translation is sent when there is a store for it', () => {
+  assert.deepEqual(_body({ ...state, twins: { de: { 1: [{ d: 'T' }] } } }).twins,
+                   { de: { 1: [{ d: 'T' }] } });
+  assert.deepEqual(_body({ ...state, twins: {} }).twins, {});
+});
+
+test('a body built without twins does not claim there are none', () => {
+  // the server replaces twins only when the key is sent; a body that said {}
+  // by default would erase notes this state never knew about
+  assert.equal('twins' in _body(state), false);
+});

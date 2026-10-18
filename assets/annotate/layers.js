@@ -18,7 +18,8 @@
  * failure is invisible: a leak looks exactly like working software.
  */
 export class LayerSet {
-  /** `build(entry)` returns the pair of layers for a page: { page, pad }. */
+  /** `build(entry)` returns the layers for a page: { page, pad }, and
+   *  `twin` when a translation is shown beside it. */
   constructor(build) {
     this.build = build;
     this.layers = new Map();
@@ -64,6 +65,7 @@ export class LayerSet {
     this.layers.delete(number);
     pair.page.destroy();
     pair.pad.destroy();
+    pair.twin?.destroy();              // the translation beside it, if shown
     return true;
   }
 

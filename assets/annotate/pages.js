@@ -91,7 +91,28 @@ export class PageView {
       entry.el.style.height = `${entry.viewport.height}px`;
       entry.pad.style.width = `${entry.viewport.width * PAD_RATIO}px`;
       entry.pad.style.height = `${entry.viewport.height}px`;
+      if (entry.twin) {
+        entry.twin.viewport = entry.twin.page.getViewport({ scale: this.scale });
+        entry.twin.el.style.width = `${entry.twin.viewport.width}px`;
+        entry.twin.el.style.height = `${entry.twin.viewport.height}px`;
+      }
     }
+  }
+
+  /** The widest row at zoom 1, for fitting it on screen (fit.js). A row is
+   *  the page and, when shown, its translation; the margin is optional
+   *  reading and may hang off the edge, as it always has. */
+  rowWidthAtOne(gap = 0) {
+    let widest = 0;
+    for (const entry of this.entries) {
+      const one = (page) => page.getViewport({ scale: this.baseScale }).width;
+      const stacked = entry.twin && getComputedStyle(entry.row).flexDirection === 'column';
+      const width = !entry.twin ? one(entry.page)
+        : stacked ? Math.max(one(entry.page), one(entry.twin.page))
+          : one(entry.page) + gap + one(entry.twin.page);
+      widest = Math.max(widest, width);
+    }
+    return widest;
   }
 
   /** Drop every canvas and draw the visible window again at the current scale. */
@@ -101,9 +122,24 @@ export class PageView {
     this.update();
   }
 
-  async open(url) {
+  /**
+   * Open the section, and with `twinUrl` the translation that goes beside it:
+   * a PDF whose page k holds what English page k holds, so each row is a
+   * page and its translation (parody_web.printing.twin_paired_pdf_path). A
+   * translation that will not open costs the reader the translation, never
+   * the English.
+   */
+  async open(url, { twinUrl = '', twinLanguage = '' } = {}) {
+    const twin = twinUrl
+      ? pdfjsLib.getDocument(twinUrl).promise.catch((err) => {
+        console.warn('[parody-annotate] translation did not open', err);
+        return null;
+      })
+      : null;
     this.doc = await pdfjsLib.getDocument(url).promise;
+    this.twinDoc = await twin;
     this.container.innerHTML = '';
+    if (this.twinDoc) this.container.dataset.twin = twinLanguage;
     for (let number = 1; number <= this.doc.numPages; number += 1) {
       const page = await this.doc.getPage(number);
       const viewport = page.getViewport({ scale: this.scale });
@@ -123,12 +159,32 @@ export class PageView {
       const row = document.createElement('div');
       row.className = 'ink-spread';
       row.appendChild(el);
+
+      // The translation sits between the page and its margin: beside the
+      // English it translates, as on the side-by-side sheets.
+      let twinPart = null;
+      if (this.twinDoc && number <= this.twinDoc.numPages) {
+        const twinPage = await this.twinDoc.getPage(number);
+        const twinViewport = twinPage.getViewport({ scale: this.scale });
+        const twinEl = document.createElement('div');
+        twinEl.className = 'ink-twin';
+        twinEl.lang = twinLanguage;
+        twinEl.style.width = `${twinViewport.width}px`;
+        twinEl.style.height = `${twinViewport.height}px`;
+        twinEl.dataset.twinPage = String(number);
+        row.appendChild(twinEl);
+        row.dataset.twin = twinLanguage;
+        twinPart = { number, page: twinPage, viewport: twinViewport, el: twinEl,
+                     canvas: null, slot: new RenderSlot(this.generation) };
+      }
+
       row.appendChild(pad);
       this.container.appendChild(row);
       this.entries.push({ number, page, viewport, el, pad, row, canvas: null,
                           // One slot per page: pages render independently, but
                           // a zoom invalidates all of them together.
-                          slot: new RenderSlot(this.generation) });
+                          slot: new RenderSlot(this.generation),
+                          twin: twinPart });
     }
     this.update();
     return this.doc.numPages;
@@ -140,15 +196,25 @@ export class PageView {
     const middle = this.container.scrollTop + this.container.clientHeight / 2;
     const keep = new Set(windowAround(pageAt(middle, tops), this.entries.length, 1));
     this.entries.forEach((entry, index) => {
-      if (keep.has(index)) this._render(entry);
-      else this._release(entry);
+      if (keep.has(index)) {
+        this._render(entry);
+        if (entry.twin) this._paint(entry.twin);
+      } else {
+        this._release(entry);
+      }
     });
   }
 
-  async _render(entry) {
-    if (entry.canvas || entry.slot.busy) return;
-    const viewport = entry.viewport;
-    const claim = entry.slot.claim();
+  /**
+   * Draw a page into a canvas of its own: the English page, or the
+   * translation beside it. True once it is drawn and attached at the current
+   * scale; false when it was already drawn or drawing, failed, or was
+   * superseded on the way — in which case nothing of it is left behind.
+   */
+  async _paint(part) {
+    if (part.canvas || part.slot.busy) return false;
+    const viewport = part.viewport;
+    const claim = part.slot.claim();
     const canvas = document.createElement('canvas');
     canvas.className = 'ink-page-canvas';
     const dpr = this.dpr;
@@ -159,10 +225,10 @@ export class PageView {
     const context = canvas.getContext('2d');
     // Attach before rendering. pdf.js drives its render loop from the page's
     // animation frames, and a detached canvas is simply never drawn to.
-    entry.el.prepend(canvas);
-    entry.canvas = canvas;
+    part.el.prepend(canvas);
+    part.canvas = canvas;
     try {
-      await entry.page.render({
+      await part.page.render({
         canvasContext: context,
         viewport,
         // Device pixel ratio goes through pdf.js's own `transform`, not a
@@ -176,41 +242,55 @@ export class PageView {
       }).promise;
     } catch (err) {
       releaseCanvas(canvas);
-      if (entry.canvas === canvas) entry.canvas = null;
-      entry.slot.finish(claim);
-      return;
+      if (part.canvas === canvas) part.canvas = null;
+      part.slot.finish(claim);
+      return false;
     }
     // The reader scrolled past while this was drawing. _release() has already
     // taken the canvas out and announced the page gone, so announcing it ready
     // now would build ink layers for a page nothing will release again —
     // exactly the leak this file's release path exists to prevent.
-    if (entry.slot.superseded(claim)) {
+    if (part.slot.superseded(claim)) {
       releaseCanvas(canvas);
-      if (entry.canvas === canvas) entry.canvas = null;
-      return;
+      if (part.canvas === canvas) part.canvas = null;
+      return false;
     }
-    entry.slot.finish(claim);
+    part.slot.finish(claim);
     // The scale moved while this was drawing: take the page back out rather
     // than leave it attached at the wrong size.
-    if (!entry.slot.canAttach(claim)) {
+    if (!part.slot.canAttach(claim)) {
       releaseCanvas(canvas);
-      if (entry.canvas === canvas) entry.canvas = null;
-      return;
+      if (part.canvas === canvas) part.canvas = null;
+      return false;
     }
-    this.onPageReady(entry);
+    return true;
+  }
+
+  async _render(entry) {
+    if (await this._paint(entry)) this.onPageReady(entry);
   }
 
   _release(entry) {
+    // The translation goes with its page, whatever state the page is in.
+    if (entry.twin) this._releasePart(entry.twin);
+    // The ink drawn over this page goes with it: onPageGone is what releases
+    // the layers, and a viewer that does not listen for it keeps every page's
+    // stages for the life of the tab.
+    if (this._releasePart(entry)) this.onPageGone(entry);
+  }
+
+  /** Give up one page's canvas; true if it had one to give up. */
+  _releasePart(part) {
     // A render can still be drawing into this canvas: only a page with no
     // canvas and no busy slot may start one, so a busy slot means the render
     // in flight owns the one we are about to take away.
-    const rendering = entry.slot.busy;
+    const rendering = part.slot.busy;
     // Give up the slot NOW, so the replacement render — which update() starts
     // on the very next line — is not skipped. A render still in flight is left
     // to finish and then finds itself superseded; cancelling it looked tidier
     // but wedged pdf.js, whose promise then never settled at all.
-    entry.slot.release();
-    if (!entry.canvas) return;
+    part.slot.release();
+    if (!part.canvas) return false;
     // Released, not merely detached. This is the biggest single canvas in the
     // viewer — a page at dpr 3 is 16 MB — and `.remove()` gave none of it back.
     //
@@ -218,12 +298,9 @@ export class PageView {
     // pdf.js build zero-sized ImageData, which throws; the render is discarded
     // when it settles anyway, and the superseded path releases it properly
     // then. So detach now, free later.
-    if (rendering) entry.canvas.remove();
-    else releaseCanvas(entry.canvas);
-    // The ink drawn over this page goes with it: onPageGone is what releases
-    // the layers, and a viewer that does not listen for it keeps every page's
-    // stages for the life of the tab.
-    entry.canvas = null;
-    this.onPageGone(entry);
+    if (rendering) part.canvas.remove();
+    else releaseCanvas(part.canvas);
+    part.canvas = null;
+    return true;
   }
 }

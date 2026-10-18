@@ -7,14 +7,18 @@ function csrf() {
 }
 
 /** The wire form of a reader's marks. One definition, used by both saves. */
-export function _body({ sliceKey, bookSha, pages, strokes, pads }) {
-  return {
+export function _body({ sliceKey, bookSha, pages, strokes, pads, twins }) {
+  const body = {
     slice_key: sliceKey,
     book_sha256: bookSha,
     pages,
     strokes: strokes || {},
     pads: pads || {},
   };
+  // Only when known. The server replaces a layer's translation ink with what
+  // is sent, so a default of {} would erase notes this state never loaded.
+  if (twins) body.twins = twins;
+  return body;
 }
 
 /** What a `keepalive` fetch is allowed to carry, per the fetch spec. */

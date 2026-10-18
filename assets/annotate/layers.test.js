@@ -115,3 +115,12 @@ test('forEach visits each resident page with its number', () => {
   layers.forEach((pair, number) => seen.push(number));
   assert.deepEqual(seen, [2]);
 });
+
+test('a page shown with its translation releases that layer too', () => {
+  const twin = new FakeLayer('twin');
+  const layers = new LayerSet(() => ({ page: new FakeLayer('page'),
+                                       pad: new FakeLayer('pad'), twin }));
+  layers.ensure(entry(1));
+  layers.release(1);
+  assert.equal(twin.destroyed, 1);
+});

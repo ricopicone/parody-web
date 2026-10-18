@@ -10,19 +10,28 @@ const LIMIT = 50;
 export const PAGE = 'page';
 export const PAD = 'pad';
 
+/** The surface for ink on the translation beside the English, per language. */
+export const twinSurface = (language) => `twin:${language}`;
+const TWIN_PREFIX = twinSurface('');
+
 export class InkStore {
-  constructor(strokes = {}, { onChange, pads = {} } = {}) {
+  constructor(strokes = {}, { onChange, pads = {}, twins = {} } = {}) {
     // Two surfaces per page: the page itself, and the scratch pad beside it.
     // They share one history, because a reader who draws on the page, then in
     // the margin, then hits undo twice expects both gone in that order.
+    // A translation read beside the English is one more surface per language,
+    // on that same history.
     this.surfaces = { [PAGE]: { ...strokes }, [PAD]: { ...pads } };
+    for (const [language, pages] of Object.entries(twins || {})) {
+      this.surfaces[twinSurface(language)] = { ...pages };
+    }
     this.past = [];
     this.future = [];
     this.onChange = onChange || (() => {});
   }
 
   get(page, surface = PAGE) {
-    return this.surfaces[surface][String(page)] || [];
+    return (this.surfaces[surface] || {})[String(page)] || [];
   }
 
   /** A snapshot for the undo stack. Cheap: strokes are small plain objects. */
@@ -94,7 +103,7 @@ export class InkStore {
   _clean(surface) {
     // Drop empty pages so the payload does not grow a key per page visited.
     const out = {};
-    for (const [key, list] of Object.entries(this.surfaces[surface])) {
+    for (const [key, list] of Object.entries(this.surfaces[surface] || {})) {
       if (list && list.length) out[key] = list;
     }
     return out;
@@ -106,5 +115,17 @@ export class InkStore {
 
   padsToJSON() {
     return this._clean(PAD);
+  }
+
+  /** {language: {page: strokes}}, every language this store holds ink for —
+   *  shown or not — and none it holds nothing for. */
+  twinsToJSON() {
+    const out = {};
+    for (const surface of Object.keys(this.surfaces)) {
+      if (!surface.startsWith(TWIN_PREFIX)) continue;
+      const pages = this._clean(surface);
+      if (Object.keys(pages).length) out[surface.slice(TWIN_PREFIX.length)] = pages;
+    }
+    return out;
   }
 }

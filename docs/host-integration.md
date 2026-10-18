@@ -487,6 +487,7 @@ combination at startup, but the setting is yours to get right.
 | `pdf/` | the whole book |
 | `<ch>/<sec>/pdf/<lang>/` | that section of a translated twin |
 | `<ch>/<sec>/pdf/<lang>/side-by-side/` | its English and twin pages on landscape sheets |
+| `<ch>/<sec>/pdf/<lang>/paired/` | the twin page beside each English page of the section, one for one (what the reader shows) |
 | `pdf/<lang>/`, `pdf/<lang>/side-by-side/` | the same, whole book |
 
 ### Translated twins
@@ -507,6 +508,18 @@ a refusal as for an absence. The section rail, the PDF view and the home page
 list the languages a reader may have. A twin is served only while it twins the
 English PDF the book serves now (the sidecar names it by sha256), and an import
 that is not given a language's sidecar removes that language.
+
+The reader shows a translation beside the English: `pdf/view/?twin=de` puts the
+German page beside each English page, a `parody_twin` cookie remembers the
+choice for the next section, and `?twin=en` goes back to the English alone. The
+pages beside the English come from `paired/`, which pairs by the English page
+each twin page holds (the sidecar's `abspages`), not by the twin's own range: a
+twin can end a section a page early, when it kept a sentence that the English
+split across pages whole. An English page with no twin is a blank page of its
+size. The default stage frames the side-by-side sheets; parody_web_annotate's
+stage draws each English page and its twin page in one row, both annotatable,
+with read-along on the English. Its annotated download with `?twin=de` is that
+row on paper: English | translation | margin, each with its ink.
 
 ### The annotation seam
 

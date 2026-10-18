@@ -9,7 +9,8 @@
 import { PageView, PAD_RATIO, ZOOM_STEPS } from './pages.js';
 import { pinchDistance, pinchMidpoint, stepFor, anchoredScroll } from './pinch.js';
 import { InkLayer } from './ink.js';
-import { InkStore, PAD } from './store.js';
+import { InkStore, PAD, twinSurface } from './store.js';
+import { fitZoom } from './fit.js';
 import { LayerSet } from './layers.js';
 import { InkApi } from './api.js';
 import { Saver, OK, FAILED } from './saving.js';
@@ -35,7 +36,7 @@ async function boot() {
   const root = document.querySelector('[data-ink-root]');
   if (!root) return;
 
-  const { base, pdfUrl, sliceKey, bookSha, pages } = root.dataset;
+  const { base, pdfUrl, sliceKey, bookSha, pages, twinUrl, twinLanguage } = root.dataset;
   const api = new InkApi(base);
   const loaded = await api.load(sliceKey);
   if (!loaded) return;                    // not signed in, or nothing to draw on
@@ -43,6 +44,8 @@ async function boot() {
   let saveTimer = null;
   const store = new InkStore(loaded.strokes, {
     pads: loaded.pads || {},
+    // Every language's ink, shown or not: a save sends them all back.
+    twins: loaded.twins || {},
     onChange: () => {
       root.dataset.dirty = '1';
       // A margin that has just gained its first mark should stop looking empty.
@@ -60,6 +63,9 @@ async function boot() {
     pages: pages ? JSON.parse(pages) : null,
     strokes: store.toJSON(),
     pads: store.padsToJSON(),
+    // Absent from a server that predates translations, and then not sent:
+    // the server keeps what it has when nothing is said of it.
+    twins: 'twins' in loaded ? store.twinsToJSON() : undefined,
   });
 
   // A save that does not land has to be visible. It used to set `dirty` and
@@ -102,11 +108,17 @@ async function boot() {
   // renders and given up when it scrolls out of the window, which is the same
   // window pdf.js's own canvases live in. Holding them all instead cost 150 MB
   // on a six-page section at dpr 2 and never gave any of it back (task #675).
+  // A third when a translation is shown beside the page: the reader writes on
+  // it as on the English, into that language's own surface.
+  const twinInk = twinLanguage ? twinSurface(twinLanguage) : null;
   const layers = new LayerSet((entry) => ({
     page: new InkLayer(entry, { store, tools, gate, theme: current }),
     pad: new InkLayer(entry, { store, tools, gate, theme: current,
                                surface: PAD, host: entry.pad,
                                width: entry.viewport.width * PAD_RATIO }),
+    twin: entry.twin && twinInk
+      ? new InkLayer(entry.twin, { store, tools, gate, theme: current, surface: twinInk })
+      : null,
   }));
 
   // The paper follows the reader's theme. The page itself is inverted by a
@@ -130,6 +142,7 @@ async function boot() {
       if (!built) {
         pair.page.resize(entry.viewport);
         pair.pad.resize(entry.viewport, entry.viewport.width * PAD_RATIO);
+        pair.twin?.resize(entry.twin.viewport);
       }
       entry.pad.dataset.used = store.padUsed(entry.number) ? '1' : '0';
     },
@@ -147,7 +160,11 @@ async function boot() {
     eachLayer((l) => l.setTheme(current));
   }
 
-  const eachLayer = (fn) => layers.forEach((pair) => { fn(pair.page); fn(pair.pad); });
+  const eachLayer = (fn) => layers.forEach((pair) => {
+    fn(pair.page);
+    fn(pair.pad);
+    if (pair.twin) fn(pair.twin);
+  });
   const redrawAll = () => eachLayer((l) => l.redraw());
   let chrome = null;
   const actions = {
@@ -278,7 +295,14 @@ async function boot() {
     if (document.visibilityState === 'visible') view.update();
   });
 
-  await view.open(pdfUrl);
+  await view.open(pdfUrl, { twinUrl, twinLanguage });
+  // Two pages to a row is wider than most screens at the default zoom; start
+  // where both are in view rather than with the translation cut off.
+  if (view.twinDoc) {
+    const gap = parseFloat(getComputedStyle(scroller).getPropertyValue('--ink-twin-gap')) || 0;
+    const zoom = fitZoom(view.rowWidthAtOne(gap), scroller.clientWidth - 16, ZOOM_STEPS);
+    if (zoom !== view.zoom) chrome?.showZoom(view.setZoom(zoom) * 100);
+  }
   root.dataset.ready = '1';
 }
 
