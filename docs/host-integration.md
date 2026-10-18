@@ -485,6 +485,28 @@ combination at startup, but the setting is yours to get right.
 | `<ch>/<sec>/pdf/` | download that section |
 | `<ch>/<sec>/pdf/view/` | full-window PDF reader |
 | `pdf/` | the whole book |
+| `<ch>/<sec>/pdf/<lang>/` | that section of a translated twin |
+| `<ch>/<sec>/pdf/<lang>/side-by-side/` | its English and twin pages on landscape sheets |
+| `pdf/<lang>/`, `pdf/<lang>/side-by-side/` | the same, whole book |
+
+### Translated twins
+
+`parody twin --lang de` builds a twin of the print PDF: twin page N holds what
+English page N holds, in German, with the same page number. It writes
+`<book>-de.pdf`, optionally `<book>-de-sbs.pdf` (English and twin side by side),
+and a sidecar `<book>-de.twin.json`. Put all three in `PARODY_WEB_PRINT_ROOT`
+and import with the sidecar:
+
+```
+manage.py import_artifact book.json --twin book-de.twin.json --twin book-zh.twin.json
+```
+
+The twin's sections are cut by the sidecar's own page ranges and gated exactly
+as the English PDF is: same draft rule, same two policy hooks, the same 404 for
+a refusal as for an absence. The section rail, the PDF view and the home page
+list the languages a reader may have. A twin is served only while it twins the
+English PDF the book serves now (the sidecar names it by sha256), and an import
+that is not given a language's sidecar removes that language.
 
 ### The annotation seam
 
