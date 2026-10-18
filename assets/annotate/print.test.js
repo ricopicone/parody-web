@@ -35,3 +35,16 @@ test('an empty download url is not treated as a url', () => {
 test('no url at all stays falsy rather than becoming "?inline=1"', () => {
   assert.equal(printUrl({ dataset: {} }), undefined);
 });
+
+test('with a translation shown and no notes, prints the side-by-side sheets', () => {
+  // what is on screen: the English and the translation beside it
+  assert.equal(printUrl({ dataset: { downloadUrl: '', printUrl: '/a/pdf/de/side-by-side/',
+                                     pdfUrl: '/a/pdf/at/' } }),
+               '/a/pdf/de/side-by-side/?inline=1');
+});
+
+test('notes still win over the plain sheets', () => {
+  assert.equal(printUrl({ dataset: { downloadUrl: '/a/pdf/annotated/?twin=de',
+                                     printUrl: '/a/pdf/de/side-by-side/' } }),
+               '/a/pdf/annotated/?twin=de&inline=1');
+});

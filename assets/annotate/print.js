@@ -12,7 +12,9 @@
  */
 
 /**
- * Where to print from: the annotated copy when there is ink, else the plain PDF.
+ * Where to print from: the annotated copy when there is ink, else what is
+ * shown (the side-by-side sheets, with a translation beside the English),
+ * else the plain PDF.
  *
  * Always asks for it inline. The download endpoints send
  * `Content-Disposition: attachment`, and pointing an iframe at an attachment
@@ -21,7 +23,7 @@
  * actually in the frame.
  */
 export function printUrl(root) {
-  const url = root.dataset.downloadUrl || root.dataset.pdfUrl;
+  const url = root.dataset.downloadUrl || root.dataset.printUrl || root.dataset.pdfUrl;
   if (!url) return url;
   return url + (url.includes('?') ? '&' : '?') + 'inline=1';
 }
