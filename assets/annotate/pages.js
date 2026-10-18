@@ -99,14 +99,14 @@ export class PageView {
     }
   }
 
-  /** The widest row at zoom 1, for fitting it on screen (fit.js). A row is
-   *  the page and, when shown, its translation; the margin is optional
-   *  reading and may hang off the edge, as it always has. */
-  rowWidthAtOne(gap = 0) {
+  /** The widest row at zoom 1, for fitting it on screen (fit.js): the page
+   *  and its translation beside it, or one under the other when `stacked`.
+   *  The margin is optional reading and may hang off the edge, as it always
+   *  has. */
+  rowWidthAtOne(gap = 0, stacked = false) {
     let widest = 0;
     for (const entry of this.entries) {
       const one = (page) => page.getViewport({ scale: this.baseScale }).width;
-      const stacked = entry.twin && getComputedStyle(entry.row).flexDirection === 'column';
       const width = !entry.twin ? one(entry.page)
         : stacked ? Math.max(one(entry.page), one(entry.twin.page))
           : one(entry.page) + gap + one(entry.twin.page);
@@ -163,8 +163,11 @@ export class PageView {
       // The translation sits between the page and its margin: beside the
       // English it translates, as on the side-by-side sheets.
       let twinPart = null;
-      if (this.twinDoc && number <= this.twinDoc.numPages) {
-        const twinPage = await this.twinDoc.getPage(number);
+      // A translated page that will not load leaves its row English alone.
+      const twinPage = this.twinDoc && number <= this.twinDoc.numPages
+        ? await this.twinDoc.getPage(number).catch(() => null)
+        : null;
+      if (twinPage) {
         const twinViewport = twinPage.getViewport({ scale: this.scale });
         const twinEl = document.createElement('div');
         twinEl.className = 'ink-twin';

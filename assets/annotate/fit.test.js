@@ -19,3 +19,24 @@ test('a width it cannot measure leaves the zoom alone', () => {
   assert.equal(fitZoom(0, 1440, STEPS), 1);
   assert.equal(fitZoom(1096, 0, STEPS), 1);
 });
+
+// ---- beside, or under ----------------------------------------------------
+
+import { twinLayout, MIN_BESIDE } from './fit.js';
+
+test('two 6x9 pages sit side by side on a laptop', () => {
+  assert.deepEqual(twinLayout(1092, 540, 1384, STEPS), { stacked: false, zoom: 1 });
+  assert.deepEqual(twinLayout(1092, 540, 1008, STEPS), { stacked: false, zoom: 0.9 });
+});
+
+test('pages too small to read side by side go one under the other', () => {
+  // an iPad in portrait: side by side needs 0.6, below what reads comfortably
+  assert.equal(1092 * MIN_BESIDE > 752, true);
+  assert.deepEqual(twinLayout(1092, 540, 752, STEPS), { stacked: true, zoom: 1 });
+  // letter pages on an iPad in landscape: stacked, and the page at full size
+  assert.deepEqual(twinLayout(1542, 765, 1008, STEPS), { stacked: true, zoom: 1 });
+});
+
+test('stacked on a phone, the page is fitted too', () => {
+  assert.deepEqual(twinLayout(1092, 540, 374, STEPS), { stacked: true, zoom: 0.6 });
+});

@@ -811,8 +811,20 @@ def section_pdf_view(request, chapter_slug, section_slug):
         raise Http404("no pdf for this section")
     if section_pdf_path(book, section) is None:
         raise Http404("no pdf for this section")
-    translations = _translation_links(request, book, section)
-    twin = _chosen_twin(request, translations)
+    # The bar's links switch translation and keep the rest of the query (the
+    # edition, ?ed=), but not a named version (?v=, the annotator's): that is
+    # read in English, since the translation the book serves pairs with the
+    # current English only, and switching translation returns to the current.
+    def here(language):
+        query = request.GET.copy()
+        query.pop("v", None)
+        query[TWIN_PARAM] = language
+        return f"?{query.urlencode()}"
+
+    translations = [{**t, "here_url": here(t["language"])}
+                     for t in _translation_links(request, book, section)]
+    named_version = bool(request.GET.get("v"))
+    twin = None if named_version else _chosen_twin(request, translations)
     response = render(request, "parody_web/pdf_view.html", {
         "book": book, "editions": editions,
         "section": section, "chapter": section.chapter,
@@ -826,9 +838,9 @@ def section_pdf_view(request, chapter_slug, section_slug):
         # `translations`, whose paired_url a replacement stage pairs page for
         # page and whose sbs_url the default stage frames.
         "twin": twin,
-        "english_only_url": f"?{TWIN_PARAM}={ENGLISH_ONLY}",
+        "english_only_url": here(ENGLISH_ONLY),
     })
-    return _remember_twin(request, response, twin)
+    return response if named_version else _remember_twin(request, response, twin)
 
 
 def book_pdf(request):

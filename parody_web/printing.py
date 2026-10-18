@@ -351,6 +351,32 @@ def _twin_pages_for(section, twin, twin_count):
     return [p if p is not None and 1 <= p <= twin_count else None for p in pages]
 
 
+def twin_paired_key(book, section, twin):
+    """Identity of the twin pages beside this section's English, or None.
+
+    What a reader's ink on the translation was written over: it changes when
+    those pages do (a retranslation, a rebuild that moved them) and not
+    otherwise, by the same content-stream fingerprint as ``slice_key_for``.
+    The English version key cannot tell, because a twin can be rebuilt
+    against the same English.
+    """
+    import hashlib
+
+    if not section.print_pages or len(section.print_pages) != 2:
+        return None
+    src = twin_pdf_path(twin)
+    if src is None or not has_pypdf():
+        return None
+    reader = _reader(str(src), src.stat().st_mtime_ns)
+    pages = _twin_pages_for(section, twin, len(reader.pages))
+    if not any(pages):
+        return None
+    digest = hashlib.sha256()
+    for page in pages:
+        digest.update(_page_fingerprint(reader.pages[page - 1]) if page else b"no twin page")
+    return digest.hexdigest()
+
+
 def twin_paired_pdf_path(book, section, twin):
     """The twin page beside each English page of this section, one for one.
 
@@ -377,9 +403,13 @@ def twin_paired_pdf_path(book, section, twin):
     if not any(pages):
         return None
     start, end = section.print_pages
+    # by the pairing too: the same twin re-imported with its abspages can
+    # pair differently from the fallback that cut the cached file
+    import hashlib
+    pairing = hashlib.sha256(repr(pages).encode()).hexdigest()[:8]
     dest = (cache / book.slug / (book.edition_id or "_")
             / f"twin-{twin.language}-{twin.sha256[:12]}-paired"
-            / f"{section.chapter.slug}-{section.slug}-{start}-{end}.pdf")
+            / f"{section.chapter.slug}-{section.slug}-{start}-{end}-{pairing}.pdf")
     if not dest.is_file():
         from pypdf import PdfWriter
 

@@ -10,7 +10,8 @@ import { PageView, PAD_RATIO, ZOOM_STEPS } from './pages.js';
 import { pinchDistance, pinchMidpoint, stepFor, anchoredScroll } from './pinch.js';
 import { InkLayer } from './ink.js';
 import { InkStore, PAD, twinSurface } from './store.js';
-import { fitZoom } from './fit.js';
+import { twinLayout } from './fit.js';
+import { keysToSave, twinIsStale } from './twinkeys.js';
 import { LayerSet } from './layers.js';
 import { InkApi } from './api.js';
 import { Saver, OK, FAILED } from './saving.js';
@@ -36,7 +37,8 @@ async function boot() {
   const root = document.querySelector('[data-ink-root]');
   if (!root) return;
 
-  const { base, pdfUrl, sliceKey, bookSha, pages, twinUrl, twinLanguage } = root.dataset;
+  const { base, pdfUrl, sliceKey, bookSha, pages, twinUrl, twinLanguage, twinKey,
+          twinName } = root.dataset;
   const api = new InkApi(base);
   const loaded = await api.load(sliceKey);
   if (!loaded) return;                    // not signed in, or nothing to draw on
@@ -57,6 +59,12 @@ async function boot() {
     },
   });
 
+  // The ink on the translation shown, as it was loaded: whether the reader
+  // has written on it since decides whether its key moves on (twinkeys.js).
+  const twinsLoaded = 'twins' in loaded;
+  const twinAtLoad = JSON.stringify((loaded.twins || {})[twinLanguage] || {});
+  const twinHadInk = twinAtLoad !== '{}';
+
   const payload = () => ({
     sliceKey: loaded.slice_key || sliceKey,
     bookSha,
@@ -65,7 +73,13 @@ async function boot() {
     pads: store.padsToJSON(),
     // Absent from a server that predates translations, and then not sent:
     // the server keeps what it has when nothing is said of it.
-    twins: 'twins' in loaded ? store.twinsToJSON() : undefined,
+    twins: twinsLoaded ? store.twinsToJSON() : undefined,
+    twinKeys: twinsLoaded
+      ? keysToSave(loaded.twin_keys, twinLanguage, twinKey, {
+        hadInk: twinHadInk,
+        touched: JSON.stringify(store.twinsToJSON()[twinLanguage] || {}) !== twinAtLoad,
+      })
+      : undefined,
   });
 
   // A save that does not land has to be visible. It used to set `dirty` and
@@ -93,6 +107,13 @@ async function boot() {
   // The last line of defence: if ink is still unsaved as the page goes away,
   // the reader is warned rather than finding out later that it never landed.
   window.addEventListener('beforeunload', (event) => {
+    // A stroke still waiting out the debounce is sent now, not left to the
+    // exit beacon, which carries only 64 KB — and switching translation is a
+    // page load, so it comes right after a stroke more often than leaving did.
+    if (root.dataset.dirty && !saver.pending) {
+      clearTimeout(saveTimer);
+      save();
+    }
     if (!saver.pending) return;
     event.preventDefault();
     event.returnValue = '';
@@ -271,6 +292,9 @@ async function boot() {
   scroller.addEventListener('touchcancel', endPinch);
 
   wireCarryForward(root, api);
+  if (twinIsStale(loaded.twin_keys, twinLanguage, twinKey, twinHadInk)) {
+    warnTwinChanged(root, twinName || twinLanguage);
+  }
   wireVersionSwitch();
 
   // Following the OS, or another tab of the same book, without being asked.
@@ -296,12 +320,31 @@ async function boot() {
   });
 
   await view.open(pdfUrl, { twinUrl, twinLanguage });
-  // Two pages to a row is wider than most screens at the default zoom; start
-  // where both are in view rather than with the translation cut off.
+  // Two pages to a row is wider than most screens at the default zoom. Start
+  // where both are in view, or with the translation under each page when side
+  // by side they would be too small to read (fit.js). Again when the window
+  // changes width — a tablet turned — keeping a zoom the reader chose.
   if (view.twinDoc) {
-    const gap = parseFloat(getComputedStyle(scroller).getPropertyValue('--ink-twin-gap')) || 0;
-    const zoom = fitZoom(view.rowWidthAtOne(gap), scroller.clientWidth - 16, ZOOM_STEPS);
-    if (zoom !== view.zoom) chrome?.showZoom(view.setZoom(zoom) * 100);
+    let fitted = null;
+    let width = 0;
+    const fitTwin = () => {
+      if (scroller.clientWidth === width) return;
+      width = scroller.clientWidth;
+      const gap = parseFloat(getComputedStyle(scroller).getPropertyValue('--ink-twin-gap')) || 0;
+      const { stacked, zoom } = twinLayout(view.rowWidthAtOne(gap), view.rowWidthAtOne(0, true),
+                                           width - 16, ZOOM_STEPS);
+      scroller.dataset.stacked = stacked ? '1' : '0';
+      if (fitted === null || view.zoom === fitted) {
+        fitted = zoom;
+        chrome?.showZoom(view.setZoom(zoom) * 100);
+      }
+    };
+    fitTwin();
+    let resizing = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizing);
+      resizing = setTimeout(fitTwin, 200);
+    });
   }
   root.dataset.ready = '1';
 }
@@ -336,6 +379,26 @@ function wireCarryForward(root, api) {
         ? 'This version already has notes on it.'
         : 'Could not bring the notes forward.';
     });
+}
+
+/**
+ * The translation beside the English changed since the reader wrote on it, so
+ * those notes may sit over other text now. Said, not fixed: nothing knows
+ * where they belong on the new pages.
+ */
+function warnTwinChanged(root, name) {
+  const note = document.createElement('div');
+  note.className = 'ink-carry ink-twin-changed';
+  note.setAttribute('role', 'status');
+  const text = document.createElement('span');
+  text.textContent = `The ${name} translation of this section has changed since you `
+    + 'wrote on it, so your notes on it may not line up with it any more.';
+  const ok = document.createElement('button');
+  ok.type = 'button';
+  ok.textContent = 'OK';
+  ok.addEventListener('click', () => note.remove());
+  note.append(text, ok);
+  root.querySelector('[data-ink-pages]')?.before(note);
 }
 
 /** Switching to another version reloads onto it; each version is its own PDF. */

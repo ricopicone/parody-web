@@ -54,12 +54,12 @@
   background: var(--paper, #16171a);
   box-shadow: 0 1px 6px rgba(0, 0, 0, .6);
 }
-/* A tablet in portrait, a phone: two pages to a row would each be too small
-   to read, so the translation goes under its page instead. */
-@media (max-width: 48rem) {
-  .ink-spread[data-twin] { flex-direction: column; align-items: center; }
-  .ink-spread[data-twin] .ink-twin { margin: var(--ink-twin-gap, 12px) 0 0; }
-}
+/* Where two pages to a row would each be too small to read — a tablet in
+   portrait, a phone — the translation goes under its page instead. Decided
+   by the viewer from the pages' real size (fit.js), not by a breakpoint: a
+   6x9 page and a letter page need different widths. */
+.ink-pages[data-stacked="1"] .ink-spread[data-twin] { flex-direction: column; align-items: center; }
+.ink-pages[data-stacked="1"] .ink-spread[data-twin] .ink-twin { margin: var(--ink-twin-gap, 12px) 0 0; }
 
 /* Dark mode inverts the PAGE only — never the ink layer above it, whose
    colours are decided in JS, and never the stored file.

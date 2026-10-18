@@ -7,8 +7,9 @@ import { isRendered, pageAt } from './pageview.js';
  * matching how assets/annotate/*.test.js stays dependency-free.
  */
 function makeRoot(pages) {
-  const nodes = pages.map(({ number, width, canvas }) => {
+  const nodes = pages.map(({ number, width, canvas, twin }) => {
     const pad = { className: 'ink-pad' };
+    const beside = twin ? { className: 'ink-twin' } : null;
     const el = {
       className: 'ink-page',
       dataset: { page: String(number) },
@@ -17,7 +18,7 @@ function makeRoot(pages) {
       querySelector: (sel) => (sel.includes('canvas') && canvas ? {} : null),
     };
     el.parentElement = {
-      querySelector: (sel) => (sel === '.ink-pad' ? pad : null),
+      querySelector: (sel) => (sel === '.ink-pad' ? pad : sel === '.ink-twin' ? beside : null),
     };
     return { number, el, pad };
   });
@@ -70,4 +71,12 @@ test('a page holding a canvas is rendered', () => {
 
 test('isRendered copes with a missing page', () => {
   assert.equal(isRendered(null), false);
+});
+
+test('the translation beside a page is found with it', () => {
+  // a figure's answer goes beside the figure: the translated page when one is
+  // shown, since the margin is then past it and usually off screen
+  const root = makeRoot([{ number: 1, width: 200, canvas: true, twin: true }]);
+  assert.equal(pageAt(root, 0, SIZES).twin.className, 'ink-twin');
+  assert.equal(pageAt(makeRoot([{ number: 1, width: 200 }]), 0, SIZES).twin, null);
 });

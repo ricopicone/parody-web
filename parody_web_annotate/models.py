@@ -40,6 +40,11 @@ class InkLayer(models.Model):
     # (parody_web.printing.twin_paired_pdf_path), so it belongs to this version
     # of the section exactly as the English ink does.
     twins = models.JSONField(default=dict, blank=True)
+    # Per language, the key of the translated pages that ink was written over
+    # (parody_web.printing.twin_paired_key). A translation can be rebuilt
+    # against the same English, so the version key above cannot say when the
+    # pages under that ink changed; this can.
+    twin_keys = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

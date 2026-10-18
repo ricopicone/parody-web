@@ -346,9 +346,8 @@ class TwinViewTests(TestCase):
         self.assertEqual(self.client.get("/one/alpha/pdf/de/side-by-side/").status_code, 404)
 
 
-class TwinPairedTests(TestCase):
-    """The twin page beside each English page of a section, one for one: what
-    the reader puts next to the English it shows (task #825)."""
+class _PairedBook(TestCase):
+    """Twin pages 1..6 hold English pages 3..8."""
 
     def setUp(self):
         from parody_web.tests_printing import make_pdf
@@ -370,6 +369,11 @@ class TwinPairedTests(TestCase):
     def tearDown(self):
         self.settings.disable()
         self.tmp.cleanup()
+
+
+class TwinPairedTests(_PairedBook):
+    """The twin page beside each English page of a section, one for one: what
+    the reader puts next to the English it shows (task #825)."""
 
     def test_import_keeps_the_english_page_of_each_twin_page(self):
         self.assertEqual(self.twin.abspages, [3, 4, 5, 6, 7, 8])
@@ -420,8 +424,8 @@ class TwinPairedTests(TestCase):
         self.assertEqual(client.get("/one/alpha/pdf/xx/paired/").status_code, 404)
 
 
-class TwinReaderTests(TestCase):
-    """Choosing a translation to read beside the English, in the reader."""
+class _ReaderBook(TestCase):
+    """A German twin with sheets, of a book with alpha and its lead-in."""
 
     def setUp(self):
         from django.test import Client
@@ -439,6 +443,11 @@ class TwinReaderTests(TestCase):
     def tearDown(self):
         self.settings.disable()
         self.tmp.cleanup()
+
+
+
+class TwinReaderTests(_ReaderBook):
+    """Choosing a translation to read beside the English, in the reader."""
 
     def test_the_reader_shows_the_side_by_side_when_asked(self):
         # no ink for an anonymous reader: the plain stage frames the sheets
@@ -480,3 +489,49 @@ class TwinReaderTests(TestCase):
         self.assertIn('href="/one/alpha/pdf/view/?twin=de"', html)
         # and the sheets are still there to download
         self.assertIn('href="/one/alpha/pdf/de/side-by-side/"', html)
+
+
+class TwinPairedKeyTests(_PairedBook):
+    """What ink on a translation was written over, so a changed translation
+    can be told from the one the notes were made on."""
+
+    def test_the_key_is_stable_and_names_the_pages_beside_the_english(self):
+        key = printing.twin_paired_key(self.book, self.alpha, self.twin)
+        self.assertEqual(len(key), 64)
+        self.assertEqual(printing.twin_paired_key(self.book, self.alpha, self.twin), key)
+        lead_in = self.book.sections.get(slug="lead-in")
+        self.assertNotEqual(printing.twin_paired_key(self.book, lead_in, self.twin), key)
+
+    def test_a_changed_translation_changes_it(self):
+        key = printing.twin_paired_key(self.book, self.alpha, self.twin)
+        content = pdf_bytes(6, 150)  # the same pages, laid out anew
+        import_artifact(twin=[str(write_twin(
+            self.root, content=content,
+            sidecar={"abspages": [3, 4, 5, 6, 7, 8],
+                     "sections": {"one/lead-in": [1, 3], "one/alpha": [3, 5]}}))])
+        twin = self.book.twins.get()
+        self.assertNotEqual(printing.twin_paired_key(self.book, self.alpha, twin), key)
+
+    def test_none_where_the_twin_has_none_of_the_section(self):
+        beta = self.book.sections.get(slug="beta")
+        self.assertIsNone(printing.twin_paired_key(self.book, beta, self.twin))
+
+
+class TwinReaderQueryTests(_ReaderBook):
+    """Switching translation keeps where the reader is."""
+
+    def test_the_menu_keeps_the_rest_of_the_query(self):
+        # an edition (?ed=) or anything else the page was opened with
+        html = self.client.get("/one/alpha/pdf/view/?from=toc&twin=de").content.decode()
+        self.assertIn('href="?from=toc&amp;twin=de" aria-current="true"', html)
+        self.assertIn('href="?from=toc&amp;twin=en"', html)
+
+    def test_a_named_version_is_read_in_english_and_the_bar_says_so(self):
+        # ?v= is the annotator's: an older version of the section, which the
+        # translation the book serves now does not pair with
+        html = self.client.get("/one/alpha/pdf/view/?twin=de&v=old").content.decode()
+        self.assertNotIn('aria-current="true"', html)
+        self.assertNotIn("English only", html)
+        self.assertIn('src="/one/alpha/pdf/?inline=1', html)
+        # and switching translation there goes back to the current version
+        self.assertIn('href="?twin=de"', html)

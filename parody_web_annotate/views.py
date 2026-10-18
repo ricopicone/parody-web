@@ -175,6 +175,7 @@ def ink(request, chapter_slug, section_slug):
             "strokes": layer.strokes if layer else {},
             "pads": layer.pads if layer else {},
             "twins": layer.twins if layer else {},
+            "twin_keys": layer.twin_keys if layer else {},
             "versions": versions_for(request, book, section),
         })
 
@@ -210,6 +211,11 @@ def ink(request, chapter_slug, section_slug):
     if "twins" in payload and not _is_twin_ink(payload["twins"]):
         return JsonResponse(
             {"error": "twins must map a language to pages of strokes"}, status=400)
+    keys = payload.get("twin_keys")
+    if "twin_keys" in payload and not (
+            isinstance(keys, dict) and all(isinstance(v, str) for v in keys.values())):
+        return JsonResponse(
+            {"error": "twin_keys must map a language to a key"}, status=400)
 
     # The page range and source version are recorded on write, while they are
     # still true: Section.print_pages is overwritten by the next import.
@@ -220,6 +226,8 @@ def ink(request, chapter_slug, section_slug):
     # saves the English alone and must not wipe the reader's notes on one.
     if "twins" in payload:
         defaults["twins"] = payload["twins"]
+    if "twin_keys" in payload:
+        defaults["twin_keys"] = payload["twin_keys"]
     InkLayer.objects.update_or_create(
         user=request.user, book_slug=book.slug,
         edition_id=book.edition_id or "", section_key=section.key,
@@ -306,14 +314,19 @@ def carry_forward(request, chapter_slug, section_slug):
 
     # A translation already written on here keeps its ink; the source's comes
     # over only for the languages this version has none in.
+    # Each language's key goes with its ink, so a translation that changed
+    # under the notes brought over is still told apart.
     here = {lang: pages for lang, pages in ((existing.twins if existing else None) or {}).items()
             if any(pages.values())}
+    here_keys = {lang: key for lang, key in ((existing.twin_keys if existing else None) or {}).items()
+                 if lang in here}
     InkLayer.objects.update_or_create(
         user=request.user, book_slug=book.slug,
         edition_id=book.edition_id or "", section_key=section.key,
         slice_key=target_key,
         defaults={"strokes": source.strokes, "pads": source.pads,
                   "twins": {**(source.twins or {}), **here},
+                  "twin_keys": {**(source.twin_keys or {}), **here_keys},
                   "pages": section.print_pages or source.pages,
                   "book_sha256": book.print_sha256})
     return JsonResponse({"copied": source.stroke_count, "slice_key": target_key})

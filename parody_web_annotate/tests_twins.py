@@ -207,3 +207,43 @@ class TranslationOnlyInkTests(_TwinBook):
         self.assertNotIn("/pdf/annotated/", html)
         html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
         self.assertIn('href="/one/alpha/pdf/annotated/?twin=de"', html)
+
+
+
+class TwinKeyTests(_TwinBook):
+    """Each language's ink carries the key of the translated pages it was
+    written over (printing.twin_paired_key)."""
+
+    def test_the_stage_is_handed_the_key(self):
+        from parody_web import printing
+        alpha = self.book.sections.get(slug="alpha")
+        key = printing.twin_paired_key(self.book, alpha, self.book.twins.get())
+        html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
+        self.assertIn(f'data-twin-key="{key}"', html)
+
+    def test_keys_round_trip_with_the_ink(self):
+        self._put({"strokes": {}, "twins": {"de": {"1": [BLUE]}}, "twin_keys": {"de": "k1"}})
+        got = self.client.get("/one/alpha/ink/").json()
+        self.assertEqual(got["twin_keys"], {"de": "k1"})
+        # a save from before translations says nothing of either, and keeps both
+        self._put({"strokes": {"1": [PEN]}})
+        self.assertEqual(self._layer().twin_keys, {"de": "k1"})
+
+    def test_malformed_keys_are_refused(self):
+        for bad in ([], {"de": 3}, "k"):
+            with self.subTest(bad=bad):
+                resp = self._put({"strokes": {}, "twins": {}, "twin_keys": bad})
+                self.assertEqual(resp.status_code, 400)
+
+    def test_carry_forward_keeps_each_languages_key_with_its_ink(self):
+        from parody_web import printing
+        current = printing.slice_key_for(self.book, self.book.sections.get(slug="alpha"))
+        InkLayer.objects.create(
+            user=self.reader, book_slug="print-book", section_key="al", slice_key="old",
+            book_sha256="b" * 64, pages=[5, 9], strokes={"1": [PEN]},
+            twins={"de": {"1": [PEN]}, "zh": {"1": [PEN]}}, twin_keys={"de": "kd", "zh": "kz"})
+        self._put({"strokes": {}, "twins": {"de": {"1": [BLUE]}}, "twin_keys": {"de": "now"}})
+        self.client.post("/one/alpha/ink/carry-forward/", {"from": "old"},
+                         content_type="application/json")
+        layer = InkLayer.objects.get(slice_key=current)
+        self.assertEqual(layer.twin_keys, {"de": "now", "zh": "kz"})

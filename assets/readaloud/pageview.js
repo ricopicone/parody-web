@@ -22,6 +22,10 @@ export function pageAt(root, number, pageSizes) {
     pad: el.parentElement
       ? el.parentElement.querySelector('.ink-pad')
       : null,
+    // The translation beside the page, when the reader is showing one.
+    twin: el.parentElement
+      ? el.parentElement.querySelector('.ink-twin')
+      : null,
     scale: rendered / widthPt,
   };
 }

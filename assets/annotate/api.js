@@ -7,7 +7,7 @@ function csrf() {
 }
 
 /** The wire form of a reader's marks. One definition, used by both saves. */
-export function _body({ sliceKey, bookSha, pages, strokes, pads, twins }) {
+export function _body({ sliceKey, bookSha, pages, strokes, pads, twins, twinKeys }) {
   const body = {
     slice_key: sliceKey,
     book_sha256: bookSha,
@@ -18,6 +18,7 @@ export function _body({ sliceKey, bookSha, pages, strokes, pads, twins }) {
   // Only when known. The server replaces a layer's translation ink with what
   // is sent, so a default of {} would erase notes this state never loaded.
   if (twins) body.twins = twins;
+  if (twinKeys) body.twin_keys = twinKeys;
   return body;
 }
 

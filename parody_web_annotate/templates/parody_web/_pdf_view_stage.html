@@ -17,6 +17,7 @@ disabled toolbar. Nothing is offered to someone who cannot use it.
        {% if ink.print_url %}data-print-url="{{ ink.print_url }}"{% endif %}
        {% if ink.twin_url %}data-twin-url="{{ ink.twin_url }}"
        data-twin-language="{{ ink.twin_language }}"
+       data-twin-key="{{ ink.twin_key }}"
        data-twin-name="{{ ink.twin_name }}"{% endif %}>
     {% if ink.carry_from %}
       <div class="ink-carry" data-ink-carry>

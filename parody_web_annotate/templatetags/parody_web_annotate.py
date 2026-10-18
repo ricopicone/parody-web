@@ -36,6 +36,12 @@ def _has_ink(layer, language=""):
                            or (language and layer.twin_stroke_count(language))))
 
 
+def _twin_key(book, section, twin):
+    """The key of the translated pages shown beside the English."""
+    found = printing.twin_for(book, twin["language"])
+    return (found and printing.twin_paired_key(book, section, found)) or ""
+
+
 @register.simple_tag(takes_context=True)
 def ink_context(context):
     """Everything the stage, head and toolbar partials need.
@@ -109,6 +115,7 @@ def ink_context(context):
                 # are not there. Core's plain download stays the default.
                 "download_url": annotated if has_ink else "",
                 "twin_url": f"{twin['paired_url']}?inline=1" if twin else "",
+                "twin_key": _twin_key(book, section, twin) if twin else "",
                 "twin_language": twin["language"] if twin else "",
                 "twin_name": twin["name"] if twin else "",
                 # What ⌘P prints with nothing annotated: what is on screen.

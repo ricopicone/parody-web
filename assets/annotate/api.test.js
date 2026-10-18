@@ -122,3 +122,8 @@ test('a body built without twins does not claim there are none', () => {
   // by default would erase notes this state never knew about
   assert.equal('twins' in _body(state), false);
 });
+
+test("each language's key travels with its ink", () => {
+  assert.deepEqual(_body({ ...state, twins: {}, twinKeys: { de: 'k' } }).twin_keys, { de: 'k' });
+  assert.equal('twin_keys' in _body(state), false);
+});

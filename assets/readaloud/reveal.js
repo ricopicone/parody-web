@@ -111,7 +111,9 @@ export class Reveal {
   /**
    * Figure clozes reveal into the margin pad: the complete artwork must not
    * cover the incomplete figure the student is drawing into, and the pad is
-   * half a page wide and immediately adjacent.
+   * half a page wide and immediately adjacent. With a translation shown the
+   * translated page is what is adjacent — the pad is past it, usually off
+   * screen — so the answer goes over the translation's copy of the figure.
    *
    * This is a transient overlay child of the pad, never pad *content* — the
    * exporter glues a reader's pad strokes onto the page, and must not find
@@ -129,7 +131,7 @@ export class Reveal {
     }
     this.el.hidden = false;
     this.el.classList.remove('is-fading');
-    const host = page.pad || page.el;
+    const host = page.twin || page.pad || page.el;
     host.appendChild(this.el);
     const { y0 } = toCss([cloze.x0, cloze.y0, cloze.x1, cloze.y1], page.scale);
     this.el.style.left = '0px';

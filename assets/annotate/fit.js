@@ -15,3 +15,23 @@ export function fitZoom(widthAtOne, available, steps) {
   const fits = steps.filter((z) => z <= 1 && widthAtOne * z <= available);
   return fits.length ? Math.max(...fits) : Math.min(...steps);
 }
+
+/**
+ * Below this, two pages side by side are too small to read comfortably (10pt
+ * type at 0.75 of the reader's 1.25 is about 9px), and one page under the
+ * other at a readable size is better than both in view at an unreadable one.
+ */
+export const MIN_BESIDE = 0.75;
+
+/**
+ * Whether the translation goes beside each page or under it, and the zoom
+ * that fits: beside when both pages fit at MIN_BESIDE or more, else under.
+ * `besideAtOne` and `stackedAtOne` are the row's widths at zoom 1 each way.
+ */
+export function twinLayout(besideAtOne, stackedAtOne, available, steps) {
+  const beside = fitZoom(besideAtOne, available, steps);
+  if (besideAtOne * beside <= available && beside >= MIN_BESIDE) {
+    return { stacked: false, zoom: beside };
+  }
+  return { stacked: true, zoom: fitZoom(stackedAtOne, available, steps) };
+}
