@@ -20,15 +20,20 @@ register = template.Library()
 _CACHE_ATTR = "_parody_ink_context"
 
 
-def _has_ink(request, book, section, slice_key):
-    """Does this reader have any strokes on this exact version?"""
+def _layer(request, book, section, slice_key):
     from ..models import InkLayer
 
-    layer = InkLayer.objects.filter(
+    return InkLayer.objects.filter(
         user=request.user, book_slug=book.slug,
         edition_id=book.edition_id or "", section_key=section.key,
         slice_key=slice_key).first()
-    return bool(layer and layer.stroke_count)
+
+
+def _has_ink(layer, language=""):
+    """Has this reader drawn on what is shown: the English, and the
+    translation beside it when there is one?"""
+    return bool(layer and (layer.english_stroke_count
+                           or (language and layer.twin_stroke_count(language))))
 
 
 @register.simple_tag(takes_context=True)
@@ -73,13 +78,17 @@ def ink_context(context):
                         args=[section.chapter.slug, section.slug])
                 + (f"?v={slice_key}" if slice_key != current else "")
                 + (f"?twin={twin['language']}" if twin else ""))
-            has_ink = _has_ink(request, book, section, slice_key)
+            shown = _layer(request, book, section, slice_key)
+            has_ink = _has_ink(shown, twin["language"] if twin else "")
             versions = versions_for(request, book, section, current=current)
             # The most recent version this reader has ink on, when it is not
             # the current one — the offer to bring notes forward.
             carry = next((v["key"] for v in versions
                           if not v["current"] and v["updated_at"]), "")
-            has_current = any(v["current"] and v["updated_at"] for v in versions)
+            # English notes on the current version are what carrying forward
+            # would conflict with; a translation written on alone is not.
+            here = shown if slice_key == current else _layer(request, book, section, current)
+            has_current = bool(here and here.english_stroke_count)
             ctx = {
                 "enabled": True,
                 "base": reverse("parody_web:section",

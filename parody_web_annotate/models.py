@@ -57,6 +57,17 @@ class InkLayer(models.Model):
         return f"{self.user} · {self.book_slug}/{self.section_key}@{self.slice_key[:8]}"
 
     @property
+    def english_stroke_count(self):
+        """What the reader drew on the English: the page and its margin.
+        The whole-book PDF, carry-forward and the English download are about
+        these; ink on a translation alone must not stand in for them."""
+        return (sum(len(v) for v in (self.strokes or {}).values())
+                + sum(len(v) for v in (self.pads or {}).values()))
+
+    def twin_stroke_count(self, language):
+        return sum(len(v) for v in ((self.twins or {}).get(language) or {}).values())
+
+    @property
     def stroke_count(self):
         """Everything the reader drew, on the page and beside it."""
         return (sum(len(v) for v in (self.strokes or {}).values())

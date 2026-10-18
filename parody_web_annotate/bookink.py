@@ -23,13 +23,15 @@ def latest_layers(user, book):
     """The newest non-empty layer per section, newest first.
 
     A reader may have annotated several versions of one section; the newest is
-    the one they have been working in.
+    the one they have been working in. English ink only: this lays notes on the
+    English book, and a version written on only in a translation would hide
+    the English notes of an older one.
     """
     seen = {}
     for layer in InkLayer.objects.filter(
             user=user, book_slug=book.slug,
             edition_id=book.edition_id or "").order_by("-updated_at"):
-        if layer.section_key in seen or not layer.stroke_count:
+        if layer.section_key in seen or not layer.english_stroke_count:
             continue
         seen[layer.section_key] = layer
     return seen

@@ -26,7 +26,9 @@ def pdf_from(resp):
                                 if resp.streaming else resp.content))
 
 
-class TwinInkTests(TestCase):
+class _TwinBook(TestCase):
+    """A book with a German twin of all of alpha, and a signed-in reader."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -52,6 +54,9 @@ class TwinInkTests(TestCase):
 
     def _layer(self):
         return InkLayer.objects.get(user=self.reader)
+
+
+class TwinInkTests(_TwinBook):
 
     # -- saving ---------------------------------------------------------------
 
@@ -158,3 +163,47 @@ class TwinInkTests(TestCase):
         resp = self.client.get("/one/alpha/pdf/annotated/?twin=zh")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(round(float(pdf_from(resp).pages[0].mediabox.width)), 200)
+
+
+class TranslationOnlyInkTests(_TwinBook):
+    """Ink on the translation alone must not stand in for English notes: the
+    whole-book PDF, carry-forward and the English download are English."""
+
+    def setUp(self):
+        super().setUp()
+        from parody_web import printing
+        self.current = printing.slice_key_for(self.book, self.book.sections.get(slug="alpha"))
+        self.old = InkLayer.objects.create(
+            user=self.reader, book_slug="print-book", section_key="al", slice_key="old",
+            book_sha256="b" * 64, pages=[5, 9], strokes={"1": [PEN]},
+            twins={"zh": {"3": [PEN]}, "de": {"2": [PEN]}})
+        self._put({"strokes": {}, "twins": {"de": {"1": [BLUE]}}})   # newer, German only
+        self.new = InkLayer.objects.get(slice_key=self.current)
+
+    def test_the_book_pdf_keeps_the_older_english_notes(self):
+        from django.test import RequestFactory
+
+        from parody_web_annotate import bookink
+        request = RequestFactory().get("/")
+        request.user = self.reader
+        pages, _, _ = bookink.plan_book_overlay(request, self.book)
+        self.assertEqual(pages, {5: [PEN]})
+
+    def test_carry_forward_brings_the_english_and_keeps_the_translation_here(self):
+        resp = self.client.post("/one/alpha/ink/carry-forward/", {"from": "old"},
+                                content_type="application/json")
+        self.assertEqual(resp.status_code, 200)
+        self.new.refresh_from_db()
+        self.assertEqual(self.new.strokes, {"1": [PEN]})
+        # German was drawn here already and stays; Chinese comes over
+        self.assertEqual(self.new.twins, {"de": {"1": [BLUE]}, "zh": {"3": [PEN]}})
+
+    def test_the_offer_to_bring_notes_forward_still_stands(self):
+        html = self.client.get("/one/alpha/pdf/view/?twin=en").content.decode()
+        self.assertIn("data-ink-carry", html)
+
+    def test_the_english_download_does_not_promise_notes(self):
+        html = self.client.get("/one/alpha/pdf/view/?twin=en").content.decode()
+        self.assertNotIn("/pdf/annotated/", html)
+        html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
+        self.assertIn('href="/one/alpha/pdf/annotated/?twin=de"', html)

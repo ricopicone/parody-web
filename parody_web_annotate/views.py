@@ -300,16 +300,20 @@ def carry_forward(request, chapter_slug, section_slug):
         raise Http404("no pdf for this section")
 
     existing = _layers(request, book, section).filter(slice_key=target_key).first()
-    if existing is not None and existing.stroke_count:
+    if existing is not None and existing.english_stroke_count:
         return JsonResponse(
             {"error": "that version already has notes"}, status=409)
 
+    # A translation already written on here keeps its ink; the source's comes
+    # over only for the languages this version has none in.
+    here = {lang: pages for lang, pages in ((existing.twins if existing else None) or {}).items()
+            if any(pages.values())}
     InkLayer.objects.update_or_create(
         user=request.user, book_slug=book.slug,
         edition_id=book.edition_id or "", section_key=section.key,
         slice_key=target_key,
         defaults={"strokes": source.strokes, "pads": source.pads,
-                  "twins": source.twins,
+                  "twins": {**(source.twins or {}), **here},
                   "pages": section.print_pages or source.pages,
                   "book_sha256": book.print_sha256})
     return JsonResponse({"copied": source.stroke_count, "slice_key": target_key})
