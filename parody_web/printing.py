@@ -267,6 +267,61 @@ def versioned_section_pdf(book, book_sha256, pages, cache_name):
     return dest
 
 
+def twin_for(book, language):
+    """The book's translated twin in ``language`` when it can be served, else None.
+
+    Only a twin of the English PDF the book serves now: a twin of an older
+    build pairs the wrong pages, and is absent rather than wrong.
+    """
+    from .twins import LANGUAGE_NAMES
+
+    if language not in LANGUAGE_NAMES or not book.print_sha256 or not has_pypdf():
+        return None
+    twin = book.twins.filter(language=language).first()
+    if twin is None or twin.english_sha256 != book.print_sha256:
+        return None
+    return twin if twin_pdf_path(twin) else None
+
+
+def translations_available(book):
+    """The twins ``twin_for`` would serve, in language order."""
+    return [t for t in book.twins.all() if twin_for(book, t.language) == t]
+
+
+def twin_pdf_path(twin, side_by_side=False):
+    """The whole twin (or its side-by-side sheets) on disk, or None."""
+    root = print_root()
+    name = twin.side_by_side_pdf if side_by_side else twin.pdf
+    if not root or not name:
+        return None
+    # basename only, as for the English PDF
+    path = root / Path(name).name
+    return path if path.is_file() else None
+
+
+def twin_section_pdf_path(book, section, twin, side_by_side=False):
+    """This section's pages of the twin (or of its side-by-side sheets).
+
+    Cut by the twin's own page ranges: the twin starts at its first translated
+    section, so the English range would cut the wrong pages. None when the
+    twin does not cover the section, or anything the slice needs is missing.
+    """
+    pages = (twin.sections or {}).get(f"{section.chapter.slug}/{section.slug}")
+    if not pages or len(pages) != 2:
+        return None
+    src = twin_pdf_path(twin, side_by_side)
+    cache = print_cache_root()
+    if src is None or cache is None or not has_pypdf():
+        return None
+    start, end = pages
+    variant = f"twin-{twin.language}-{twin.sha256[:12]}" + ("-sbs" if side_by_side else "")
+    dest = (cache / book.slug / (book.edition_id or "_") / variant
+            / f"{section.chapter.slug}-{section.slug}.pdf")
+    if not dest.is_file():
+        slice_pdf(src, dest, start, end)
+    return dest
+
+
 def public_book_pdf_warnings():
     """Books whose full PDF is public while some of their sections are not.
 
