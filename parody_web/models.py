@@ -218,6 +218,9 @@ class TwinPdf(models.Model):
     # "chapter/section" → inclusive [first, last] page of the twin PDF
     sections = models.JSONField(default=dict, blank=True)
     approximate = models.JSONField(default=list, blank=True)  # twin pages
+    # The English page each twin page holds, in twin page order (the sidecar's
+    # ``abspages``): what pairs a twin page with the English page beside it.
+    abspages = models.JSONField(default=list, blank=True)
     imported_at = models.DateTimeField(auto_now=True)
 
     class Meta:

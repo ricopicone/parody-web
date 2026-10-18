@@ -53,6 +53,10 @@ urlpatterns = [
          views.section_twin_pdf, name="section_twin_pdf"),
     path("<slug:chapter_slug>/<slug:section_slug>/pdf/<str:language>/side-by-side/",
          views.section_twin_sbs, name="section_twin_sbs"),
+    # The twin page beside each English page, one for one: what the reader
+    # shows next to the English it is annotating.
+    path("<slug:chapter_slug>/<slug:section_slug>/pdf/<str:language>/paired/",
+         views.section_twin_paired, name="section_twin_paired"),
     # One data-entry table's saved values, as JSON. Before the bare section
     # pattern so the reserved "table" segment reads first.
     path("<slug:chapter_slug>/<slug:section_slug>/table/<str:table_id>.json",

@@ -659,6 +659,28 @@ def _section_twin(request, chapter_slug, section_slug, language, side_by_side):
 
 
 @xframe_options_sameorigin
+def section_twin_paired(request, chapter_slug, section_slug, language):
+    """The twin page beside each English page of this section, one for one:
+    what the reader shows next to the English (printing.twin_paired_pdf_path).
+    Gated exactly as the section's English PDF is."""
+    from .printing import twin_for, twin_paired_pdf_path
+
+    book, _ = _resolve_book(request)
+    section = get_object_or_404(
+        Section, book=book, chapter__slug=chapter_slug, slug=section_slug)
+    if section.draft and not _can_view_drafts(request):
+        raise Http404("section pdf not available")
+    if not get_policy().can_download_section_pdf(request, section):
+        raise Http404("no pdf for this section")
+    twin = twin_for(book, language)
+    path = twin and twin_paired_pdf_path(book, section, twin)
+    if not path:
+        raise Http404("no translation of this section")
+    return _pdf_response(path, _twin_filename(_pdf_filename(book, section), language, False),
+                         inline=bool(request.GET.get("inline")))
+
+
+@xframe_options_sameorigin
 def section_twin_pdf(request, chapter_slug, section_slug, language):
     """This section's pages of the translated twin (parody twin)."""
     return _section_twin(request, chapter_slug, section_slug, language, False)

@@ -303,6 +303,7 @@ class Command(BaseCommand):
                     "side_by_side_pdf": twin.get("side_by_side") or "",
                     "sections": twin.get("sections") or {},
                     "approximate": twin.get("approximate") or [],
+                    "abspages": twin.get("abspages") or [],
                 })
         book.twins.exclude(language__in=list(self.twins)).delete()
 

@@ -330,6 +330,75 @@ def twin_section_pdf_path(book, section, twin, side_by_side=False):
     return dest
 
 
+def _twin_pages_for(section, twin, twin_count):
+    """For each English page of ``section``, the twin page that holds it
+    (1-based), or None where no twin page does.
+
+    By the twin's ``abspages`` when it has them. A twin imported before those
+    were kept is paired from its own first page of the section onward, which
+    holds while the twin's pages run on as the English ones do.
+    """
+    start, end = section.print_pages
+    abspages = twin.abspages if isinstance(twin.abspages, list) else []
+    if abspages and all(isinstance(p, int) for p in abspages):
+        where = {english: i + 1 for i, english in enumerate(abspages)}
+        pages = [where.get(english) for english in range(start, end + 1)]
+    else:
+        own = (twin.sections or {}).get(f"{section.chapter.slug}/{section.slug}")
+        if not own or len(own) != 2:
+            return [None] * (end - start + 1)
+        pages = [own[0] + k for k in range(end - start + 1)]
+    return [p if p is not None and 1 <= p <= twin_count else None for p in pages]
+
+
+def twin_paired_pdf_path(book, section, twin):
+    """The twin page beside each English page of this section, one for one.
+
+    What the reader shows next to the English: page k of this PDF holds what
+    English page k of the section holds, so the two scroll together. A page
+    with no twin (the twin covers only published sections) is a blank page
+    the size of its English one, so every page after it still pairs. Unlike
+    ``twin_section_pdf_path``, which cuts the twin's own range for the
+    section, a page the twin assigned to the next section (a sentence split
+    across pages kept whole) still sits beside its English page.
+
+    None when the twin holds none of the section's pages, or anything the
+    pairing needs is missing.
+    """
+    if not section.print_pages or len(section.print_pages) != 2:
+        return None
+    src = twin_pdf_path(twin)
+    english = book_pdf_path(book)
+    cache = print_cache_root()
+    if src is None or english is None or cache is None or not has_pypdf():
+        return None
+    reader = _reader(str(src), src.stat().st_mtime_ns)
+    pages = _twin_pages_for(section, twin, len(reader.pages))
+    if not any(pages):
+        return None
+    start, end = section.print_pages
+    dest = (cache / book.slug / (book.edition_id or "_")
+            / f"twin-{twin.language}-{twin.sha256[:12]}-paired"
+            / f"{section.chapter.slug}-{section.slug}-{start}-{end}.pdf")
+    if not dest.is_file():
+        from pypdf import PdfWriter
+
+        english_reader = _reader(str(english), english.stat().st_mtime_ns)
+        writer = PdfWriter()
+        for english_page, twin_page in zip(range(start, end + 1), pages):
+            if twin_page is not None:
+                writer.add_page(reader.pages[twin_page - 1])
+                continue
+            box = english_reader.pages[min(english_page, len(english_reader.pages)) - 1].mediabox
+            writer.add_blank_page(width=float(box.width), height=float(box.height))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(f"{dest.name}.{os.getpid()}.tmp")
+        with open(tmp, "wb") as f:
+            writer.write(f)
+        os.replace(tmp, dest)
+    return dest
+
+
 def public_book_pdf_warnings():
     """Books whose full PDF is public while some of their sections are not.
 

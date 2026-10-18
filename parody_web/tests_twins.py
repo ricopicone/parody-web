@@ -343,3 +343,77 @@ class TwinViewTests(TestCase):
         self.assertIn('href="/one/alpha/pdf/de/"', html)
         self.assertNotIn("side-by-side", html)
         self.assertEqual(self.client.get("/one/alpha/pdf/de/side-by-side/").status_code, 404)
+
+
+class TwinPairedTests(TestCase):
+    """The twin page beside each English page of a section, one for one: what
+    the reader puts next to the English it shows (task #825)."""
+
+    def setUp(self):
+        from parody_web.tests_printing import make_pdf
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.settings = override_settings(PARODY_WEB_PRINT_ROOT=str(self.root))
+        self.settings.enable()
+        make_pdf(self.root / "print-book.pdf", 20)            # 200 x 200 pages
+        # twin pages 1..6 are English pages 3..8; alpha is English [5, 9], so
+        # its English page 9 has no twin, and the twin's own alpha range is
+        # one page shorter than the English one
+        self.book, _ = import_artifact(twin=[str(write_twin(
+            self.root, content=pdf_bytes(6, 100),
+            sidecar={"abspages": [3, 4, 5, 6, 7, 8],
+                     "sections": {"one/lead-in": [1, 3], "one/alpha": [3, 5]}}))])
+        self.twin = self.book.twins.get()
+        self.alpha = self.book.sections.get(slug="alpha")
+
+    def tearDown(self):
+        self.settings.disable()
+        self.tmp.cleanup()
+
+    def test_import_keeps_the_english_page_of_each_twin_page(self):
+        self.assertEqual(self.twin.abspages, [3, 4, 5, 6, 7, 8])
+
+    def test_one_page_per_english_page_blank_where_untranslated(self):
+        out = printing.twin_paired_pdf_path(self.book, self.alpha, self.twin)
+        # English 5, 6, 7, 8 are twin pages 3..6; English 9 is a blank page
+        # the size of the English one
+        self.assertEqual(widths(out), [103, 104, 105, 106, 200])
+
+    def test_pairs_by_the_english_page_not_the_twins_own_range(self):
+        # the twin ends alpha a page early (it kept a split sentence whole):
+        # its own range would put twin page 3 beside English 5 and stop there
+        lead_in = self.book.sections.get(slug="lead-in")       # English [3, 5]
+        out = printing.twin_paired_pdf_path(self.book, lead_in, self.twin)
+        self.assertEqual(widths(out), [101, 102, 103])
+
+    def test_without_abspages_pairs_from_the_twins_first_page(self):
+        # twins imported before abspages was kept: the twin's own range says
+        # where the section starts, and the pages run on from there
+        TwinPdf.objects.filter(pk=self.twin.pk).update(abspages=[])
+        self.twin.refresh_from_db()
+        out = printing.twin_paired_pdf_path(self.book, self.alpha, self.twin)
+        self.assertEqual(widths(out), [103, 104, 105, 106, 200])
+
+    def test_a_section_the_twin_does_not_cover_has_none(self):
+        beta = self.book.sections.get(slug="beta")
+        self.assertIsNone(printing.twin_paired_pdf_path(self.book, beta, self.twin))
+        TwinPdf.objects.filter(pk=self.twin.pk).update(abspages=[15, 16])
+        self.twin.refresh_from_db()
+        self.assertIsNone(printing.twin_paired_pdf_path(self.book, self.alpha, self.twin))
+
+    def test_served_inline_gated_like_the_english(self):
+        from django.test import Client
+        client = Client()
+        resp = client.get("/one/alpha/pdf/de/paired/?inline=1")
+        self.assertEqual(resp.status_code, 200)
+        body = b"".join(resp.streaming_content)
+        from io import BytesIO
+
+        from pypdf import PdfReader
+        self.assertEqual([int(p.mediabox.width) for p in PdfReader(BytesIO(body)).pages],
+                         [103, 104, 105, 106, 200])
+        self.assertIn("inline", resp["Content-Disposition"])
+        Section.objects.filter(book=self.book, slug="alpha").update(preview=True)
+        self.assertEqual(client.get("/one/alpha/pdf/de/paired/").status_code, 404)
+        self.assertEqual(client.get("/one/beta/pdf/de/paired/").status_code, 404)
+        self.assertEqual(client.get("/one/alpha/pdf/xx/paired/").status_code, 404)
