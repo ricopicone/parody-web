@@ -104,6 +104,13 @@ class TwinImportTests(TestCase):
                 self.assertFalse(book.twins.exists())
                 self.assertIn("twin skipped", err)
 
+    def test_an_artifact_without_a_print_pdf_says_so(self):
+        data = json.loads(json.dumps(ARTIFACT))
+        del data["print"]
+        book, err = import_artifact(data, twin=[str(write_twin(self.root))])
+        self.assertFalse(book.twins.exists())
+        self.assertIn("the artifact has no print PDF", err)
+
     def test_unreadable_sidecar_is_skipped(self):
         book, err = import_artifact(twin=[str(self.root / "absent.twin.json")])
         self.assertFalse(book.twins.exists())
@@ -195,6 +202,19 @@ class TwinSliceTests(TestCase):
     def test_translations_available_lists_the_valid_twins(self):
         self.assertEqual(printing.translations_available(self.book), [self.twin])
 
+    def test_translations_available_is_one_query(self):
+        import_artifact(twin=[str(self.root / "print-book-de.twin.json"),
+                              str(write_twin(self.root, "zh", pdf_bytes(4, 200)))])
+        with self.assertNumQueries(1):
+            self.assertEqual([t.language for t in printing.translations_available(self.book)],
+                             ["de", "zh"])
+
+    def test_a_range_past_the_twins_end_has_no_slice(self):
+        TwinPdf.objects.filter(pk=self.twin.pk).update(sections={"one/alpha": [5, 6]})
+        self.twin.refresh_from_db()
+        alpha = self.book.sections.get(slug="alpha")  # the twin has 4 pages
+        self.assertIsNone(printing.twin_section_pdf_path(self.book, alpha, self.twin))
+
 
 class TwinViewTests(TestCase):
     """The reader's side: URLs, gating, and the links in the chrome."""
@@ -272,9 +292,19 @@ class TwinViewTests(TestCase):
         self.assertEqual(self.client.get("/one/beta/pdf/de/").status_code, 404)
 
     def test_bad_language_404s(self):
-        for lang in ("xx", "DE", "zh", "..", "%2e%2e", "view%2F.."):
+        for lang in ("xx", "DE", "..", "%2e%2e", "view%2F.."):
             for url in (f"/one/alpha/pdf/{lang}/", f"/pdf/{lang}/", f"/pdf/{lang}/side-by-side/"):
                 self.assertEqual(self.client.get(url).status_code, 404, url)
+
+    def test_a_known_language_with_no_twin_404s(self):
+        for url in ("/one/alpha/pdf/zh/", "/pdf/zh/", "/pdf/zh/side-by-side/"):
+            self.assertEqual(self.client.get(url).status_code, 404, url)
+
+    def test_links_say_which_is_the_pdf(self):
+        # the language's name alone, as a link, did not say it downloads a PDF
+        html = self.client.get("/one/alpha/").content.decode()
+        self.assertIn('<span lang="de">Deutsch</span>: '
+                      '<a href="/one/alpha/pdf/de/" hreflang="de">PDF</a>', html)
 
     def test_rail_lists_translations_only_when_available(self):
         html = self.client.get("/one/alpha/").content.decode()

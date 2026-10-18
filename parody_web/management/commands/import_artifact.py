@@ -152,7 +152,9 @@ class Command(BaseCommand):
         for path in paths:
             try:
                 twin, warnings = twins.load_sidecar(path)
-                if not english or twin.get("english_sha256") != english:
+                if not english:
+                    raise ValueError("the artifact has no print PDF for it to twin")
+                if twin.get("english_sha256") != english:
                     raise ValueError("it twins another build of the English PDF")
             except ValueError as e:
                 self.stderr.write(self.style.WARNING(f"twin skipped: {path}: {e}"))

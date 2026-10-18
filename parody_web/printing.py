@@ -275,17 +275,23 @@ def twin_for(book, language):
     """
     from .twins import LANGUAGE_NAMES
 
-    if language not in LANGUAGE_NAMES or not book.print_sha256 or not has_pypdf():
+    if language not in LANGUAGE_NAMES:
         return None
     twin = book.twins.filter(language=language).first()
-    if twin is None or twin.english_sha256 != book.print_sha256:
-        return None
-    return twin if twin_pdf_path(twin) else None
+    return twin if twin is not None and _servable(book, twin) else None
 
 
 def translations_available(book):
-    """The twins ``twin_for`` would serve, in language order."""
-    return [t for t in book.twins.all() if twin_for(book, t.language) == t]
+    """The twins ``twin_for`` would serve, in language order (one query)."""
+    return [t for t in book.twins.all() if _servable(book, t)]
+
+
+def _servable(book, twin):
+    from .twins import LANGUAGE_NAMES
+
+    return bool(twin.language in LANGUAGE_NAMES and book.print_sha256 and has_pypdf()
+                and twin.english_sha256 == book.print_sha256
+                and twin_pdf_path(twin) is not None)
 
 
 def twin_pdf_path(twin, side_by_side=False):
@@ -314,6 +320,8 @@ def twin_section_pdf_path(book, section, twin, side_by_side=False):
     if src is None or cache is None or not has_pypdf():
         return None
     start, end = pages
+    if start > len(_reader(str(src), src.stat().st_mtime_ns).pages):
+        return None  # a range past the twin's end: no pages to cut, so no PDF
     variant = f"twin-{twin.language}-{twin.sha256[:12]}" + ("-sbs" if side_by_side else "")
     dest = (cache / book.slug / (book.edition_id or "_") / variant
             / f"{section.chapter.slug}-{section.slug}.pdf")

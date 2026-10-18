@@ -15,15 +15,15 @@ views._translation_links; sbs_url is "" when the sheets are not on disk.
     {% include "parody_web/_icon.html" with icon="translate" %}<span class="pdf-exit-label">Translations</span>
   </summary>
   <span class="pdf-translations-menu">
-    {% for t in translations %}<span><a href="{{ t.pdf_url }}" lang="{{ t.language }}" hreflang="{{ t.language }}">{{ t.name }}</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}">side by side</a>{% endif %}</span>
+    {% for t in translations %}<span><span lang="{{ t.language }}">{{ t.name }}</span>: <a href="{{ t.pdf_url }}" hreflang="{{ t.language }}">PDF</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}">side by side</a>{% endif %}</span>
     {% endfor %}
   </span>
 </details>
 {% elif variant == "home" %}
 <p class="book-pdf-link">Translations:
-  {% for t in translations %}<a href="{{ t.pdf_url }}" lang="{{ t.language }}" hreflang="{{ t.language }}">{{ t.name }}</a>{% if t.sbs_url %} <span class="book-pdf-note">(<a href="{{ t.sbs_url }}">side by side</a>)</span>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
+  {% for t in translations %}<span lang="{{ t.language }}">{{ t.name }}</span> (<a href="{{ t.pdf_url }}" hreflang="{{ t.language }}">PDF</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}">side by side</a>{% endif %}){% if not forloop.last %} · {% endif %}{% endfor %}
 </p>
 {% else %}
 <p class="util-rail-cap util-rail-cap-next">Translations</p>
-{% for t in translations %}<span><a href="{{ t.pdf_url }}" lang="{{ t.language }}" hreflang="{{ t.language }}">{{ t.name }}</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}">side by side</a>{% endif %}</span>
+{% for t in translations %}<span><span lang="{{ t.language }}">{{ t.name }}</span>: <a href="{{ t.pdf_url }}" hreflang="{{ t.language }}">PDF</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}">side by side</a>{% endif %}</span>
 {% endfor %}{% endif %}{% endif %}
