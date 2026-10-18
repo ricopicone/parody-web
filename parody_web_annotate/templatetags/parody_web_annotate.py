@@ -64,6 +64,16 @@ def ink_context(context):
                     section_key=section.key, slice_key=asked).exists():
                 slice_key = asked
         if slice_key:
+            # The translation beside the English (the view's `twin`), only on
+            # the current version: it pairs with the English the book serves
+            # now, not with an archived one.
+            twin = context.get("twin") if slice_key == current else None
+            annotated = (
+                reverse("parody_web_annotate:annotated_section_pdf",
+                        args=[section.chapter.slug, section.slug])
+                + (f"?v={slice_key}" if slice_key != current else "")
+                + (f"?twin={twin['language']}" if twin else ""))
+            has_ink = _has_ink(request, book, section, slice_key)
             versions = versions_for(request, book, section, current=current)
             # The most recent version this reader has ink on, when it is not
             # the current one — the offer to bring notes forward.
@@ -88,11 +98,12 @@ def ink_context(context):
                 # Set only when this reader actually has marks on the version
                 # they are looking at, so the link never promises notes that
                 # are not there. Core's plain download stays the default.
-                "download_url": (
-                    reverse("parody_web_annotate:annotated_section_pdf",
-                            args=[section.chapter.slug, section.slug])
-                    + (f"?v={slice_key}" if slice_key != current else "")
-                ) if _has_ink(request, book, section, slice_key) else "",
+                "download_url": annotated if has_ink else "",
+                "twin_url": f"{twin['paired_url']}?inline=1" if twin else "",
+                "twin_language": twin["language"] if twin else "",
+                "twin_name": twin["name"] if twin else "",
+                # What ⌘P prints with nothing annotated: what is on screen.
+                "print_url": (twin["sbs_url"] or "") if twin and not has_ink else "",
             }
     setattr(request, _CACHE_ATTR, ctx)
     return ctx

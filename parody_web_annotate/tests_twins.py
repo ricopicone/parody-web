@@ -1,0 +1,160 @@
+"""Ink on a translation read beside the English (task #825).
+
+The reader shows each English page with its twin page beside it. Ink on the
+twin page belongs to the same layer as the English ink — one reader, one
+section, one version — kept per language, and goes wherever that layer goes:
+saved, carried forward, and drawn into the side-by-side download.
+"""
+import io
+import tempfile
+from pathlib import Path
+
+from django.contrib.auth import get_user_model
+from django.test import Client, TestCase, override_settings
+
+from parody_web.tests_printing import make_pdf_with_content
+from parody_web.tests_twins import import_artifact, pdf_bytes, write_twin
+from parody_web_annotate.models import InkLayer
+
+PEN = {"tool": "pen", "color": "#ff0000", "opacity": 1, "d": "M10 10 L50 50 Z"}
+BLUE = {"tool": "pen", "color": "#0000ff", "opacity": 1, "d": "M5 5 L40 40 Z"}
+
+
+def pdf_from(resp):
+    from pypdf import PdfReader
+    return PdfReader(io.BytesIO(b"".join(resp.streaming_content)
+                                if resp.streaming else resp.content))
+
+
+class TwinInkTests(TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name)
+        self.root, self.cache = base / "live", base / "cache"
+        self.root.mkdir()
+        self.settings = override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                                          PARODY_WEB_PRINT_CACHE=str(self.cache))
+        self.settings.enable()
+        self.addCleanup(self.settings.disable)
+        make_pdf_with_content(self.root / "print-book.pdf", 20)   # 200 x 200
+        # twin pages 1..5 hold English 5..9, which is all of alpha
+        self.book, _ = import_artifact(twin=[str(write_twin(
+            self.root, content=pdf_bytes(5, 100), sbs_content=pdf_bytes(5, 300),
+            sidecar={"abspages": [5, 6, 7, 8, 9],
+                     "sections": {"one/alpha": [1, 5]}}))])
+        self.reader = get_user_model().objects.create_user("reader", password="x")
+        self.client = Client()
+        self.client.force_login(self.reader)
+
+    def _put(self, body):
+        return self.client.put("/one/alpha/ink/", body, content_type="application/json")
+
+    def _layer(self):
+        return InkLayer.objects.get(user=self.reader)
+
+    # -- saving ---------------------------------------------------------------
+
+    def test_twin_ink_round_trips(self):
+        resp = self._put({"strokes": {"1": [PEN]}, "twins": {"de": {"2": [BLUE]}}})
+        self.assertEqual(resp.status_code, 200)
+        got = self.client.get("/one/alpha/ink/").json()
+        self.assertEqual(got["twins"], {"de": {"2": [BLUE]}})
+        self.assertEqual(got["strokes"], {"1": [PEN]})
+
+    def test_a_save_that_says_nothing_of_twins_keeps_them(self):
+        # a viewer bundle from before twins, still open in a tab, saves only
+        # the English: that must not wipe the reader's notes on the translation
+        self._put({"strokes": {"1": [PEN]}, "twins": {"de": {"2": [BLUE]}}})
+        self._put({"strokes": {"1": [PEN, PEN]}})
+        self.assertEqual(self._layer().twins, {"de": {"2": [BLUE]}})
+
+    def test_malformed_twins_are_refused(self):
+        for bad in ([], {"de": []}, {"de": {"1": "x"}}, "de"):
+            with self.subTest(bad=bad):
+                self.assertEqual(self._put({"strokes": {}, "twins": bad}).status_code, 400)
+
+    def test_stroke_count_counts_the_translation(self):
+        self._put({"strokes": {}, "twins": {"de": {"1": [BLUE, BLUE]}, "zh": {"3": [PEN]}}})
+        self.assertEqual(self._layer().stroke_count, 3)
+
+    def test_carry_forward_brings_the_translation_notes_too(self):
+        InkLayer.objects.create(user=self.reader, book_slug="print-book",
+                                section_key="al", slice_key="old", book_sha256="b" * 64,
+                                pages=[5, 9], strokes={"1": [PEN]},
+                                twins={"de": {"1": [BLUE]}})
+        resp = self.client.post("/one/alpha/ink/carry-forward/", {"from": "old"},
+                                content_type="application/json")
+        self.assertEqual(resp.status_code, 200)
+        new = InkLayer.objects.exclude(slice_key="old").get()
+        self.assertEqual(new.twins, {"de": {"1": [BLUE]}})
+
+    # -- the stage ------------------------------------------------------------
+
+    def test_the_stage_is_handed_the_paired_twin(self):
+        html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
+        self.assertIn('data-twin-url="/one/alpha/pdf/de/paired/?inline=1"', html)
+        self.assertIn('data-twin-language="de"', html)
+        self.assertIn('data-twin-name="Deutsch"', html)
+        html = self.client.get("/one/alpha/pdf/view/?twin=en").content.decode()
+        self.assertNotIn("data-twin-url", html)
+
+    def test_an_older_version_has_no_twin_beside_it(self):
+        # the twin pairs with the English the book serves now, not an archive
+        InkLayer.objects.create(user=self.reader, book_slug="print-book",
+                                section_key="al", slice_key="old", book_sha256="b" * 64,
+                                pages=[5, 9], strokes={"1": [PEN]})
+        html = self.client.get("/one/alpha/pdf/view/?twin=de&v=old").content.decode()
+        self.assertIn('data-slice-key="old"', html)
+        self.assertNotIn("data-twin-url", html)
+
+    def test_download_and_print_follow_what_is_shown(self):
+        html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
+        # nothing annotated yet: the plain side-by-side sheets
+        self.assertIn('href="/one/alpha/pdf/de/side-by-side/"', html)
+        self.assertIn('data-print-url="/one/alpha/pdf/de/side-by-side/"', html)
+        self._put({"strokes": {"1": [PEN]}})
+        html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
+        self.assertIn('data-download-url="/one/alpha/pdf/annotated/?twin=de"', html)
+        self.assertIn('href="/one/alpha/pdf/annotated/?twin=de"', html)
+
+    # -- the download ---------------------------------------------------------
+
+    def test_the_side_by_side_download_carries_both_inks(self):
+        self._put({"strokes": {"1": [PEN]}, "twins": {"de": {"1": [BLUE]}}})
+        resp = self.client.get("/one/alpha/pdf/annotated/?twin=de")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("alpha-de-side-by-side-annotated.pdf", resp["Content-Disposition"])
+        pdf = pdf_from(resp)
+        self.assertEqual(len(pdf.pages), 5)
+        # English page (200) then its twin page (101) on one sheet
+        self.assertEqual([round(float(p.mediabox.width)) for p in pdf.pages],
+                         [301, 302, 303, 304, 305])
+        text = pdf.pages[0].get_contents().get_data()
+        self.assertIn(b"1 0 0 rg", text)
+        self.assertIn(b"0 0 1 rg", text)
+
+    def test_the_twin_ink_lands_on_the_twin_page(self):
+        import fitz
+        self._put({"strokes": {"1": [PEN]}, "twins": {"de": {"1": [BLUE]}}})
+        resp = self.client.get("/one/alpha/pdf/annotated/?twin=de")
+        body = b"".join(resp.streaming_content) if resp.streaming else resp.content
+        page = fitz.open(stream=body, filetype="pdf")[0]
+        fills = {tuple(round(c, 2) for c in d["fill"]): d["rect"]
+                 for d in page.get_drawings() if d.get("fill")}
+        # top-left origin, as the reader stores ink: the English pen where it
+        # was drawn, the translation's 200pt across, on the twin page
+        self.assertEqual(tuple(round(v) for v in fills[(1.0, 0.0, 0.0)]), (10, 10, 50, 50))
+        self.assertEqual(tuple(round(v) for v in fills[(0.0, 0.0, 1.0)]), (205, 5, 240, 40))
+
+    def test_a_used_margin_widens_the_sheet_by_half_the_english_page(self):
+        self._put({"strokes": {"1": [PEN]}, "pads": {"1": [PEN]}})
+        pdf = pdf_from(self.client.get("/one/alpha/pdf/annotated/?twin=de"))
+        self.assertEqual(round(float(pdf.pages[0].mediabox.width)), 200 + 101 + 100)
+        self.assertEqual(round(float(pdf.pages[1].mediabox.width)), 200 + 102)
+
+    def test_an_unknown_translation_is_the_english_download(self):
+        self._put({"strokes": {"1": [PEN]}})
+        resp = self.client.get("/one/alpha/pdf/annotated/?twin=zh")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(round(float(pdf_from(resp).pages[0].mediabox.width)), 200)

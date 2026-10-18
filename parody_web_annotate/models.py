@@ -35,6 +35,11 @@ class InkLayer(models.Model):
     # different coordinate spaces, and the exporter has to widen a page for one
     # and not the other.
     pads = models.JSONField(default=dict, blank=True)
+    # Ink on the translation read beside the English, by language and then by
+    # page, keyed as `strokes` is: twin page k is the one beside English page k
+    # (parody_web.printing.twin_paired_pdf_path), so it belongs to this version
+    # of the section exactly as the English ink does.
+    twins = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -55,4 +60,6 @@ class InkLayer(models.Model):
     def stroke_count(self):
         """Everything the reader drew, on the page and beside it."""
         return (sum(len(v) for v in (self.strokes or {}).values())
-                + sum(len(v) for v in (self.pads or {}).values()))
+                + sum(len(v) for v in (self.pads or {}).values())
+                + sum(len(v) for pages in (self.twins or {}).values()
+                      for v in pages.values()))

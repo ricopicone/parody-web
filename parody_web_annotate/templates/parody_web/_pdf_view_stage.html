@@ -13,7 +13,11 @@ disabled toolbar. Nothing is offered to someone who cannot use it.
        data-slice-key="{{ ink.slice_key }}"
        data-book-sha="{{ ink.book_sha }}"
        data-pages="{{ ink.pages }}"
-       data-download-url="{{ ink.download_url }}">
+       data-download-url="{{ ink.download_url }}"
+       {% if ink.print_url %}data-print-url="{{ ink.print_url }}"{% endif %}
+       {% if ink.twin_url %}data-twin-url="{{ ink.twin_url }}"
+       data-twin-language="{{ ink.twin_language }}"
+       data-twin-name="{{ ink.twin_name }}"{% endif %}>
     {% if ink.carry_from %}
       <div class="ink-carry" data-ink-carry>
         <span>You have notes on an earlier version of this section.</span>

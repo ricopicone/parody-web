@@ -152,7 +152,8 @@ def pad_width(page_width):
     return page_width * PAD_RATIO
 
 
-def composite(src_path, strokes_by_page, dest_path, pads_by_page=None):
+def composite(src_path, strokes_by_page, dest_path, pads_by_page=None,
+              pad_basis=None):
     """Write `src_path` with the ink drawn on top to `dest_path`.
 
     Page keys are 1-based and relative to the slice, matching how the viewer
@@ -191,7 +192,8 @@ def composite(src_path, strokes_by_page, dest_path, pads_by_page=None):
             # original content keeps its exact position, and the strip that
             # appears to the right of it is simply empty paper.
             right = float(box.right)
-            extra = pad_width(right - float(box.left))
+            basis = (pad_basis or {}).get(index + 1)
+            extra = pad_width(basis if basis is not None else right - float(box.left))
             page.mediabox.upper_right = (right + extra, float(box.top))
             crop = page.get("/CropBox")
             if crop is not None:
@@ -245,3 +247,43 @@ def composite(src_path, strokes_by_page, dest_path, pads_by_page=None):
 
     with open(dest_path, "wb") as handle:
         writer.write(handle)
+
+
+def composite_side_by_side(src_path, twin_path, dest_path, strokes_by_page,
+                           twin_strokes_by_page, pads_by_page=None):
+    """Each English page and the translated page beside it on one sheet, each
+    with its own ink, then the scratch pad beyond them where it was used.
+
+    The reader shows them in that order, English | translation | pad, and
+    this is that row on paper. Page k of `twin_path` is the one beside English
+    page k (parody_web.printing.twin_paired_pdf_path). Pad strokes were drawn
+    in a strip half the ENGLISH page wide, so that is the strip the sheet
+    grows by, not half the sheet.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from pypdf import PdfReader, PdfWriter, Transformation
+
+    with tempfile.TemporaryDirectory() as scratch:
+        english, twin, sheets = (Path(scratch) / n for n in ("en.pdf", "tw.pdf", "sbs.pdf"))
+        composite(src_path, strokes_by_page or {}, english)
+        composite(twin_path, twin_strokes_by_page or {}, twin)
+        writer = PdfWriter()
+        basis = {}
+        pairs = zip(PdfReader(str(english)).pages, PdfReader(str(twin)).pages)
+        for number, (left, right) in enumerate(pairs, start=1):
+            lbox, rbox = left.mediabox, right.mediabox
+            lw, lh = float(lbox.width), float(lbox.height)
+            rw, rh = float(rbox.width), float(rbox.height)
+            height = max(lh, rh)
+            sheet = writer.add_blank_page(width=lw + rw, height=height)
+            # tops aligned, as on screen
+            sheet.merge_transformed_page(left, Transformation().translate(
+                -float(lbox.left), height - lh - float(lbox.bottom)))
+            sheet.merge_transformed_page(right, Transformation().translate(
+                lw - float(rbox.left), height - rh - float(rbox.bottom)))
+            basis[number] = lw
+        with open(sheets, "wb") as f:
+            writer.write(f)
+        composite(sheets, {}, dest_path, pads_by_page=pads_by_page, pad_basis=basis)

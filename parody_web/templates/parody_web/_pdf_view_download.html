@@ -7,9 +7,19 @@ A shadow must keep the .pdf-exit shape — icon, then a .pdf-exit-label the bar
 hides when it goes compact — and must carry an aria-label, because below
 70rem the label is the only name the control has.
 
-Context: book, chapter, section, pdf_url.
+With a translation beside the English (`twin`), it downloads what is shown:
+the English and translation side by side.
+
+Context: book, chapter, section, pdf_url, twin.
 {% endcomment %}
+{% if twin and twin.sbs_url %}
+<a class="pdf-exit" href="{{ twin.sbs_url }}"
+   aria-label="Download this section side by side" title="Download this section side by side">
+  {% include "parody_web/_icon.html" with icon="download" %}<span class="pdf-exit-label">Download</span>
+</a>
+{% else %}
 <a class="pdf-exit" href="{{ pdf_url }}"
    aria-label="Download this section" title="Download this section">
   {% include "parody_web/_icon.html" with icon="download" %}<span class="pdf-exit-label">Download</span>
 </a>
+{% endif %}

@@ -20,7 +20,7 @@ from django.views.decorators.http import require_http_methods
 from parody_web import printing
 from parody_web.access import get_policy
 from parody_web.models import Section
-from parody_web.views import _pdf_filename, _pdf_response, _resolve_book
+from parody_web.views import _pdf_filename, _pdf_response, _resolve_book, _twin_filename
 
 from . import bookink, export
 from .models import InkLayer
@@ -174,6 +174,7 @@ def ink(request, chapter_slug, section_slug):
             "slice_key": key,
             "strokes": layer.strokes if layer else {},
             "pads": layer.pads if layer else {},
+            "twins": layer.twins if layer else {},
             "versions": versions_for(request, book, section),
         })
 
@@ -206,17 +207,31 @@ def ink(request, chapter_slug, section_slug):
         pads = {}
     if not isinstance(pads, dict):
         return JsonResponse({"error": "pads must be an object"}, status=400)
+    if "twins" in payload and not _is_twin_ink(payload["twins"]):
+        return JsonResponse(
+            {"error": "twins must map a language to pages of strokes"}, status=400)
 
     # The page range and source version are recorded on write, while they are
     # still true: Section.print_pages is overwritten by the next import.
     pages = payload.get("pages") or section.print_pages
+    defaults = {"strokes": strokes, "pads": pads, "pages": pages,
+                "book_sha256": payload.get("book_sha256") or book.print_sha256}
+    # Only when sent: a viewer from before translations, still open in a tab,
+    # saves the English alone and must not wipe the reader's notes on one.
+    if "twins" in payload:
+        defaults["twins"] = payload["twins"]
     InkLayer.objects.update_or_create(
         user=request.user, book_slug=book.slug,
         edition_id=book.edition_id or "", section_key=section.key,
-        slice_key=key,
-        defaults={"strokes": strokes, "pads": pads, "pages": pages,
-                  "book_sha256": payload.get("book_sha256") or book.print_sha256})
+        slice_key=key, defaults=defaults)
     return JsonResponse({"saved": True, "slice_key": key})
+
+
+def _is_twin_ink(twins):
+    """{language: {page: [stroke, ...]}}, the shape `strokes` has per language."""
+    return isinstance(twins, dict) and all(
+        isinstance(pages, dict) and all(isinstance(v, list) for v in pages.values())
+        for pages in twins.values())
 
 
 def _resolve_version(request, book, section, key):
@@ -294,6 +309,7 @@ def carry_forward(request, chapter_slug, section_slug):
         edition_id=book.edition_id or "", section_key=section.key,
         slice_key=target_key,
         defaults={"strokes": source.strokes, "pads": source.pads,
+                  "twins": source.twins,
                   "pages": section.print_pages or source.pages,
                   "book_sha256": book.print_sha256})
     return JsonResponse({"copied": source.stroke_count, "slice_key": target_key})
@@ -333,19 +349,39 @@ def annotated_section_pdf(request, chapter_slug, section_slug):
     cache = printing.print_cache_root()
     if cache is None:
         raise Http404("no pdf for this section")
+
+    # ?twin=<language>: the English and the translation beside it, as the
+    # reader saw them, each with its own ink. Only the current version pairs
+    # with the translation the book serves now; anything else is the English.
+    twin = None
+    if request.GET.get("twin") and (not key or key == current):
+        found = printing.twin_for(book, request.GET["twin"])
+        paired = found and printing.twin_paired_pdf_path(book, section, found)
+        if paired:
+            twin = (found, paired)
+    twin_strokes = (layer.twins or {}).get(twin[0].language, {}) if twin else {}
+
     # Keyed by the ink as well as the version, so editing a stroke produces a
     # new file rather than serving a stale composite.
-    stamp = hashlib.sha256(
-        json.dumps([layer.strokes, layer.pads], sort_keys=True).encode()
-    ).hexdigest()[:12]
+    stamp = hashlib.sha256(json.dumps(
+        [layer.strokes, layer.pads] + ([twin[0].sha256, twin_strokes] if twin else []),
+        sort_keys=True).encode()).hexdigest()[:12]
+    variant = f"-{twin[0].language}" if twin else ""
     dest = (cache / "annotated" / str(request.user.pk) / book.slug
-            / f"{section.chapter.slug}-{section.slug}-{(key or '')[:12]}-{stamp}.pdf")
+            / f"{section.chapter.slug}-{section.slug}-{(key or '')[:12]}{variant}-{stamp}.pdf")
     if not dest.is_file():
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(f"{dest.name}.tmp")
-        export.composite(src, layer.strokes, tmp, pads_by_page=layer.pads)
+        if twin:
+            export.composite_side_by_side(src, twin[1], tmp, layer.strokes,
+                                          twin_strokes, pads_by_page=layer.pads)
+        else:
+            export.composite(src, layer.strokes, tmp, pads_by_page=layer.pads)
         tmp.replace(dest)
-    name = _pdf_filename(book, section).replace(".pdf", "-annotated.pdf")
+    name = _pdf_filename(book, section)
+    if twin:
+        name = _twin_filename(name, twin[0].language, side_by_side=True)
+    name = name.replace(".pdf", "-annotated.pdf")
     return _pdf_response(dest, name, inline=bool(request.GET.get("inline")))
 
 
