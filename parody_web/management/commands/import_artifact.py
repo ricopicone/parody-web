@@ -12,8 +12,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.html import strip_tags
 
-from parody_web import answerkey, printing
-from parody_web.models import Book, Chapter, Section
+from parody_web import answerkey, printing, twins
+from parody_web.models import Book, Chapter, Section, TwinPdf
 from parody_web.numbering import number_artifact, resolve_section_drafts
 from parody_web.staffonly import strip_staff_only
 
@@ -55,6 +55,12 @@ class Command(BaseCommand):
             "`parody build --clozes key` at the SAME commit). Its sections, "
             "blanks answered, are stored for staff to show on demand. Refused, "
             "with nothing imported, unless it is the key to this artifact.")
+        parser.add_argument(
+            "--twin", action="append", default=[],
+            help="path to a translated twin's sidecar (<slug>-<lang>.twin.json, "
+            "from `parody twin`); repeat for each language. A twin that is not "
+            "the twin of this artifact's print PDF is skipped with a warning, "
+            "and twins not given are removed.")
 
     def handle(self, *args, **opts):
         path = opts["artifact"]
@@ -132,8 +138,29 @@ class Command(BaseCommand):
                 for sec in ch.get("sections", [])
                 if answerkey.has_answers(sec.get("html", ""))}
 
+        self.twins = self._read_twins(opts.get("twin") or [], data)
+
         with transaction.atomic():
             self._import(slug, data)
+
+    def _read_twins(self, paths, data):
+        """The twin sidecars that describe a twin of THIS artifact's print PDF,
+        by language. A bad one is skipped, never fatal: the English is the
+        release, and a twin can follow in the next one."""
+        english = (data.get("print") or {}).get("sha256", "")
+        good = {}
+        for path in paths:
+            try:
+                twin, warnings = twins.load_sidecar(path)
+                if not english or twin.get("english_sha256") != english:
+                    raise ValueError("it twins another build of the English PDF")
+            except ValueError as e:
+                self.stderr.write(self.style.WARNING(f"twin skipped: {path}: {e}"))
+                continue
+            for w in warnings:
+                self.stderr.write(self.style.WARNING(f"twin {twin['language']}: {w}"))
+            good[twin["language"]] = twin
+        return good
 
     def _read_key(self, path, data):
         """The instructor build at `path`, verified to be this artifact's key;
@@ -262,10 +289,27 @@ class Command(BaseCommand):
             if ch.slug not in seen_ch:
                 ch.delete()
 
+        # A twin lives exactly as long as the release it came with: one not
+        # given this time is gone, rather than left pairing pages of a PDF it
+        # was never built against.
+        for language, twin in self.twins.items():
+            TwinPdf.objects.update_or_create(
+                book=book, language=language, defaults={
+                    "pdf": twin["pdf"],
+                    "sha256": twin["sha256"],
+                    "english_sha256": twin["english_sha256"],
+                    "side_by_side_pdf": twin.get("side_by_side") or "",
+                    "sections": twin.get("sections") or {},
+                    "approximate": twin.get("approximate") or [],
+                })
+        book.twins.exclude(language__in=list(self.twins)).delete()
+
         n_sec = book.sections.count()
         label = f"{slug} / {book.edition_id}" if book.edition_id else slug
         keyed = (f", answer key for {len(self.key_html)}"
                  if self.key_html else "")
+        if self.twins:
+            keyed += ", twins " + ", ".join(sorted(self.twins))
         self.stdout.write(self.style.SUCCESS(
             f"imported '{book.title}' ({label}): {book.chapters.count()} chapters, "
             f"{n_sec} sections{keyed}"))

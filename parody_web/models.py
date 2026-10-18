@@ -197,6 +197,37 @@ class BookPrintVersion(models.Model):
         return f"{self.book.slug}@{self.sha256[:12]}"
 
 
+class TwinPdf(models.Model):
+    """A translated twin of the book's print PDF, page for page (parody twin).
+
+    Twin page N holds what English page N holds, so a section's twin is cut
+    by the twin's OWN page ranges (``sections``, from parody's sidecar): the
+    twin starts at its first translated section, not at English page 1.
+
+    ``english_sha256`` names the English PDF it twins. A twin is served only
+    while that equals the book's ``print_sha256``; a twin of an older English
+    build pairs the wrong pages, so it is absent rather than wrong.
+    """
+
+    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="twins")
+    language = models.CharField(max_length=8)
+    pdf = models.CharField(max_length=200)  # a basename under the print root
+    sha256 = models.CharField(max_length=64)
+    english_sha256 = models.CharField(max_length=64)
+    side_by_side_pdf = models.CharField(max_length=200, blank=True, default="")
+    # "chapter/section" → inclusive [first, last] page of the twin PDF
+    sections = models.JSONField(default=dict, blank=True)
+    approximate = models.JSONField(default=list, blank=True)  # twin pages
+    imported_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("book", "language")
+        ordering = ["language"]
+
+    def __str__(self):
+        return f"{self.book.slug}/{self.language}@{self.sha256[:12]}"
+
+
 class TableEntry(models.Model):
     """One reader's value in one cell of one data-entry table.
 
