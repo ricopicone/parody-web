@@ -28,6 +28,9 @@ disabled toolbar. Nothing is offered to someone who cannot use it.
   </div>
   <script type="module" src="{% static 'parody_web_annotate/js/annotate.js' %}"
           data-pdf-worker="{% static 'parody_web_annotate/js/pdf.worker.js' %}"></script>
+{% elif twin and twin.sbs_url %}
+  <iframe title="{{ section.title|cut:'`' }} (PDF, {{ twin.name }})" lang="{{ twin.language }}"
+          src="{{ twin.sbs_url }}?inline=1#view=FitH"></iframe>
 {% else %}
   <iframe title="{{ section.title|cut:'`' }} (PDF)"
           src="{{ pdf_url }}?inline=1#view=FitH"></iframe>

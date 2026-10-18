@@ -304,6 +304,7 @@ class TwinViewTests(TestCase):
         # the language's name alone, as a link, did not say it downloads a PDF
         html = self.client.get("/one/alpha/").content.decode()
         self.assertIn('<span lang="de">Deutsch</span>: '
+                      '<a href="/one/alpha/pdf/view/?twin=de">side by side</a> · '
                       '<a href="/one/alpha/pdf/de/" hreflang="de">PDF</a>', html)
 
     def test_rail_lists_translations_only_when_available(self):
@@ -417,3 +418,65 @@ class TwinPairedTests(TestCase):
         self.assertEqual(client.get("/one/alpha/pdf/de/paired/").status_code, 404)
         self.assertEqual(client.get("/one/beta/pdf/de/paired/").status_code, 404)
         self.assertEqual(client.get("/one/alpha/pdf/xx/paired/").status_code, 404)
+
+
+class TwinReaderTests(TestCase):
+    """Choosing a translation to read beside the English, in the reader."""
+
+    def setUp(self):
+        from django.test import Client
+
+        from parody_web.tests_printing import make_pdf
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.settings = override_settings(PARODY_WEB_PRINT_ROOT=str(self.root))
+        self.settings.enable()
+        make_pdf(self.root / "print-book.pdf", 20)
+        self.book, _ = import_artifact(twin=[str(write_twin(
+            self.root, content=pdf_bytes(4, 100), sbs_content=pdf_bytes(4, 300)))])
+        self.client = Client()
+
+    def tearDown(self):
+        self.settings.disable()
+        self.tmp.cleanup()
+
+    def test_the_reader_shows_the_side_by_side_when_asked(self):
+        # no ink for an anonymous reader: the plain stage frames the sheets
+        resp = self.client.get("/one/alpha/pdf/view/?twin=de")
+        html = resp.content.decode()
+        self.assertIn('src="/one/alpha/pdf/de/side-by-side/?inline=1', html)
+        self.assertNotIn('src="/one/alpha/pdf/?inline=1', html)
+        self.assertEqual(resp.cookies["parody_twin"].value, "de")
+
+    def test_the_choice_is_remembered(self):
+        self.client.get("/one/alpha/pdf/view/?twin=de")
+        html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertIn('src="/one/alpha/pdf/de/side-by-side/?inline=1', html)
+
+    def test_english_only_forgets_it(self):
+        self.client.get("/one/alpha/pdf/view/?twin=de")
+        resp = self.client.get("/one/alpha/pdf/view/?twin=en")
+        self.assertIn('src="/one/alpha/pdf/?inline=1', resp.content.decode())
+        self.assertEqual(resp.cookies["parody_twin"].value, "")
+        html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertIn('src="/one/alpha/pdf/?inline=1', html)
+
+    def test_a_section_without_that_translation_is_english_and_keeps_the_choice(self):
+        self.client.get("/one/alpha/pdf/view/?twin=de")
+        resp = self.client.get("/one/lead-in/pdf/view/?twin=zh")
+        self.assertIn('src="/one/lead-in/pdf/?inline=1', resp.content.decode())
+        self.assertNotIn("parody_twin", resp.cookies)
+
+    def test_the_bar_offers_reading_beside_the_english(self):
+        html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertIn('href="?twin=de"', html)
+        self.assertNotIn('href="?twin=en"', html)
+        html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
+        self.assertIn('href="?twin=de" aria-current="true"', html)
+        self.assertIn('href="?twin=en"', html)
+
+    def test_the_section_rail_opens_the_reader_side_by_side(self):
+        html = self.client.get("/one/alpha/").content.decode()
+        self.assertIn('href="/one/alpha/pdf/view/?twin=de"', html)
+        # and the sheets are still there to download
+        self.assertIn('href="/one/alpha/pdf/de/side-by-side/"', html)

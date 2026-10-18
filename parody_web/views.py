@@ -623,13 +623,52 @@ def _translation_links(request, book, section=None):
         twins = [t for t in translations_available(book) if key in (t.sections or {})]
         pdf, sbs = "parody_web:section_twin_pdf", "parody_web:section_twin_sbs"
         args = [section.chapter.slug, section.slug]
+    # The reader can show a section's translation beside its English; the
+    # whole book has no reader, only its files.
+    reader = ""
+    if section is not None and twins:
+        from .printing import section_pdf_path
+        if section_pdf_path(book, section) is not None:
+            reader = reverse("parody_web:section_pdf_view", args=args)
     return [{
         "language": t.language,
         "name": LANGUAGE_NAMES[t.language],
         "pdf_url": reverse(pdf, args=args + [t.language]),
         "sbs_url": (reverse(sbs, args=args + [t.language])
                     if twin_pdf_path(t, side_by_side=True) else ""),
+        "read_url": f"{reader}?{TWIN_PARAM}={t.language}" if reader else "",
+        "paired_url": (reverse("parody_web:section_twin_paired", args=args + [t.language])
+                       if reader else ""),
     } for t in twins]
+
+
+# ?twin=<language> in the reader puts that translation beside the English, and
+# a cookie remembers it, so a reader who reads in Chinese gets Chinese on every
+# section they open. ?twin=en goes back to the English alone and forgets it.
+TWIN_PARAM = "twin"
+TWIN_COOKIE = "parody_twin"
+ENGLISH_ONLY = "en"
+
+
+def _chosen_twin(request, translations):
+    """The translation entry this reader asked for, or last chose, when this
+    section has it; else None (the English alone)."""
+    asked = request.GET.get(TWIN_PARAM)
+    pick = asked if asked is not None else request.COOKIES.get(TWIN_COOKIE, "")
+    return next((t for t in translations if t["language"] == pick), None)
+
+
+def _remember_twin(request, response, twin):
+    """Keep an explicit choice: a translation this section has, or English.
+    A language this section lacks changes nothing, so the next translated
+    section still opens in it."""
+    asked = request.GET.get(TWIN_PARAM)
+    if asked == ENGLISH_ONLY:
+        response.delete_cookie(TWIN_COOKIE)
+    elif asked and twin is not None:
+        response.set_cookie(TWIN_COOKIE, twin["language"], max_age=365 * 24 * 3600,
+                            samesite="Lax")
+    return response
 
 
 def _twin_filename(name, language, side_by_side):
@@ -772,7 +811,9 @@ def section_pdf_view(request, chapter_slug, section_slug):
         raise Http404("no pdf for this section")
     if section_pdf_path(book, section) is None:
         raise Http404("no pdf for this section")
-    return render(request, "parody_web/pdf_view.html", {
+    translations = _translation_links(request, book, section)
+    twin = _chosen_twin(request, translations)
+    response = render(request, "parody_web/pdf_view.html", {
         "book": book, "editions": editions,
         "section": section, "chapter": section.chapter,
         "canonical_url": request.build_absolute_uri(request.path),
@@ -780,8 +821,14 @@ def section_pdf_view(request, chapter_slug, section_slug):
         # stage does not have to know parody-web's URL names.
         "pdf_url": reverse("parody_web:section_pdf",
                            args=[chapter_slug, section_slug]),
-        "translations": _translation_links(request, book, section),
+        "translations": translations,
+        # The translation to show beside the English, or None: an entry of
+        # `translations`, whose paired_url a replacement stage pairs page for
+        # page and whose sbs_url the default stage frames.
+        "twin": twin,
+        "english_only_url": f"?{TWIN_PARAM}={ENGLISH_ONLY}",
     })
+    return _remember_twin(request, response, twin)
 
 
 def book_pdf(request):

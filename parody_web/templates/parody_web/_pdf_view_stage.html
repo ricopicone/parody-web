@@ -9,7 +9,15 @@ It must REPLACE rather than overlay. An earlier design put a transparent
 "annotation layer" div on top of this iframe, which cannot work: a page can
 neither draw onto the browser's PDF plugin nor discover where its pages are.
 
-Context: book, chapter, section, pdf_url, editions.
+With a translation chosen (`twin`), the default stage frames the English and
+translated pages side by side on the twin's landscape sheets.
+
+Context: book, chapter, section, pdf_url, editions, twin.
 {% endcomment %}
+{% if twin and twin.sbs_url %}
+<iframe title="{{ section.title|cut:'`' }} (PDF, {{ twin.name }})" lang="{{ twin.language }}"
+        src="{{ twin.sbs_url }}?inline=1#view=FitH"></iframe>
+{% else %}
 <iframe title="{{ section.title|cut:'`' }} (PDF)"
         src="{{ pdf_url }}?inline=1#view=FitH"></iframe>
+{% endif %}
