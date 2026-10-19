@@ -977,3 +977,77 @@ class StaticHashingTests(SimpleTestCase):
                    side_effect=ValueError("not in manifest")):
             self.assertEqual(static("parody_web/css/book.css"),
                              "/static/parody_web/css/book.css")
+
+
+class PrintBytesTests(TestCase):
+    """A PDF is served, sliced and archived only while its bytes are the ones
+    the database recorded.
+
+    A deploy swaps the files (git reset) minutes before it imports the
+    artifacts that describe them: in between, the old page ranges cut the new
+    PDF and the wrong pages were cached and paired. And import archived
+    whatever was on disk under the new hash, without looking.
+    """
+
+    def setUp(self):
+        import hashlib
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.archive = self.root / "archive"
+        make_pdf(self.root / "print-book.pdf", 20)
+        sha = hashlib.sha256((self.root / "print-book.pdf").read_bytes()).hexdigest()
+        data = json.loads(json.dumps(ARTIFACT))
+        data["print"]["sha256"] = sha
+        self.settings = override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                                          PARODY_WEB_PRINT_ARCHIVE=str(self.archive),
+                                          PARODY_WEB_VERIFY_PRINT_BYTES=True)
+        self.settings.enable()
+        self.book = import_artifact(data)
+
+    def tearDown(self):
+        self.settings.disable()
+        self.tmp.cleanup()
+
+    def _replace_the_file(self):
+        make_pdf(self.root / "print-book.pdf", 24)  # the next release, not yet imported
+
+    def test_the_recorded_pdf_is_served(self):
+        self.assertIsNotNone(printing.book_pdf_path(self.book))
+
+    def test_a_pdf_whose_bytes_are_not_the_recorded_ones_is_not_served(self):
+        self._replace_the_file()
+        self.assertIsNone(printing.book_pdf_path(self.book))
+        section = Section.objects.get(book=self.book, slug="alpha")
+        self.assertIsNone(printing.section_pdf_path(self.book, section))
+
+    def test_bytes_that_are_not_the_recorded_ones_are_not_archived(self):
+        from parody_web.models import BookPrintVersion
+        BookPrintVersion.objects.all().delete()
+        for p in self.archive.rglob("*.pdf"):
+            p.unlink()
+        self._replace_the_file()
+        self.assertIsNone(printing.archive_book_pdf(self.book))
+        self.assertEqual(list(self.archive.rglob("*.pdf")), [])
+
+    def test_a_twin_and_its_sheets_need_the_twins_recorded_bytes(self):
+        from parody_web.models import TwinPdf
+        from parody_web.tests_twins import write_twin
+        write_twin(self.root)
+        twin = TwinPdf.objects.create(
+            book=self.book, language="de", pdf="print-book-de.pdf",
+            sha256=json.loads((self.root / "print-book-de.twin.json").read_text())["sha256"],
+            english_sha256=self.book.print_sha256, side_by_side_pdf="print-book-de-sbs.pdf")
+        self.assertIsNotNone(printing.twin_pdf_path(twin))
+        self.assertIsNotNone(printing.twin_pdf_path(twin, side_by_side=True))
+        (self.root / "print-book-de.pdf").write_bytes(b"%PDF the next release's twin")
+        self.assertIsNone(printing.twin_pdf_path(twin))
+        # the sheets carry no hash of their own: they go with their twin
+        self.assertIsNone(printing.twin_pdf_path(twin, side_by_side=True))
+
+    def test_each_file_version_is_hashed_once(self):
+        printing._file_sha256.cache_clear()
+        for _ in range(3):
+            printing.book_pdf_path(self.book)
+        info = printing._file_sha256.cache_info()
+        self.assertEqual((info.misses, info.hits), (1, 2))

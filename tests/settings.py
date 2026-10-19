@@ -41,3 +41,8 @@ STATIC_URL = "/static/"
 MEDIA_URL = "/media/"
 LOGIN_URL = "login"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# A served PDF must be the one its artifact records (printing._recorded). The
+# fixtures here record made-up hashes for the PDFs they write, so the check is
+# off for the suite; tests_printing.PrintBytesTests turns it on.
+PARODY_WEB_VERIFY_PRINT_BYTES = False

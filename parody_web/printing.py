@@ -14,6 +14,7 @@ point here reports "unavailable" and the site renders no PDF affordance at all,
 rather than erroring.
 """
 
+import hashlib
 import os
 import shutil
 from functools import lru_cache
@@ -90,14 +91,44 @@ def _reader(path_str, token):
     return PdfReader(path_str)
 
 
+@lru_cache(maxsize=32)
+def _file_sha256(path_str, size, mtime_ns):
+    """The file's sha256, computed once per version of the file (size and
+    mtime are part of the key, so a replaced file is hashed again)."""
+    digest = hashlib.sha256()
+    with open(path_str, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _recorded(path, sha256):
+    """``path`` when it is a file whose bytes are the ones the database
+    recorded (``sha256``), else None.
+
+    A deploy swaps the files (git reset) minutes before it imports the
+    artifacts describing them; in between, the old page ranges cut the new
+    PDF, and the wrong pages were cached, paired and archived. Refusing bytes
+    that are not the recorded ones makes that window a few minutes without
+    PDFs instead. PARODY_WEB_VERIFY_PRINT_BYTES = False turns it off (the
+    standalone tests, whose fixtures record made-up hashes).
+    """
+    if not path.is_file():
+        return None
+    if not getattr(settings, "PARODY_WEB_VERIFY_PRINT_BYTES", True):
+        return path
+    st = path.stat()
+    return path if _file_sha256(str(path), st.st_size, st.st_mtime_ns) == sha256 else None
+
+
 def book_pdf_path(book):
-    """The full-book PDF on disk, or None when unavailable."""
+    """The full-book PDF on disk, or None when unavailable or not the PDF the
+    book's artifact describes."""
     root = print_root()
     if not root or not book.print_pdf or not has_pypdf():
         return None
     # basename only: the artifact must never be able to escape the print root
-    path = root / Path(book.print_pdf).name
-    return path if path.is_file() else None
+    return _recorded(root / Path(book.print_pdf).name, book.print_sha256)
 
 
 def print_archive_root():
@@ -295,12 +326,16 @@ def _servable(book, twin):
 
 
 def twin_pdf_path(twin, side_by_side=False):
-    """The whole twin (or its side-by-side sheets) on disk, or None."""
+    """The whole twin (or its side-by-side sheets) on disk, or None — also
+    when the twin on disk is not the one recorded. The sheets carry no hash of
+    their own; they come out of the same build as the twin, so they go with it."""
     root = print_root()
     name = twin.side_by_side_pdf if side_by_side else twin.pdf
-    if not root or not name:
+    if not root or not name or not twin.pdf:
         return None
     # basename only, as for the English PDF
+    if _recorded(root / Path(twin.pdf).name, twin.sha256) is None:
+        return None
     path = root / Path(name).name
     return path if path.is_file() else None
 
