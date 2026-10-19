@@ -406,6 +406,17 @@ class TwinPairedTests(_PairedBook):
         self.twin.refresh_from_db()
         self.assertIsNone(printing.twin_paired_pdf_path(self.book, self.alpha, self.twin))
 
+    def test_a_section_the_twin_does_not_list_has_none(self):
+        # Pairing goes by English page, so a section the twin does not list
+        # but whose English pages it holds still paired, and was served: a
+        # translation the site offers nowhere for it.
+        TwinPdf.objects.filter(pk=self.twin.pk).update(sections={"one/alpha": [3, 5]})
+        self.twin.refresh_from_db()
+        lead_in = self.book.sections.get(slug="lead-in")
+        self.assertIsNone(printing.twin_paired_pdf_path(self.book, lead_in, self.twin))
+        self.assertIsNone(printing.twin_paired_key(self.book, lead_in, self.twin))
+        self.assertIsNotNone(printing.twin_paired_pdf_path(self.book, self.alpha, self.twin))
+
     def test_served_inline_gated_like_the_english(self):
         from django.test import Client
         client = Client()
@@ -535,3 +546,14 @@ class TwinReaderQueryTests(_ReaderBook):
         self.assertIn('src="/one/alpha/pdf/?inline=1', html)
         # and switching translation there goes back to the current version
         self.assertIn('href="?twin=de"', html)
+
+    def test_the_current_version_named_keeps_the_translation(self):
+        # the annotator's version menu names the current version too ("Current"
+        # sets ?v=<current key>); that is not an older version
+        from parody_web.printing import slice_key_for
+        section = Section.objects.get(book=self.book, slug="alpha")
+        current = slice_key_for(self.book, section)
+        self.assertTrue(current)
+        html = self.client.get(f"/one/alpha/pdf/view/?twin=de&v={current}").content.decode()
+        self.assertIn('src="/one/alpha/pdf/de/side-by-side/?inline=1', html)
+        self.assertIn('aria-current="true"', html)

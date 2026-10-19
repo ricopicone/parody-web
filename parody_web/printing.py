@@ -386,6 +386,13 @@ def _twin_pages_for(section, twin, twin_count):
     return [p if p is not None and 1 <= p <= twin_count else None for p in pages]
 
 
+def _twin_lists(twin, section):
+    """Whether the twin lists this section: pairing goes by English page, and
+    a section the twin does not list (but whose pages it holds) is one the site
+    offers no translation of anywhere, so none is paired for it either."""
+    return f"{section.chapter.slug}/{section.slug}" in (twin.sections or {})
+
+
 def twin_paired_key(book, section, twin):
     """Identity of the twin pages beside this section's English, or None.
 
@@ -397,7 +404,7 @@ def twin_paired_key(book, section, twin):
     """
     import hashlib
 
-    if not section.print_pages or len(section.print_pages) != 2:
+    if not section.print_pages or len(section.print_pages) != 2 or not _twin_lists(twin, section):
         return None
     src = twin_pdf_path(twin)
     if src is None or not has_pypdf():
@@ -423,10 +430,10 @@ def twin_paired_pdf_path(book, section, twin):
     section, a page the twin assigned to the next section (a sentence split
     across pages kept whole) still sits beside its English page.
 
-    None when the twin holds none of the section's pages, or anything the
-    pairing needs is missing.
+    None when the twin does not list the section or holds none of its pages,
+    or anything the pairing needs is missing.
     """
-    if not section.print_pages or len(section.print_pages) != 2:
+    if not section.print_pages or len(section.print_pages) != 2 or not _twin_lists(twin, section):
         return None
     src = twin_pdf_path(twin)
     english = book_pdf_path(book)

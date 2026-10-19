@@ -797,7 +797,7 @@ def section_pdf_view(request, chapter_slug, section_slug):
     the default iframe outright — parody_web_annotate does, with a pdf.js
     viewer it can draw on. See docs/host-integration.md.
     """
-    from .printing import section_pdf_path
+    from .printing import section_pdf_path, slice_key_for
 
     book, editions = _resolve_book(request)
     section = get_object_or_404(
@@ -823,7 +823,10 @@ def section_pdf_view(request, chapter_slug, section_slug):
 
     translations = [{**t, "here_url": here(t["language"])}
                      for t in _translation_links(request, book, section)]
-    named_version = bool(request.GET.get("v"))
+    # The annotator's version menu names the current version too: only an
+    # older one is read in English.
+    asked = request.GET.get("v") or ""
+    named_version = bool(asked) and asked != slice_key_for(book, section)
     twin = None if named_version else _chosen_twin(request, translations)
     response = render(request, "parody_web/pdf_view.html", {
         "book": book, "editions": editions,
