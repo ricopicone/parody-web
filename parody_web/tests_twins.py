@@ -301,11 +301,22 @@ class TwinViewTests(TestCase):
             self.assertEqual(self.client.get(url).status_code, 404, url)
 
     def test_links_say_which_is_the_pdf(self):
-        # the language's name alone, as a link, did not say it downloads a PDF
+        # the language's name alone, as a link, did not say it downloads a PDF;
+        # and "side by side" meant the reader here but the sheets on the home
+        # page, so the reader is "read side by side" and the sheets a PDF
         html = self.client.get("/one/alpha/").content.decode()
         self.assertIn('<span lang="de">Deutsch</span>: '
-                      '<a href="/one/alpha/pdf/view/?twin=de">side by side</a> · '
-                      '<a href="/one/alpha/pdf/de/" hreflang="de">PDF</a>', html)
+                      '<a href="/one/alpha/pdf/view/?twin=de">read side by side</a> · '
+                      '<a href="/one/alpha/pdf/de/" hreflang="de" aria-label="Deutsch PDF">PDF</a> · '
+                      '<a href="/one/alpha/pdf/de/side-by-side/" '
+                      'aria-label="Deutsch side-by-side PDF">side-by-side PDF</a>', html)
+
+    def test_home_says_how_many_pages_and_calls_the_sheets_a_pdf(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn('<a href="/pdf/de/" hreflang="de" aria-label="Deutsch PDF">PDF</a>, 4 pages', html)
+        self.assertIn('<a href="/pdf/de/side-by-side/" aria-label="Deutsch side-by-side PDF">'
+                      'side-by-side PDF</a>', html)
+        self.assertNotIn("so far", html)  # the twin covers the book's one chapter
 
     def test_rail_lists_translations_only_when_available(self):
         html = self.client.get("/one/alpha/").content.decode()
@@ -505,6 +516,13 @@ class TwinReaderTests(_ReaderBook):
         self.assertIn('src="/one/lead-in/pdf/?inline=1', resp.content.decode())
         self.assertNotIn("parody_twin", resp.cookies)
 
+    def test_the_menu_button_names_the_translation_shown(self):
+        # its aria-label said only "Translations", hiding the language shown
+        html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
+        self.assertIn('aria-label="Translations: Deutsch shown"', html)
+        html = self.client.get("/one/alpha/pdf/view/?twin=en").content.decode()
+        self.assertIn('aria-label="Translations"', html)
+
     def test_the_bar_offers_reading_beside_the_english(self):
         html = self.client.get("/one/alpha/pdf/view/").content.decode()
         self.assertIn('href="?twin=de"', html)
@@ -575,3 +593,51 @@ class TwinReaderQueryTests(_ReaderBook):
         html = self.client.get(f"/one/alpha/pdf/view/?twin=de&v={current}").content.decode()
         self.assertIn('src="/one/alpha/pdf/de/side-by-side/?inline=1', html)
         self.assertIn('aria-current="true"', html)
+
+
+class TwinOfSomeChaptersTests(TestCase):
+    """A twin of some chapters only (System Dynamics: Korean, chapter 1)."""
+
+    def setUp(self):
+        from parody_web.tests_printing import ARTIFACT, make_pdf
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.settings = override_settings(PARODY_WEB_PRINT_ROOT=str(self.root))
+        self.settings.enable()
+        make_pdf(self.root / "print-book.pdf", 20)
+        data = json.loads(json.dumps(ARTIFACT))
+        data["chapters"][0]["number"] = "1"
+        data["chapters"].append({
+            "title": "Two", "slug": "two", "hash": "c2", "number": "2",
+            "sections": [{"title": "Gamma", "slug": "gamma", "hash": "ga",
+                          "html": "<p>Gamma.</p>", "print": {"pages": [10, 12]}}]})
+        self.book, _ = import_artifact(data, twin=[str(write_twin(
+            self.root, content=pdf_bytes(4, 100), sbs_content=pdf_bytes(4, 300)))])
+        from django.test import Client
+        self.client = Client()
+
+    def tearDown(self):
+        self.settings.disable()
+        self.tmp.cleanup()
+
+    def test_home_says_which_chapters_so_far(self):
+        # It was offered as if it were the whole book, right under the
+        # English book's page count
+        html = self.client.get("/").content.decode()
+        self.assertIn("4 pages: chapter 1 so far", html)
+
+    def test_a_section_without_the_remembered_language_says_so(self):
+        # A reader who reads in German, on a chapter not yet translated, got
+        # the English with no word of why
+        self.client.get("/one/alpha/pdf/view/?twin=de")
+        resp = self.client.get("/two/gamma/pdf/view/")
+        html = resp.content.decode()
+        self.assertIn('<span class="pdf-translations-missing"><span lang="de">Deutsch</span>: '
+                      'not translated for this section yet</span>', html)
+        self.assertNotIn("parody_twin", resp.cookies)  # the choice is kept
+
+    def test_english_only_says_nothing_of_a_language(self):
+        self.client.get("/one/alpha/pdf/view/?twin=en")
+        html = self.client.get("/two/gamma/pdf/view/").content.decode()
+        self.assertNotIn('<span class="pdf-translations-missing">', html)
+        self.assertNotIn('<details class="pdf-exit pdf-translations">', html)  # no menu at all

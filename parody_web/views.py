@@ -639,7 +639,36 @@ def _translation_links(request, book, section=None):
         "read_url": f"{reader}?{TWIN_PARAM}={t.language}" if reader else "",
         "paired_url": (reverse("parody_web:section_twin_paired", args=args + [t.language])
                        if reader else ""),
+        # the whole book's twin: how long, and which chapters when not all
+        "pages": len(t.abspages or []) if section is None else 0,
+        "covers": _twin_coverage(book, t) if section is None else "",
     } for t in twins]
+
+
+def _twin_coverage(book, twin):
+    """Which chapters a twin of some chapters holds ("chapter 1", "chapters
+    1–3", "chapters 1, 4"); "" when it holds every chapter the print book has.
+
+    A book translated chapter by chapter (System Dynamics) offered its twin on
+    the home page as if it were the whole book.
+    """
+    covered = {key.split("/")[0] for key in (twin.sections or {})}
+    printed = [c for c in book.chapters.prefetch_related("sections").order_by("order")
+               if not c.draft and any(s.print_pages and not s.draft for s in c.sections.all())]
+    if not printed or all(c.slug in covered for c in printed):
+        return ""
+    numbers = [c.number or c.title for c in printed if c.slug in covered]
+    if not numbers:
+        return ""
+    if len(numbers) == 1:
+        return f"chapter {numbers[0]}"
+    try:
+        ints = [int(n) for n in numbers]
+    except ValueError:
+        ints = []
+    if ints and ints == list(range(ints[0], ints[0] + len(ints))):
+        return f"chapters {ints[0]}–{ints[-1]}"
+    return "chapters " + ", ".join(numbers)
 
 
 # ?twin=<language> in the reader puts that translation beside the English, and
@@ -656,6 +685,23 @@ def _chosen_twin(request, translations):
     asked = request.GET.get(TWIN_PARAM)
     pick = asked if asked is not None else request.COOKIES.get(TWIN_COOKIE, "")
     return next((t for t in translations if t["language"] == pick), None)
+
+
+def _missing_twin(request, book, translations):
+    """The translation this reader asked for or reads in, when the book has
+    it but not for this section: {language, name}, else None. A reader who
+    reads in Korean, on a chapter not yet translated, got the English with no
+    word of why."""
+    from .printing import translations_available
+    from .twins import LANGUAGE_NAMES
+
+    asked = request.GET.get(TWIN_PARAM)
+    pick = asked if asked is not None else request.COOKIES.get(TWIN_COOKIE, "")
+    if not pick or pick == ENGLISH_ONLY or any(t["language"] == pick for t in translations):
+        return None
+    if not any(t.language == pick for t in translations_available(book)):
+        return None
+    return {"language": pick, "name": LANGUAGE_NAMES[pick]}
 
 
 def _remember_twin(request, response, twin):
@@ -831,6 +877,7 @@ def section_pdf_view(request, chapter_slug, section_slug):
     response = render(request, "parody_web/pdf_view.html", {
         "book": book, "editions": editions,
         "section": section, "chapter": section.chapter,
+        "twin_missing": None if twin or named_version else _missing_twin(request, book, translations),
         "canonical_url": request.build_absolute_uri(request.path),
         # The stage partial builds its own src from this, so a replacement
         # stage does not have to know parody-web's URL names.

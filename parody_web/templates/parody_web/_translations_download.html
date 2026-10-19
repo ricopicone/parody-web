@@ -7,28 +7,37 @@ there is no twin this reader may have.
 `variant` picks the setting: "rail" (the section rail's card), "bar" (the PDF
 view's exits) or "home" (under the full-book link).
 
-Context: translations — [{language, name, pdf_url, sbs_url, read_url}], from
-views._translation_links; sbs_url is "" when the sheets are not on disk, and
-read_url is "" where there is no reader (the home page). In the bar, each entry
-also has here_url (this view, with that translation), `twin` is the entry shown
-beside the English now (or None) and english_only_url goes back to the English
-alone.
+One wording everywhere: "read side by side" opens the reader with the
+translation beside the English; "PDF" and "side-by-side PDF" are downloads.
+"side by side" alone used to mean the reader in the rail and bar and the sheets
+on the home page. Each download's accessible name carries its language, since
+"PDF" alone repeats once per language.
+
+Context: translations — [{language, name, pdf_url, sbs_url, read_url, pages,
+covers}], from views._translation_links; sbs_url is "" when the sheets are not
+on disk, and read_url is "" where there is no reader (the home page); pages and
+covers are the whole book's twin's (home only; covers names its chapters when it
+holds only some). In the bar, each entry also has here_url (this view, with that
+translation), `twin` is the entry shown beside the English now (or None),
+english_only_url goes back to the English alone, and twin_missing is the
+language the reader reads in when the book has it but not this section.
 {% endcomment %}
-{% if translations %}{% if variant == "bar" %}
+{% if variant == "bar" %}{% if translations or twin_missing %}
 <details class="pdf-exit pdf-translations">
-  <summary aria-label="Translations" title="Translations">
+  <summary aria-label="Translations{% if twin %}: {{ twin.name }} shown{% endif %}" title="Translations">
     {% include "parody_web/_icon.html" with icon="translate" %}<span class="pdf-exit-label">{% if twin %}<span lang="{{ twin.language }}">{{ twin.name }}</span>{% else %}Translations{% endif %}</span>
   </summary>
   <span class="pdf-translations-menu">
-    {% for t in translations %}<span><span lang="{{ t.language }}">{{ t.name }}</span>: <a href="{{ t.here_url }}"{% if twin.language == t.language %} aria-current="true"{% endif %}>side by side</a> · <a href="{{ t.pdf_url }}" hreflang="{{ t.language }}">PDF</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}">side-by-side PDF</a>{% endif %}</span>
-    {% endfor %}{% if twin %}<span><a href="{{ english_only_url }}">English only</a></span>{% endif %}
+    {% for t in translations %}<span><span lang="{{ t.language }}">{{ t.name }}</span>: <a href="{{ t.here_url }}"{% if twin.language == t.language %} aria-current="true"{% endif %}>read side by side</a> · <a href="{{ t.pdf_url }}" hreflang="{{ t.language }}" aria-label="{{ t.name }} PDF">PDF</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}" aria-label="{{ t.name }} side-by-side PDF">side-by-side PDF</a>{% endif %}</span>
+    {% endfor %}{% if twin_missing %}<span class="pdf-translations-missing"><span lang="{{ twin_missing.language }}">{{ twin_missing.name }}</span>: not translated for this section yet</span>
+    {% endif %}{% if twin %}<span><a href="{{ english_only_url }}">English only</a></span>{% endif %}
   </span>
 </details>
-{% elif variant == "home" %}
+{% endif %}{% elif translations %}{% if variant == "home" %}
 <p class="book-pdf-link">Translations:
-  {% for t in translations %}<span lang="{{ t.language }}">{{ t.name }}</span> (<a href="{{ t.pdf_url }}" hreflang="{{ t.language }}">PDF</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}">side by side</a>{% endif %}){% if not forloop.last %} · {% endif %}{% endfor %}
+  {% for t in translations %}<span lang="{{ t.language }}">{{ t.name }}</span> (<a href="{{ t.pdf_url }}" hreflang="{{ t.language }}" aria-label="{{ t.name }} PDF">PDF</a>{% if t.pages %}, {{ t.pages }} pages{% if t.covers %}: {{ t.covers }} so far{% endif %}{% endif %}{% if t.sbs_url %} · <a href="{{ t.sbs_url }}" aria-label="{{ t.name }} side-by-side PDF">side-by-side PDF</a>{% endif %}){% if not forloop.last %} · {% endif %}{% endfor %}
 </p>
 {% else %}
 <p class="util-rail-cap util-rail-cap-next">Translations</p>
-{% for t in translations %}<span><span lang="{{ t.language }}">{{ t.name }}</span>: {% if t.read_url %}<a href="{{ t.read_url }}">side by side</a> · {% endif %}<a href="{{ t.pdf_url }}" hreflang="{{ t.language }}">PDF</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}">side-by-side PDF</a>{% endif %}</span>
+{% for t in translations %}<span><span lang="{{ t.language }}">{{ t.name }}</span>: {% if t.read_url %}<a href="{{ t.read_url }}">read side by side</a> · {% endif %}<a href="{{ t.pdf_url }}" hreflang="{{ t.language }}" aria-label="{{ t.name }} PDF">PDF</a>{% if t.sbs_url %} · <a href="{{ t.sbs_url }}" aria-label="{{ t.name }} side-by-side PDF">side-by-side PDF</a>{% endif %}</span>
 {% endfor %}{% endif %}{% endif %}
