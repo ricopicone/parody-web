@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { keysToSend, twinInkToSend, twinIsStale } from './twinkeys.js';
+import { dismissNotice, keysToSend, noticeDismissed, twinInkToSend, twinIsStale } from './twinkeys.js';
 
 test('ink written over other pages than these is stale', () => {
   assert.equal(twinIsStale({ de: 'old' }, 'de', 'new', true), true);
@@ -39,4 +39,22 @@ test('only the translation shown is sent, never the others', () => {
 
 test('a translation erased to nothing is sent empty, so it is cleared', () => {
   assert.deepEqual(twinInkToSend({ de: { 1: ['a'] } }, 'zh'), { zh: {} });
+});
+
+test('a notice dismissed stays dismissed for that translation', () => {
+  // OK only removed it from the page, so it was back on every visit
+  const box = new Map();
+  const storage = { getItem: (k) => box.get(k) ?? null, setItem: (k, v) => box.set(k, v) };
+  assert.equal(noticeDismissed(storage, '/one/alpha/', 'de', 'k2'), false);
+  dismissNotice(storage, '/one/alpha/', 'de', 'k2');
+  assert.equal(noticeDismissed(storage, '/one/alpha/', 'de', 'k2'), true);
+  // a later change to the translation is news again
+  assert.equal(noticeDismissed(storage, '/one/alpha/', 'de', 'k3'), false);
+  assert.equal(noticeDismissed(storage, '/one/beta/', 'de', 'k2'), false);
+});
+
+test('storage that refuses (private mode) never breaks the notice', () => {
+  const storage = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
+  assert.equal(noticeDismissed(storage, '/a/', 'de', 'k'), false);
+  dismissNotice(storage, '/a/', 'de', 'k');
 });

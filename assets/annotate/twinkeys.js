@@ -35,3 +35,26 @@ export function twinInkToSend(allTwins, language) {
   if (!language) return undefined;
   return { [language]: (allTwins || {})[language] || {} };
 }
+
+/**
+ * Whether the reader has dismissed the "translation changed" notice for this
+ * section, language and translation. Only a later change brings it back: OK
+ * used to remove it from the page alone, so it returned on every visit.
+ * Browser storage is a convenience here; refused (private mode), the notice
+ * just shows again.
+ */
+const noticeKey = (path, language, key) => `parody-twin-notice:${path}:${language}:${key}`;
+
+export function noticeDismissed(storage, path, language, key) {
+  try {
+    return storage.getItem(noticeKey(path, language, key)) === '1';
+  } catch (err) {
+    return false;
+  }
+}
+
+export function dismissNotice(storage, path, language, key) {
+  try {
+    storage.setItem(noticeKey(path, language, key), '1');
+  } catch (err) { /* private mode: it shows again next time */ }
+}

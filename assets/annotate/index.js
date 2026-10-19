@@ -11,8 +11,11 @@ import { pinchDistance, pinchMidpoint, stepFor, anchoredScroll } from './pinch.j
 import { InkLayer } from './ink.js';
 import { InkStore, PAD, twinSurface } from './store.js';
 import { twinLayout } from './fit.js';
-import { keysToSend, twinInkToSend, twinIsStale } from './twinkeys.js';
+import {
+  dismissNotice, keysToSend, noticeDismissed, twinInkToSend, twinIsStale,
+} from './twinkeys.js';
 import { LayerSet } from './layers.js';
+import { leaveAfterSaving } from './leave.js';
 import { InkApi } from './api.js';
 import { Saver, OK, FAILED } from './saving.js';
 import { PointerGate } from './pointer-gate.js';
@@ -124,6 +127,21 @@ async function boot() {
     if (!saver.pending) return;
     event.preventDefault();
     event.returnValue = '';
+  });
+
+  // Another view of this page — a translation, English only, another
+  // version — once the notes are saved (leave.js).
+  const leave = (href) => leaveAfterSaving(href, {
+    unsaved: () => Boolean(root.dataset.dirty) || saver.pending,
+    saveNow: () => { clearTimeout(saveTimer); return save(); },
+    go: (to) => window.location.assign(to),
+  });
+  document.querySelectorAll('.pdf-translations-menu a[href^="?"]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      leave(link.getAttribute('href'));
+    });
   });
   window.addEventListener('pagehide', () => {
     if (saver.pending || root.dataset.dirty) api.saveOnExit(payload());
@@ -299,10 +317,12 @@ async function boot() {
   scroller.addEventListener('touchcancel', endPinch);
 
   wireCarryForward(root, api);
-  if (twinIsStale(loaded.twin_keys, twinLanguage, twinKey, twinHadInk)) {
-    warnTwinChanged(root, twinName || twinLanguage);
+  if (twinIsStale(loaded.twin_keys, twinLanguage, twinKey, twinHadInk)
+      && !noticeDismissed(storage(), location.pathname, twinLanguage, twinKey)) {
+    warnTwinChanged(root, twinName || twinLanguage,
+                    () => dismissNotice(storage(), location.pathname, twinLanguage, twinKey));
   }
-  wireVersionSwitch();
+  wireVersionSwitch(leave);
 
   // Following the OS, or another tab of the same book, without being asked.
   if (window.matchMedia) {
@@ -393,7 +413,16 @@ function wireCarryForward(root, api) {
  * those notes may sit over other text now. Said, not fixed: nothing knows
  * where they belong on the new pages.
  */
-function warnTwinChanged(root, name) {
+/** localStorage, or a stand-in that remembers nothing where it is refused. */
+function storage() {
+  try {
+    return window.localStorage;
+  } catch (err) {
+    return { getItem: () => null, setItem() {} };
+  }
+}
+
+function warnTwinChanged(root, name, onDismiss) {
   const note = document.createElement('div');
   note.className = 'ink-carry ink-twin-changed';
   note.setAttribute('role', 'status');
@@ -403,18 +432,21 @@ function warnTwinChanged(root, name) {
   const ok = document.createElement('button');
   ok.type = 'button';
   ok.textContent = 'OK';
-  ok.addEventListener('click', () => note.remove());
+  ok.addEventListener('click', () => {
+    note.remove();
+    onDismiss();
+  });
   note.append(text, ok);
   root.querySelector('[data-ink-pages]')?.before(note);
 }
 
 /** Switching to another version reloads onto it; each version is its own PDF. */
-function wireVersionSwitch() {
+function wireVersionSwitch(leave) {
   const select = document.querySelector('[data-ink-versions]');
   if (!select) return;
   select.addEventListener('change', () => {
     const url = new URL(window.location.href);
     url.searchParams.set('v', select.value);
-    window.location.assign(url);
+    leave(url.toString());
   });
 }
