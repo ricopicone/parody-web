@@ -33,6 +33,17 @@ export function toCss(box, scale) {
 }
 
 /**
+ * Where a figure's answer goes: beside the page, over the translation when
+ * one is beside it, else the margin; but over the page itself when the
+ * translation sits under each page (a narrow screen), where it is a page away
+ * from the figure and the margin is not shown.
+ */
+export function figureHost(page) {
+  if (page.el?.closest?.('[data-stacked="1"]')) return page.el;
+  return page.twin || page.pad || page.el;
+}
+
+/**
  * Where to put the plate, given the blank's box in PDF points.
  * `plate` is {width, height} in CSS px.
  */
@@ -131,8 +142,7 @@ export class Reveal {
     }
     this.el.hidden = false;
     this.el.classList.remove('is-fading');
-    const host = page.twin || page.pad || page.el;
-    host.appendChild(this.el);
+    figureHost(page).appendChild(this.el);
     const { y0 } = toCss([cloze.x0, cloze.y0, cloze.x1, cloze.y1], page.scale);
     this.el.style.left = '0px';
     this.el.style.top = `${y0}px`;

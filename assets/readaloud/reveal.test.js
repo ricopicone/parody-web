@@ -63,3 +63,17 @@ test('an unknown page width still clamps the left edge', () => {
   const at = placeReveal([0, 50, 4, 56], SCALE, { width: 300, height: 20 });
   assert.ok(at.left >= 0);
 });
+
+import { figureHost } from './reveal.js';
+
+test('a figure answer goes beside the page, over the translation when one is beside it', () => {
+  const el = { closest: () => null };
+  assert.equal(figureHost({ el, pad: 'pad', twin: 'twin' }), 'twin');
+  assert.equal(figureHost({ el, pad: 'pad' }), 'pad');
+});
+
+test('with the translation under the page, a figure answer goes over the page itself', () => {
+  // under, the translation is a page away from the figure the answer is for
+  const el = { closest: (sel) => (sel === '[data-stacked="1"]' ? {} : null) };
+  assert.equal(figureHost({ el, pad: 'pad', twin: 'twin' }), el);
+});

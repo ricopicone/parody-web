@@ -37,6 +37,9 @@ test('pages too small to read side by side go one under the other', () => {
   assert.deepEqual(twinLayout(1542, 765, 1008, STEPS), { stacked: true, zoom: 1 });
 });
 
-test('stacked on a phone, the page is fitted too', () => {
-  assert.deepEqual(twinLayout(1092, 540, 374, STEPS), { stacked: true, zoom: 0.6 });
+test('stacked on a phone, the page is fitted, but never below what reads', () => {
+  // 0.6 made 11pt type about 8px: turning a translation on shrank the English
+  // the student was reading, which English alone opens at 1
+  assert.deepEqual(twinLayout(1092, 540, 374, STEPS), { stacked: true, zoom: MIN_BESIDE });
+  assert.deepEqual(twinLayout(1092, 540, 420, STEPS), { stacked: true, zoom: 0.75 });
 });

@@ -26,12 +26,15 @@ export const MIN_BESIDE = 0.75;
 /**
  * Whether the translation goes beside each page or under it, and the zoom
  * that fits: beside when both pages fit at MIN_BESIDE or more, else under.
- * `besideAtOne` and `stackedAtOne` are the row's widths at zoom 1 each way.
+ * Under, never below MIN_BESIDE either: on a phone a page that does not fit
+ * scrolls sideways a little, as the English alone does, rather than shrink
+ * past reading. `besideAtOne` and `stackedAtOne` are the row's widths at
+ * zoom 1 each way.
  */
 export function twinLayout(besideAtOne, stackedAtOne, available, steps) {
   const beside = fitZoom(besideAtOne, available, steps);
   if (besideAtOne * beside <= available && beside >= MIN_BESIDE) {
     return { stacked: false, zoom: beside };
   }
-  return { stacked: true, zoom: fitZoom(stackedAtOne, available, steps) };
+  return { stacked: true, zoom: Math.max(fitZoom(stackedAtOne, available, steps), MIN_BESIDE) };
 }
