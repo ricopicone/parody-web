@@ -521,6 +521,17 @@ stage draws each English page and its twin page in one row, both annotatable,
 with read-along on the English. Its annotated download with `?twin=de` is that
 row on paper: English | translation | margin, each with its ink.
 
+A twin may cover some chapters only (a book translated chapter by chapter, as
+its chapters are reviewed): only the sections its sidecar lists offer it, the
+home page says which chapters it holds so far ("45 pages: chapter 1 so far"),
+and a reader whose remembered language a section lacks is told so in the bar.
+Everywhere, "read side by side" opens the reader with the translation beside
+the English, and "PDF" and "side-by-side PDF" are downloads.
+
+Ink on a translation is saved per language: a save replaces the languages it
+sends (the reader sends the one on screen) and keeps the rest, so a tab on
+another language, or with none, cannot erase notes written elsewhere.
+
 ### The annotation seam
 
 `pdf_view.html` renders the PDF in a positioned container with an empty
@@ -843,7 +854,8 @@ vanishing.
 | `PARODY_WEB_PRINT_ROOT` | `""` (feature off) | directory holding the full-book print PDFs; must NOT be inside `MEDIA_ROOT` |
 | `PARODY_WEB_PRINT_CACHE` | `<print root>/.cache` | where sliced section PDFs are cached; must be under the print root when X-Accel is used |
 | `PARODY_WEB_PRINT_XACCEL` | `""` (Django streams) | nginx `internal` location mapped to the print root |
-| `PARODY_WEB_PUBLIC_BOOK_PDF` | `True` | may the public download the whole book as one PDF; set `False` for any book that gates a section |
+| `PARODY_WEB_PUBLIC_BOOK_PDF` | `True` | may the public download the whole book as one PDF; set `False` for any book that gates a section (or override the policy's `can_download_book_pdf` per book) |
+| `PARODY_WEB_VERIFY_PRINT_BYTES` | `True` | serve, slice and archive a print PDF (and a translated twin) only while its sha256 is the one its artifact (or sidecar) records — so the minutes between a deploy replacing the files and importing their artifacts serve no PDFs rather than wrong pages; hashed once per file version |
 | `PARODY_WEB_READALOUD_CACHE` | `""` (feature off) | directory holding generated read-along audio; required to generate or serve it unless a bucket is set |
 | `PARODY_WEB_READALOUD_BUCKET` | `""` (uses the cache directory) | S3 bucket holding generated audio; the endpoint redirects to a presigned URL and S3 answers Range natively |
 | `PARODY_WEB_READALOUD_PREFIX` | `"readalong/"` | key prefix inside that bucket |
