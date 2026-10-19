@@ -74,6 +74,28 @@ class TwinInkTests(_TwinBook):
         self._put({"strokes": {"1": [PEN, PEN]}})
         self.assertEqual(self._layer().twins, {"de": {"2": [BLUE]}})
 
+    def test_a_save_replaces_only_the_languages_it_sends(self):
+        # An English-only tab, or one showing the other language, saved every
+        # language it had loaded: one opened before the reader wrote on the
+        # Chinese erased those notes on its next save.
+        self._put({"strokes": {}, "twins": {"de": {"2": [BLUE]}, "zh": {"1": [PEN]}}})
+        self._put({"strokes": {"1": [PEN]}, "twins": {}})
+        self.assertEqual(self._layer().twins, {"de": {"2": [BLUE]}, "zh": {"1": [PEN]}})
+        self._put({"strokes": {}, "twins": {"de": {"3": [PEN]}}})
+        self.assertEqual(self._layer().twins, {"de": {"3": [PEN]}, "zh": {"1": [PEN]}})
+
+    def test_a_language_sent_empty_is_cleared(self):
+        # erasing every stroke on the translation shown sends it as {}
+        self._put({"strokes": {}, "twins": {"de": {"2": [BLUE]}, "zh": {"1": [PEN]}}})
+        self._put({"strokes": {}, "twins": {"zh": {}}})
+        self.assertEqual(self._layer().twins, {"de": {"2": [BLUE]}})
+
+    def test_keys_are_replaced_per_language_too(self):
+        self._put({"strokes": {}, "twins": {"de": {"1": [BLUE]}, "zh": {"1": [PEN]}},
+                   "twin_keys": {"de": "k-de", "zh": "k-zh"}})
+        self._put({"strokes": {}, "twins": {"de": {"1": [BLUE, BLUE]}}, "twin_keys": {"de": "k-de2"}})
+        self.assertEqual(self._layer().twin_keys, {"de": "k-de2", "zh": "k-zh"})
+
     def test_malformed_twins_are_refused(self):
         for bad in ([], {"de": []}, {"de": {"1": "x"}}, "de"):
             with self.subTest(bad=bad):
@@ -95,6 +117,13 @@ class TwinInkTests(_TwinBook):
         self.assertEqual(new.twins, {"de": {"1": [BLUE]}})
 
     # -- the stage ------------------------------------------------------------
+
+    def test_the_stage_always_knows_the_copy_with_notes(self):
+        # Download and print move to it after the first save, so the stage
+        # carries it before the reader has written anything
+        html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
+        self.assertIn('data-annotated-url="/one/alpha/pdf/annotated/?twin=de"', html)
+        self.assertIn("data-ink-download", html)
 
     def test_the_stage_is_handed_the_paired_twin(self):
         html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
@@ -204,7 +233,7 @@ class TranslationOnlyInkTests(_TwinBook):
 
     def test_the_english_download_does_not_promise_notes(self):
         html = self.client.get("/one/alpha/pdf/view/?twin=en").content.decode()
-        self.assertNotIn("/pdf/annotated/", html)
+        self.assertNotIn('href="/one/alpha/pdf/annotated/', html)
         html = self.client.get("/one/alpha/pdf/view/?twin=de").content.decode()
         self.assertIn('href="/one/alpha/pdf/annotated/?twin=de"', html)
 

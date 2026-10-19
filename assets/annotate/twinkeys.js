@@ -15,9 +15,23 @@ export function twinIsStale(loadedKeys, language, currentKey, hasInk) {
   return !!(language && hasInk && was && currentKey && was !== currentKey);
 }
 
-/** The keys to save with the ink. */
-export function keysToSave(loadedKeys, language, currentKey, { hadInk, touched }) {
-  const keys = { ...(loadedKeys || {}) };
-  if (language && currentKey && (!hadInk || touched)) keys[language] = currentKey;
-  return keys;
+/**
+ * The key to send with the ink: the shown language's, when it moves on, else
+ * nothing. The server replaces each language's key it is sent and keeps the
+ * rest, so not sending is how a key stays as it was.
+ */
+export function keysToSend(loadedKeys, language, currentKey, { hadInk, touched }) {
+  if (language && currentKey && (!hadInk || touched)) return { [language]: currentKey };
+  return undefined;
+}
+
+/**
+ * The translation ink to send: the language shown only, empty when every
+ * stroke on it was erased (so the server clears it), and none at all without
+ * a translation on screen. The server keeps every language not sent; sending
+ * all the languages loaded let a tab opened earlier erase notes written since.
+ */
+export function twinInkToSend(allTwins, language) {
+  if (!language) return undefined;
+  return { [language]: (allTwins || {})[language] || {} };
 }

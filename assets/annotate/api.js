@@ -15,8 +15,8 @@ export function _body({ sliceKey, bookSha, pages, strokes, pads, twins, twinKeys
     strokes: strokes || {},
     pads: pads || {},
   };
-  // Only when known. The server replaces a layer's translation ink with what
-  // is sent, so a default of {} would erase notes this state never loaded.
+  // Only when known: the server replaces each language sent and keeps the
+  // rest, so a save that does not know of translations sends none.
   if (twins) body.twins = twins;
   if (twinKeys) body.twin_keys = twinKeys;
   return body;

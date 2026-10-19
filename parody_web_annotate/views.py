@@ -12,6 +12,7 @@ import json
 import zlib
 
 from django.conf import settings
+from django.db import transaction
 from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_protect
@@ -222,16 +223,22 @@ def ink(request, chapter_slug, section_slug):
     pages = payload.get("pages") or section.print_pages
     defaults = {"strokes": strokes, "pads": pads, "pages": pages,
                 "book_sha256": payload.get("book_sha256") or book.print_sha256}
-    # Only when sent: a viewer from before translations, still open in a tab,
-    # saves the English alone and must not wipe the reader's notes on one.
-    if "twins" in payload:
-        defaults["twins"] = payload["twins"]
-    if "twin_keys" in payload:
-        defaults["twin_keys"] = payload["twin_keys"]
-    InkLayer.objects.update_or_create(
-        user=request.user, book_slug=book.slug,
-        edition_id=book.edition_id or "", section_key=section.key,
-        slice_key=key, defaults=defaults)
+    where = {"user": request.user, "book_slug": book.slug,
+             "edition_id": book.edition_id or "", "section_key": section.key,
+             "slice_key": key}
+    with transaction.atomic():
+        layer = InkLayer.objects.select_for_update().filter(**where).first()
+        # Each language sent replaces that language's notes; one not sent is
+        # kept. A tab shows one translation at most and sends only it, so an
+        # English-only tab, a tab on the other language, or a viewer from
+        # before translations cannot erase notes it never had on screen.
+        if "twins" in payload:
+            twins = {**(layer.twins if layer else {}), **payload["twins"]}
+            defaults["twins"] = {lang: pages for lang, pages in twins.items() if pages}
+        if "twin_keys" in payload:
+            defaults["twin_keys"] = {**(layer.twin_keys if layer else {}),
+                                     **payload["twin_keys"]}
+        InkLayer.objects.update_or_create(**where, defaults=defaults)
     return JsonResponse({"saved": True, "slice_key": key})
 
 
