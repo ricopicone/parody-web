@@ -26,13 +26,15 @@ export function keysToSend(loadedKeys, language, currentKey, { hadInk, touched }
 }
 
 /**
- * The translation ink to send: the language shown only, empty when every
- * stroke on it was erased (so the server clears it), and none at all without
- * a translation on screen. The server keeps every language not sent; sending
+ * The translation ink to send: the language shown only, and only once this
+ * tab has changed it — empty when every stroke on it was erased (so the
+ * server clears it) — and none at all without a translation on screen. The server keeps every language not sent; sending
  * all the languages loaded let a tab opened earlier erase notes written since.
  */
-export function twinInkToSend(allTwins, language) {
-  if (!language) return undefined;
+export function twinInkToSend(allTwins, language, { touched }) {
+  // Untouched, it is not sent at all: a tab that never wrote on it would
+  // otherwise erase notes on it written elsewhere since it opened.
+  if (!language || !touched) return undefined;
   return { [language]: (allTwins || {})[language] || {} };
 }
 

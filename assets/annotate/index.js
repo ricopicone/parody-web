@@ -16,6 +16,7 @@ import {
 } from './twinkeys.js';
 import { LayerSet } from './layers.js';
 import { leaveAfterSaving } from './leave.js';
+import { Edits } from './edits.js';
 import { InkApi } from './api.js';
 import { Saver, OK, FAILED } from './saving.js';
 import { PointerGate } from './pointer-gate.js';
@@ -47,11 +48,16 @@ async function boot() {
   if (!loaded) return;                    // not signed in, or nothing to draw on
 
   let saveTimer = null;
+  // What the server has, by count (edits.js): a finished save must not
+  // clear "unsaved" for a stroke drawn while it was in flight.
+  const edits = new Edits();
+  let sending = 0;
   const store = new InkStore(loaded.strokes, {
     pads: loaded.pads || {},
-    // Every language's ink, shown or not: a save sends them all back.
+    // Every language's ink, shown or not; a save sends the shown one only.
     twins: loaded.twins || {},
     onChange: () => {
+      edits.change();
       root.dataset.dirty = '1';
       // A margin that has just gained its first mark should stop looking empty.
       layers.forEach((pair, number) => {
@@ -67,6 +73,7 @@ async function boot() {
   const twinsLoaded = 'twins' in loaded;
   const twinAtLoad = JSON.stringify((loaded.twins || {})[twinLanguage] || {});
   const twinHadInk = twinAtLoad !== '{}';
+  const twinTouched = () => JSON.stringify(store.twinsToJSON()[twinLanguage] || {}) !== twinAtLoad;
 
   const payload = () => ({
     sliceKey: loaded.slice_key || sliceKey,
@@ -76,11 +83,13 @@ async function boot() {
     pads: store.padsToJSON(),
     // The translation on screen only, and only to a server that knows of
     // translations: it keeps every language a save does not mention.
-    twins: twinsLoaded ? twinInkToSend(store.twinsToJSON(), twinLanguage) : undefined,
+    twins: twinsLoaded
+      ? twinInkToSend(store.twinsToJSON(), twinLanguage, { touched: twinTouched() })
+      : undefined,
     twinKeys: twinsLoaded
       ? keysToSend(loaded.twin_keys, twinLanguage, twinKey, {
         hadInk: twinHadInk,
-        touched: JSON.stringify(store.twinsToJSON()[twinLanguage] || {}) !== twinAtLoad,
+        touched: twinTouched(),
       })
       : undefined,
   });
@@ -97,7 +106,10 @@ async function boot() {
   const saver = new Saver(api, {
     onState(state) {
       root.dataset.saveState = state;
-      if (state === OK) delete root.dataset.dirty;
+      if (state === OK) {
+        edits.landed(sending);
+        if (!edits.unsaved) delete root.dataset.dirty;
+      }
       // Saved notes on the page: Download and print give the copy with them.
       if (state === OK && hasNotes()) useNotes(root, document.querySelector('[data-ink-download]'));
       notice.hidden = state !== FAILED;
@@ -107,7 +119,10 @@ async function boot() {
     },
   });
 
-  const save = () => saver.save(payload);
+  const save = () => saver.save(() => {
+    sending = edits.stamp();
+    return payload();
+  });
 
   function hasNotes() {
     const shown = twinLanguage ? store.twinsToJSON()[twinLanguage] || {} : {};
@@ -132,7 +147,7 @@ async function boot() {
   // Another view of this page — a translation, English only, another
   // version — once the notes are saved (leave.js).
   const leave = (href) => leaveAfterSaving(href, {
-    unsaved: () => Boolean(root.dataset.dirty) || saver.pending,
+    unsaved: () => edits.unsaved || saver.pending,
     saveNow: () => { clearTimeout(saveTimer); return save(); },
     go: (to) => window.location.assign(to),
   });

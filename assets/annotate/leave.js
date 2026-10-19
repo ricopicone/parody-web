@@ -7,7 +7,9 @@
  * who had only switched translation. Saving first, then going, keeps that
  * question for a save that actually failed: beforeunload still asks then.
  */
-export async function leaveAfterSaving(href, { unsaved, saveNow, go }) {
-  if (unsaved()) await saveNow();
+export async function leaveAfterSaving(href, { unsaved, saveNow, go, waitMs = 3000 }) {
+  // Never longer than waitMs: with the server unreachable the link would
+  // seem to do nothing. beforeunload still warns of what did not land.
+  if (unsaved()) await Promise.race([saveNow(), new Promise((r) => setTimeout(r, waitMs))]);
   go(href);
 }

@@ -33,12 +33,18 @@ test('only the translation shown is sent, never the others', () => {
   // an English-only tab, or a tab on the other language, erase notes written
   // since it opened.
   const all = { de: { 1: ['a'] }, zh: { 2: ['b'] } };
-  assert.deepEqual(twinInkToSend(all, 'zh'), { zh: { 2: ['b'] } });
-  assert.equal(twinInkToSend(all, ''), undefined);
+  assert.deepEqual(twinInkToSend(all, 'zh', { touched: true }), { zh: { 2: ['b'] } });
+  assert.equal(twinInkToSend(all, '', { touched: true }), undefined);
 });
 
 test('a translation erased to nothing is sent empty, so it is cleared', () => {
-  assert.deepEqual(twinInkToSend({ de: { 1: ['a'] } }, 'zh'), { zh: {} });
+  assert.deepEqual(twinInkToSend({ de: { 1: ['a'] } }, 'zh', { touched: true }), { zh: {} });
+});
+
+test('a translation this tab has not changed is not sent', () => {
+  // a laptop open on German it never wrote on, sending {} for it with an
+  // English stroke, erased the German notes written on a tablet since
+  assert.equal(twinInkToSend({}, 'de', { touched: false }), undefined);
 });
 
 test('a notice dismissed stays dismissed for that translation', () => {

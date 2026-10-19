@@ -33,3 +33,14 @@ test('a save that fails still goes, and the page warns as it leaves', async () =
   });
   assert.deepEqual(order, ['save', 'go ?v=old']);
 });
+
+test('a save that never answers does not hold the reader for long', async () => {
+  const order = [];
+  await leaveAfterSaving('?twin=de', {
+    unsaved: () => true,
+    saveNow: () => new Promise(() => {}),
+    go: (href) => order.push(`go ${href}`),
+    waitMs: 20,
+  });
+  assert.deepEqual(order, ['go ?twin=de']);
+});
