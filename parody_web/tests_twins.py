@@ -417,6 +417,24 @@ class TwinPairedTests(_PairedBook):
         self.assertIsNone(printing.twin_paired_key(self.book, lead_in, self.twin))
         self.assertIsNotNone(printing.twin_paired_pdf_path(self.book, self.alpha, self.twin))
 
+    def test_a_cut_already_made_is_served_without_reading_a_pdf(self):
+        # pypdf reads a whole PDF into memory, and its cache holds 4 per
+        # process across every book: each page view re-read the twin (141-349
+        # ms, 3-14 MB) though the slice and the key had not changed
+        from unittest.mock import patch
+        first = (printing.twin_paired_pdf_path(self.book, self.alpha, self.twin),
+                 printing.twin_section_pdf_path(self.book, self.alpha, self.twin),
+                 printing.twin_paired_key(self.book, self.alpha, self.twin))
+        self.assertTrue(all(first))
+
+        def no_reading(*a, **k):
+            raise AssertionError("read a PDF for a cut already made")
+        with patch.object(printing, "_reader", no_reading):
+            again = (printing.twin_paired_pdf_path(self.book, self.alpha, self.twin),
+                     printing.twin_section_pdf_path(self.book, self.alpha, self.twin),
+                     printing.twin_paired_key(self.book, self.alpha, self.twin))
+        self.assertEqual(first, again)
+
     def test_served_inline_gated_like_the_english(self):
         from django.test import Client
         client = Client()

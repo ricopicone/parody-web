@@ -340,6 +340,14 @@ def twin_pdf_path(twin, side_by_side=False):
     return path if path.is_file() else None
 
 
+def _twin_page_count(twin, src):
+    """The twin's page count: its abspages hold one entry per twin page, so
+    an import with them needs no PDF read for it."""
+    if twin.abspages:
+        return len(twin.abspages)
+    return len(_reader(str(src), src.stat().st_mtime_ns).pages)
+
+
 def twin_section_pdf_path(book, section, twin, side_by_side=False):
     """This section's pages of the twin (or of its side-by-side sheets).
 
@@ -355,13 +363,14 @@ def twin_section_pdf_path(book, section, twin, side_by_side=False):
     if src is None or cache is None or not has_pypdf():
         return None
     start, end = pages
-    if start > len(_reader(str(src), src.stat().st_mtime_ns).pages):
-        return None  # a range past the twin's end: no pages to cut, so no PDF
     variant = f"twin-{twin.language}-{twin.sha256[:12]}" + ("-sbs" if side_by_side else "")
     dest = (cache / book.slug / (book.edition_id or "_") / variant
             / f"{section.chapter.slug}-{section.slug}.pdf")
-    if not dest.is_file():
-        slice_pdf(src, dest, start, end)
+    if dest.is_file():
+        return dest  # cut before, from this very twin (its hash names the directory)
+    if start > _twin_page_count(twin, src):
+        return None  # a range past the twin's end: no pages to cut, so no PDF
+    slice_pdf(src, dest, start, end)
     return dest
 
 
@@ -409,10 +418,20 @@ def twin_paired_key(book, section, twin):
     src = twin_pdf_path(twin)
     if src is None or not has_pypdf():
         return None
-    reader = _reader(str(src), src.stat().st_mtime_ns)
-    pages = _twin_pages_for(section, twin, len(reader.pages))
+    pages = _twin_pages_for(section, twin, _twin_page_count(twin, src))
     if not any(pages):
         return None
+    return _paired_key(str(src), twin.sha256, tuple(pages))
+
+
+@lru_cache(maxsize=1024)
+def _paired_key(src, twin_sha256, pages):
+    """The fingerprint of these twin pages, once per twin version (the twin's
+    hash, which twin_pdf_path has just checked the file against) and pages:
+    a page view used to re-read the whole twin for it."""
+    import hashlib
+
+    reader = _reader(src, Path(src).stat().st_mtime_ns)
     digest = hashlib.sha256()
     for page in pages:
         digest.update(_page_fingerprint(reader.pages[page - 1]) if page else b"no twin page")
@@ -440,8 +459,7 @@ def twin_paired_pdf_path(book, section, twin):
     cache = print_cache_root()
     if src is None or english is None or cache is None or not has_pypdf():
         return None
-    reader = _reader(str(src), src.stat().st_mtime_ns)
-    pages = _twin_pages_for(section, twin, len(reader.pages))
+    pages = _twin_pages_for(section, twin, _twin_page_count(twin, src))
     if not any(pages):
         return None
     start, end = section.print_pages
@@ -455,6 +473,7 @@ def twin_paired_pdf_path(book, section, twin):
     if not dest.is_file():
         from pypdf import PdfWriter
 
+        reader = _reader(str(src), src.stat().st_mtime_ns)
         english_reader = _reader(str(english), english.stat().st_mtime_ns)
         writer = PdfWriter()
         for english_page, twin_page in zip(range(start, end + 1), pages):
