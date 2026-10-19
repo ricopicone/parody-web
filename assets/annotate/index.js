@@ -228,12 +228,15 @@ async function boot() {
   });
   const redrawAll = () => eachLayer((l) => l.redraw());
   let chrome = null;
+  // Where "reset zoom" goes: 1, or with a translation the zoom that fits the
+  // row (fitTwin below), not a row that overflows
+  let fittedZoom = 1;
   const actions = {
     undo: () => { store.undo(); redrawAll(); },
     redo: () => { store.redo(); redrawAll(); },
     zoomIn: () => chrome?.showZoom(view.stepZoom(+1) * 100),
     zoomOut: () => chrome?.showZoom(view.stepZoom(-1) * 100),
-    zoomReset: () => chrome?.showZoom(view.setZoom(1) * 100),
+    zoomReset: () => chrome?.showZoom(view.setZoom(fittedZoom) * 100),
     print: null,          // filled in below, once the root is known
     // A tablet with no stylus: the reader trades scrolling and pinch-zoom for
     // being able to draw with a finger, and gets both back by turning it off.
@@ -332,11 +335,6 @@ async function boot() {
   scroller.addEventListener('touchcancel', endPinch);
 
   wireCarryForward(root, api);
-  if (twinIsStale(loaded.twin_keys, twinLanguage, twinKey, twinHadInk)
-      && !noticeDismissed(storage(), location.pathname, twinLanguage, twinKey)) {
-    warnTwinChanged(root, twinName || twinLanguage,
-                    () => dismissNotice(storage(), location.pathname, twinLanguage, twinKey));
-  }
   wireVersionSwitch(leave);
 
   // Following the OS, or another tab of the same book, without being asked.
@@ -362,6 +360,16 @@ async function boot() {
   });
 
   await view.open(pdfUrl, { twinUrl, twinLanguage });
+  if (twinUrl && !view.twinDoc) {
+    // The page and its menu were made for the translation; say it is not
+    // here, and print the English that is.
+    delete root.dataset.printUrl;
+    warnTwinMissing(root, twinName || twinLanguage);
+  } else if (twinIsStale(loaded.twin_keys, twinLanguage, twinKey, twinHadInk)
+      && !noticeDismissed(storage(), location.pathname, twinLanguage, twinKey)) {
+    warnTwinChanged(root, twinName || twinLanguage,
+                    () => dismissNotice(storage(), location.pathname, twinLanguage, twinKey));
+  }
   // Two pages to a row is wider than most screens at the default zoom. Start
   // where both are in view, or with the translation under each page when side
   // by side they would be too small to read (fit.js). Again when the window
@@ -380,6 +388,7 @@ async function boot() {
         fitted = zoom;
         chrome?.showZoom(view.setZoom(zoom) * 100);
       }
+      fittedZoom = zoom;
     };
     fitTwin();
     let resizing = null;
@@ -451,6 +460,22 @@ function warnTwinChanged(root, name, onDismiss) {
     note.remove();
     onDismiss();
   });
+  note.append(text, ok);
+  root.querySelector('[data-ink-pages]')?.before(note);
+}
+
+/** The translation asked for did not load: the English is shown alone. */
+function warnTwinMissing(root, name) {
+  const note = document.createElement('div');
+  note.className = 'ink-carry ink-twin-changed';
+  note.setAttribute('role', 'status');
+  const text = document.createElement('span');
+  text.textContent = `The ${name} translation did not load, so this is the English alone. `
+    + 'Reload the page to try again.';
+  const ok = document.createElement('button');
+  ok.type = 'button';
+  ok.textContent = 'OK';
+  ok.addEventListener('click', () => note.remove());
   note.append(text, ok);
   root.querySelector('[data-ink-pages]')?.before(note);
 }

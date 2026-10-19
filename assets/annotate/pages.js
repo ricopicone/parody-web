@@ -11,6 +11,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { pageAt, windowAround } from './paged.js';
 import { Generation, RenderSlot } from './render-slot.js';
 import { releaseCanvas } from '../canvas.js';
+import { TWIN_WAIT_MS, within } from './wait.js';
 
 // The worker cannot be inlined into the bundle, so the template hands us its
 // hashed static URL on the script tag that loaded us.
@@ -126,14 +127,18 @@ export class PageView {
    * Open the section, and with `twinUrl` the translation that goes beside it:
    * a PDF whose page k holds what English page k holds, so each row is a
    * page and its translation (parody_web.printing.twin_paired_pdf_path). A
-   * translation that will not open costs the reader the translation, never
-   * the English.
+   * translation that will not open, or not soon (wait.js), costs the reader
+   * the translation, never the English.
    */
   async open(url, { twinUrl = '', twinLanguage = '' } = {}) {
-    const twin = twinUrl
-      ? pdfjsLib.getDocument(twinUrl).promise.catch((err) => {
+    const task = twinUrl ? pdfjsLib.getDocument(twinUrl) : null;
+    const twin = task
+      ? within(task.promise.catch((err) => {
         console.warn('[parody-annotate] translation did not open', err);
         return null;
+      }), TWIN_WAIT_MS, () => {
+        console.warn('[parody-annotate] translation too slow to open; English alone');
+        task.destroy();
       })
       : null;
     this.doc = await pdfjsLib.getDocument(url).promise;
