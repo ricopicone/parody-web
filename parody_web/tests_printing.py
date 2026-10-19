@@ -595,6 +595,12 @@ class PdfViewTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.headers.get("X-Frame-Options"), "SAMEORIGIN")
 
+    def test_the_reader_page_renders_in_standards_mode(self):
+        # It had no doctype, so browsers laid the reader out in quirks mode
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
+            html = self.client.get("/one/alpha/pdf/view/").content.decode()
+        self.assertTrue(html.lower().startswith("<!doctype html>"), html[:40])
+
     def test_the_filename_names_the_section(self):
         with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root)):
             resp = self.client.get("/one/alpha/pdf/")
