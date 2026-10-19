@@ -618,7 +618,8 @@ class DownloadLinkTests(TestCase):
         self.client.force_login(self.reader)
         with self._settings():
             html = self.client.get("/one/alpha/pdf/view/").content.decode()
-        self.assertNotIn("pdf/annotated/", html)
+        # the link, not the stage's data-annotated-url (where it moves to on a save)
+        self.assertNotIn('href="/one/alpha/pdf/annotated/', html)
         # The exits are icon buttons now; the accessible name is what says
         # which copy this is. The closing quote matters — without it this also
         # matches "Download this section with your notes".
@@ -642,7 +643,7 @@ class DownloadLinkTests(TestCase):
             self.client.put("/one/alpha/ink/", {"strokes": {}},
                             content_type="application/json")
             html = self.client.get("/one/alpha/pdf/view/").content.decode()
-        self.assertNotIn("pdf/annotated/", html)
+        self.assertNotIn('href="/one/alpha/pdf/annotated/', html)
 
     def test_anonymous_readers_see_the_plain_link(self):
         with self._settings():

@@ -114,6 +114,10 @@ def ink_context(context):
                 # they are looking at, so the link never promises notes that
                 # are not there. Core's plain download stays the default.
                 "download_url": annotated if has_ink else "",
+                # Where Download and print go once the reader saves notes on
+                # this page (print.js useNotes): the choice above is made
+                # when the page is, before anything is written.
+                "annotated_url": annotated,
                 "twin_url": f"{twin['paired_url']}?inline=1" if twin else "",
                 "twin_key": _twin_key(book, section, twin) if twin else "",
                 "twin_language": twin["language"] if twin else "",

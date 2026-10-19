@@ -29,6 +29,22 @@ export function printUrl(root) {
 }
 
 /**
+ * Point Download and print at the copy with the reader's notes, once there
+ * are some. Which file they gave was decided when the page was made, so a
+ * reader who wrote and then downloaded got the copy without their notes.
+ */
+export function useNotes(root, link) {
+  const annotated = root.dataset.annotatedUrl;
+  if (!annotated) return;
+  root.dataset.downloadUrl = annotated;
+  if (link) {
+    link.href = annotated;
+    link.setAttribute('aria-label', 'Download this section with your notes');
+    link.setAttribute('title', 'Download this section with your notes');
+  }
+}
+
+/**
  * Print, resolving to false when the browser would not do it in an iframe
  * (Safari is unreliable here) so the caller can fall back to opening the file.
  */

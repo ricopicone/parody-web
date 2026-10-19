@@ -11,13 +11,13 @@ import { pinchDistance, pinchMidpoint, stepFor, anchoredScroll } from './pinch.j
 import { InkLayer } from './ink.js';
 import { InkStore, PAD, twinSurface } from './store.js';
 import { twinLayout } from './fit.js';
-import { keysToSave, twinIsStale } from './twinkeys.js';
+import { keysToSend, twinInkToSend, twinIsStale } from './twinkeys.js';
 import { LayerSet } from './layers.js';
 import { InkApi } from './api.js';
 import { Saver, OK, FAILED } from './saving.js';
 import { PointerGate } from './pointer-gate.js';
 import { isDark, themeColors } from './theme.js';
-import { bindPrint } from './print.js';
+import { bindPrint, useNotes } from './print.js';
 import { Tools } from './tools.js';
 import { bindKeys, buildToolbar } from './toolbar.js';
 
@@ -71,11 +71,11 @@ async function boot() {
     pages: pages ? JSON.parse(pages) : null,
     strokes: store.toJSON(),
     pads: store.padsToJSON(),
-    // Absent from a server that predates translations, and then not sent:
-    // the server keeps what it has when nothing is said of it.
-    twins: twinsLoaded ? store.twinsToJSON() : undefined,
+    // The translation on screen only, and only to a server that knows of
+    // translations: it keeps every language a save does not mention.
+    twins: twinsLoaded ? twinInkToSend(store.twinsToJSON(), twinLanguage) : undefined,
     twinKeys: twinsLoaded
-      ? keysToSave(loaded.twin_keys, twinLanguage, twinKey, {
+      ? keysToSend(loaded.twin_keys, twinLanguage, twinKey, {
         hadInk: twinHadInk,
         touched: JSON.stringify(store.twinsToJSON()[twinLanguage] || {}) !== twinAtLoad,
       })
@@ -95,6 +95,8 @@ async function boot() {
     onState(state) {
       root.dataset.saveState = state;
       if (state === OK) delete root.dataset.dirty;
+      // Saved notes on the page: Download and print give the copy with them.
+      if (state === OK && hasNotes()) useNotes(root, document.querySelector('[data-ink-download]'));
       notice.hidden = state !== FAILED;
       if (state === FAILED) {
         notice.textContent = 'Not saved — still trying. Keep this tab open.';
@@ -103,6 +105,11 @@ async function boot() {
   });
 
   const save = () => saver.save(payload);
+
+  function hasNotes() {
+    const shown = twinLanguage ? store.twinsToJSON()[twinLanguage] || {} : {};
+    return [store.toJSON(), store.padsToJSON(), shown].some((m) => Object.keys(m).length > 0);
+  }
 
   // The last line of defence: if ink is still unsaved as the page goes away,
   // the reader is warned rather than finding out later that it never landed.

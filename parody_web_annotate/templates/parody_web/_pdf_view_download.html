@@ -8,20 +8,20 @@ wide screen would be a distinction the tablet reader — the one who actually
 made the notes — never sees. The accessible name carries it at every width.
 {% endcomment %}
 {% load parody_web_annotate %}{% ink_context as ink %}{% if ink.download_url %}
-  <a class="pdf-exit" href="{{ ink.download_url }}"
+  <a class="pdf-exit" data-ink-download href="{{ ink.download_url }}"
      aria-label="Download this section with your notes"
      title="Download this section with your notes">
     {% include "parody_web/_icon.html" with icon="download" %}<span class="pdf-exit-label">Download</span>
   </a>
 {% elif twin.sbs_url and ink.twin_language or twin.sbs_url and not ink.enabled %}
   {# what is shown: the English and the translation beside it #}
-  <a class="pdf-exit" href="{{ twin.sbs_url }}"
+  <a class="pdf-exit"{% if ink.enabled %} data-ink-download{% endif %} href="{{ twin.sbs_url }}"
      aria-label="Download this section side by side"
      title="Download this section side by side">
     {% include "parody_web/_icon.html" with icon="download" %}<span class="pdf-exit-label">Download</span>
   </a>
 {% else %}
-  <a class="pdf-exit" href="{{ pdf_url }}"
+  <a class="pdf-exit"{% if ink.enabled %} data-ink-download{% endif %} href="{{ pdf_url }}"
      aria-label="Download this section" title="Download this section">
     {% include "parody_web/_icon.html" with icon="download" %}<span class="pdf-exit-label">Download</span>
   </a>
