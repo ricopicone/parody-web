@@ -321,6 +321,17 @@ Retention starts at the first import after installing: nothing can archive a
 PDF that was already overwritten. `manage.py prune_print_archive` (dry-run by
 default) removes versions that are neither current nor annotated.
 
+**The cache only grows unless pruned.** Every file under the print cache is cut
+again on demand, but each is looked up by the hash of what it was cut from, so
+every release leaves the last release's cuts behind for good, and an annotated
+download is named by its ink, so every new stroke leaves the last copy behind.
+`manage.py prune_print_cache` removes what nothing can reach: cuts of older
+builds and twins, annotated copies superseded or older than `--max-age-days`
+(default 30), cuts of archived versions past that age, interrupted writes. It
+never touches a file written in the last ten minutes, refuses a cache that
+holds the archive, and leaves anything it does not recognise. Run it after
+each import and weekly (`--dry-run` reports instead).
+
 **Only sections.** The full-book PDF is deliberately not annotatable — a
 118-page canvas viewer is a memory problem on tablets, and a section is the
 unit a reader studies.
