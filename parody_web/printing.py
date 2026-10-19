@@ -15,6 +15,7 @@ rather than erroring.
 """
 
 import hashlib
+import logging
 import os
 import shutil
 from functools import lru_cache
@@ -77,6 +78,9 @@ def validate_print_settings(root, cache, xaccel):
                 f"({cache_path} is outside {root_path})")
 
 
+logger = logging.getLogger(__name__)
+
+
 @lru_cache(maxsize=4)
 def _reader(path_str, token):
     """Parsed PdfReader, cached per (file, token).
@@ -91,7 +95,7 @@ def _reader(path_str, token):
     return PdfReader(path_str)
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=256)
 def _file_sha256(path_str, size, mtime_ns):
     """The file's sha256, computed once per version of the file (size and
     mtime are part of the key, so a replaced file is hashed again)."""
@@ -118,7 +122,19 @@ def _recorded(path, sha256):
     if not getattr(settings, "PARODY_WEB_VERIFY_PRINT_BYTES", True):
         return path
     st = path.stat()
-    return path if _file_sha256(str(path), st.st_size, st.st_mtime_ns) == sha256 else None
+    if _file_sha256(str(path), st.st_size, st.st_mtime_ns) == sha256:
+        return path
+    _refused(str(path), st.st_size, st.st_mtime_ns, sha256)
+    return None
+
+
+@lru_cache(maxsize=256)
+def _refused(path_str, size, mtime_ns, sha256):
+    """Say once per file version that its bytes are not the recorded ones:
+    every section PDF, annotation and read-along of the book is gone while
+    it lasts, which is right for a deploy's few minutes and a fault after."""
+    logger.warning("%s is not the PDF recorded (sha256 %s); not serving it",
+                   path_str, (sha256 or "none")[:12])
 
 
 def book_pdf_path(book):
@@ -166,6 +182,8 @@ def archive_book_pdf(book):
     dest = archived_pdf_path(book.slug, book.print_sha256)
     if src is None or dest is None:
         return None
+    if dest.is_file() and _recorded(dest, book.print_sha256) is None:
+        dest.unlink()  # archived before bytes were checked, and wrong: again
     if not dest.is_file():
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(f"{dest.name}.{os.getpid()}.tmp")
@@ -236,8 +254,6 @@ def slice_key_for(book, section):
     Repagination *does* change it, because the printed page number is drawn in
     the content stream — which is honest, the page really did change.
     """
-    import hashlib
-
     if not section.print_pages or len(section.print_pages) != 2:
         return None
     src = book_pdf_path(book)
@@ -364,8 +380,9 @@ def twin_section_pdf_path(book, section, twin, side_by_side=False):
         return None
     start, end = pages
     variant = f"twin-{twin.language}-{twin.sha256[:12]}" + ("-sbs" if side_by_side else "")
+    # by its range too: the same twin imported again with other ranges
     dest = (cache / book.slug / (book.edition_id or "_") / variant
-            / f"{section.chapter.slug}-{section.slug}.pdf")
+            / f"{section.chapter.slug}-{section.slug}-{start}-{end}.pdf")
     if dest.is_file():
         return dest  # cut before, from this very twin (its hash names the directory)
     if start > _twin_page_count(twin, src):
@@ -411,8 +428,6 @@ def twin_paired_key(book, section, twin):
     The English version key cannot tell, because a twin can be rebuilt
     against the same English.
     """
-    import hashlib
-
     if not section.print_pages or len(section.print_pages) != 2 or not _twin_lists(twin, section):
         return None
     src = twin_pdf_path(twin)
@@ -421,17 +436,15 @@ def twin_paired_key(book, section, twin):
     pages = _twin_pages_for(section, twin, _twin_page_count(twin, src))
     if not any(pages):
         return None
-    return _paired_key(str(src), twin.sha256, tuple(pages))
+    return _paired_key(str(src), src.stat().st_mtime_ns, twin.sha256, tuple(pages))
 
 
 @lru_cache(maxsize=1024)
-def _paired_key(src, twin_sha256, pages):
+def _paired_key(src, mtime_ns, twin_sha256, pages):
     """The fingerprint of these twin pages, once per twin version (the twin's
     hash, which twin_pdf_path has just checked the file against) and pages:
     a page view used to re-read the whole twin for it."""
-    import hashlib
-
-    reader = _reader(src, Path(src).stat().st_mtime_ns)
+    reader = _reader(src, mtime_ns)
     digest = hashlib.sha256()
     for page in pages:
         digest.update(_page_fingerprint(reader.pages[page - 1]) if page else b"no twin page")
@@ -465,7 +478,6 @@ def twin_paired_pdf_path(book, section, twin):
     start, end = section.print_pages
     # by the pairing too: the same twin re-imported with its abspages can
     # pair differently from the fallback that cut the cached file
-    import hashlib
     pairing = hashlib.sha256(repr(pages).encode()).hexdigest()[:8]
     dest = (cache / book.slug / (book.edition_id or "_")
             / f"twin-{twin.language}-{twin.sha256[:12]}-paired"

@@ -209,6 +209,16 @@ class TwinSliceTests(TestCase):
             self.assertEqual([t.language for t in printing.translations_available(self.book)],
                              ["de", "zh"])
 
+    def test_a_twin_reimported_with_new_ranges_is_cut_again(self):
+        # the cut was named by the twin's hash and section alone, so the same
+        # twin imported again with other ranges served the old cut forever
+        twin, alpha = self.book.twins.get(), self.book.sections.get(slug="alpha")
+        first = printing.twin_section_pdf_path(self.book, alpha, twin)
+        TwinPdf.objects.filter(pk=twin.pk).update(sections={"one/lead-in": [1, 2], "one/alpha": [3, 4]})
+        twin.refresh_from_db()
+        again = printing.twin_section_pdf_path(self.book, alpha, twin)
+        self.assertNotEqual(first, again)
+
     def test_a_range_past_the_twins_end_has_no_slice(self):
         TwinPdf.objects.filter(pk=self.twin.pk).update(sections={"one/alpha": [5, 6]})
         self.twin.refresh_from_db()

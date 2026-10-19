@@ -227,14 +227,18 @@ def ink(request, chapter_slug, section_slug):
              "edition_id": book.edition_id or "", "section_key": section.key,
              "slice_key": key}
     with transaction.atomic():
-        layer = InkLayer.objects.select_for_update().filter(**where).first()
+        # created first if need be, so a second first save waits on the row
+        # instead of both merging over nothing
+        layer, _ = InkLayer.objects.select_for_update().get_or_create(
+            **where, defaults={"strokes": {}, "pads": {}, "pages": pages,
+                               "book_sha256": defaults["book_sha256"]})
         # Each language sent replaces that language's notes; one not sent is
         # kept. A tab shows one translation at most and sends only it, so an
         # English-only tab, a tab on the other language, or a viewer from
         # before translations cannot erase notes it never had on screen.
         if "twins" in payload:
             twins = {**(layer.twins if layer else {}), **payload["twins"]}
-            defaults["twins"] = {lang: pages for lang, pages in twins.items() if pages}
+            defaults["twins"] = {lang: ink for lang, ink in twins.items() if ink}
         if "twin_keys" in payload:
             defaults["twin_keys"] = {**(layer.twin_keys if layer else {}),
                                      **payload["twin_keys"]}

@@ -1051,6 +1051,21 @@ class PrintBytesTests(TestCase):
         # the sheets carry no hash of their own: they go with their twin
         self.assertIsNone(printing.twin_pdf_path(twin, side_by_side=True))
 
+    def test_an_archive_with_the_wrong_bytes_is_replaced(self):
+        # archived before PDFs were checked, under the right name with the
+        # wrong bytes: it was skipped as present forever
+        dest = printing.archived_pdf_path(self.book.slug, self.book.print_sha256)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"%PDF not this book")
+        printing.archive_book_pdf(self.book)
+        self.assertEqual(dest.read_bytes(), (self.root / "print-book.pdf").read_bytes())
+
+    def test_a_refused_pdf_says_so_in_the_log(self):
+        self._replace_the_file()
+        with self.assertLogs("parody_web.printing", level="WARNING") as logs:
+            self.assertIsNone(printing.book_pdf_path(self.book))
+        self.assertIn("print-book.pdf", "\n".join(logs.output))
+
     def test_each_file_version_is_hashed_once(self):
         printing._file_sha256.cache_clear()
         for _ in range(3):

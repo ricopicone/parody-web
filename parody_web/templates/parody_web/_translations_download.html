@@ -35,7 +35,7 @@ language the reader reads in when the book has it but not this section.
 </details>
 {% endif %}{% elif translations %}{% if variant == "home" %}
 <p class="book-pdf-link">Translations:
-  {% for t in translations %}<span lang="{{ t.language }}">{{ t.name }}</span> (<a href="{{ t.pdf_url }}" hreflang="{{ t.language }}" aria-label="{{ t.name }} PDF">PDF</a>{% if t.pages %}, {{ t.pages }} pages{% if t.covers %}: {{ t.covers }} so far{% endif %}{% endif %}{% if t.sbs_url %} · <a href="{{ t.sbs_url }}" aria-label="{{ t.name }} side-by-side PDF">side-by-side PDF</a>{% endif %}){% if not forloop.last %} · {% endif %}{% endfor %}
+  {% for t in translations %}<span lang="{{ t.language }}">{{ t.name }}</span> (<a href="{{ t.pdf_url }}" hreflang="{{ t.language }}" aria-label="{{ t.name }} PDF">PDF</a>{% if t.pages %}, {{ t.pages }} pages{% endif %}{% if t.covers %}{% if t.pages %}:{% else %},{% endif %} {{ t.covers }} so far{% endif %}{% if t.sbs_url %} · <a href="{{ t.sbs_url }}" aria-label="{{ t.name }} side-by-side PDF">side-by-side PDF</a>{% endif %}){% if not forloop.last %} · {% endif %}{% endfor %}
 </p>
 {% else %}
 <p class="util-rail-cap util-rail-cap-next">Translations</p>
