@@ -59,6 +59,7 @@ than at first render.
 | `is_owner(request)` | is this the book's owner? | `request.user.is_authenticated` |
 | `can_view_drafts(request)` | may they see chapters/sections marked draft? | `is_owner(...)` |
 | `can_view_staff_notes(request)` | may they see `.staff-only` blocks inside content they are otherwise allowed? | `is_owner(...)` |
+| `can_view_answer_key(request, section)` | has this student earned the answers to this section's blanks (see *The answer key*)? | `False` |
 | `can_view_section(request, section)` | may they have this page at all? | `True` |
 | `section_is_preview(request, section)` | show a teaser instead of the full text? | `section.preview and not is_owner(...)` |
 | `can_view_solution(request, section, exercise_id)` | may they read this solution? | `is_owner(...)` |
@@ -149,6 +150,16 @@ Staff see a "Show answers" offer on every page that has a key, and an amber
 `Cache-Control: private, no-store`. Students never receive key html by any
 route: it is not CSS-hidden on their page, and `Section.plain` (search) is
 always built from the student html.
+
+**Students who have done the work.** A host can open a section's key to a
+student too, by overriding `can_view_answer_key(request, section)` — a course
+site answers True once the student has completed that section's notes, which
+only it can know. Such a student gets the key html on that section (and on a
+chapter's lead-in, when the lead-in is the section they did) with a quiet "your
+notes for this section are done" note and nothing to toggle, under the same
+`Cache-Control: private, no-store`. Staff are asked first, so their key stays a
+choice; the hook is asked only for a section that has a key; `?answers=` still
+does nothing for a student. The default is `False`.
 
 The import **refuses** a key — raising `CommandError` before writing anything —
 unless it is the key to *this* artifact: same slug, `source_commit` and

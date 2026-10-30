@@ -1,8 +1,10 @@
 {% comment %}
 The answer-key toggle, for staff on a page whose blanks have answers. `answers`
-is "shown" or "hidden"; for every other reader it is unset and this renders
-nothing. See parody_web/answerkey.py.
+is "shown" or "hidden" for staff, and "earned" for a student who has done the
+section's notes (nothing to toggle: the key is theirs); for every other reader
+it is unset and this renders nothing. See parody_web/answerkey.py.
 {% endcomment %}
 {% if answers == "shown" %}<div class="answers-banner is-shown"><span><strong>Answers shown</strong> — the instructor key. Students see blanks here.</span> <a href="{{ answers_toggle_url }}" rel="nofollow">Hide answers</a></div>
 {% elif answers == "hidden" %}<div class="answers-banner"><span>Instructor key available for this page.</span> <a href="{{ answers_toggle_url }}" rel="nofollow">Show answers</a></div>
+{% elif answers == "earned" %}<div class="answers-banner"><span>Your notes for this section are done, so its blanks are filled in.</span></div>
 {% endif %}

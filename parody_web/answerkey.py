@@ -197,16 +197,35 @@ def toggle(request):
 def for_reader(request, section):
     """(html, state) for `section` as this reader may see it.
 
-    `state` is None when the reader cannot have the key — every student, and
-    staff on a section with no blanks — so the page offers no toggle at all.
-    Otherwise it is "shown" or "hidden". The html is the key's only when it is
-    "shown"; staff-only blocks are still for the caller to strip, from either.
+    `state` is None when the reader cannot have the key — a student who has
+    not done the section, and anyone on a section with no blanks — so the page
+    offers no toggle at all. For staff it is "shown" or "hidden". For a
+    student the host's policy says has done the section's notes it is
+    "earned": the key, always, with nothing to switch. The html is the key's
+    for "shown" and "earned"; staff-only blocks are still for the caller to
+    strip, from either.
     """
-    if not section.key_html or not _is_staff(request):
+    if not section.key_html:
         return section.html, None
-    if request.session.get(SESSION_KEY):
-        return section.key_html, "shown"
-    return section.html, "hidden"
+    if _is_staff(request):
+        if request.session.get(SESSION_KEY):
+            return section.key_html, "shown"
+        return section.html, "hidden"
+    if _has_earned(request, section):
+        return section.key_html, "earned"
+    return section.html, None
+
+
+def _has_earned(request, section):
+    from parody_web.access import get_policy
+
+    return bool(request is not None
+                and get_policy().can_view_answer_key(request, section))
+
+
+def shows_key(state):
+    """Whether a page in this `state` carries answers."""
+    return state in ("shown", "earned")
 
 
 def toggle_url(request, state):

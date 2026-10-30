@@ -62,6 +62,19 @@ class DefaultPolicy:
         """
         return self.is_owner(request)
 
+    def can_view_answer_key(self, request, section):
+        """Has this reader earned the answers to this section's blanks?
+
+        Not the staff key: staff choose to show it (see answerkey.toggle), and
+        are asked first. This is the student's side — a course site opens the
+        key to a student once they have done the section's notes themselves,
+        which only the site can know. Asked only for a section that has a key.
+
+        Defaults to False: a standalone book site's owner is staff, and already
+        has the toggle.
+        """
+        return False
+
     def can_view_section(self, request, section):
         """Hard gate: may this reader have the section page at all?
 

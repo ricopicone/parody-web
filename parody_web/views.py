@@ -527,7 +527,7 @@ def _answers_context(request, answers):
 def _no_store_if_answers(response, answers):
     """A page carrying the key must not be kept by any cache between us and
     the reader — a shared one would hand it to the next student."""
-    if answers == "shown":
+    if answerkey.shows_key(answers):
         patch_cache_control(response, private=True, no_store=True)
     return response
 

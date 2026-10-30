@@ -25,6 +25,7 @@ from django.test import Client, TestCase, override_settings
 
 from parody_web import answerkey
 from parody_web.models import Book, Section
+from parody_web.tests_staff_only import StudentPolicy
 
 ANSWERS = ["ANSWERELECTRIC", "ANSWERSQRT", "ANSWERPASSAGE", "ANSWERLEADIN"]
 MATH_ANSWER = r"v(t) \cdot ANSWERPOWER"
@@ -347,3 +348,89 @@ class LeadInStaffOnlyTests(TestCase):
         c = Client()
         c.login(username="staff", password="pw")
         self.assertContains(c.get("/c/"), "LEADINSTAFFNOTE")
+
+
+class EarnedPolicy(StudentPolicy):
+    """A course site where "done" has completed their notes for section "s"
+    only — so the lead-in, a different section, stays blank for them."""
+
+    asked = []
+
+    def can_view_answer_key(self, request, section):
+        EarnedPolicy.asked.append(section.slug)
+        user = getattr(request, "user", None)
+        return bool(user and user.username == "done" and section.slug == "s")
+
+
+@override_settings(BOOK_SLUG="kbook",
+                   PARODY_WEB_ACCESS_POLICY=
+                   "parody_web.tests_answer_key.EarnedPolicy")
+class EarnedKeyTests(TestCase):
+    """A student who has done a section's notes sees its blanks filled — the
+    host decides who has, per section; parody-web only serves the answer."""
+
+    def setUp(self):
+        _import()
+        User = get_user_model()
+        for name in ("student", "done"):
+            User.objects.create_user(name, password="pw")
+        User.objects.create_superuser("staff", "s@example.com", "pw")
+        EarnedPolicy.asked = []
+
+    def _as(self, who):
+        c = Client()
+        if who:
+            c.login(username=who, password="pw")
+        return c
+
+    def test_a_student_who_has_done_the_section_sees_every_answer(self):
+        r = self._as("done").get("/c/s/")
+        for answer in ANSWERS[:3]:
+            self.assertContains(r, answer)
+        self.assertContains(r, "\\class{cloze-key}{" + MATH_ANSWER + "}")
+        self.assertContains(r, "blanks are filled in")
+        self.assertIn("no-store", r["Cache-Control"])
+        # nothing to switch: it is theirs, not an instructor's preference
+        self.assertNotContains(r, "Show answers")
+        self.assertNotContains(r, "Hide answers")
+
+    def test_only_the_section_they_have_done(self):
+        r = self._as("done").get("/c/")
+        self.assertNotContains(r, "ANSWERLEADIN")
+        self.assertNotContains(r, "cloze-key")
+        self.assertNotContains(r, "blanks are filled in")
+
+    def test_everyone_else_still_gets_blanks(self):
+        for who in (None, "student"):
+            with self.subTest(who=who):
+                r = self._as(who).get("/c/s/")
+                body = r.content.decode()
+                for needle in ANSWERS_ALL + ["cloze-key"]:
+                    self.assertNotIn(needle, body)
+                self.assertNotContains(r, "blanks are filled in")
+                self.assertNotIn("no-store", r.get("Cache-Control", ""))
+
+    def test_asking_for_answers_changes_nothing_for_them(self):
+        c = self._as("done")
+        r = c.get("/c/s/?answers=off")
+        self.assertEqual(r.status_code, 200, "no redirect")
+        self.assertContains(r, "ANSWERELECTRIC")
+        self.assertNotIn(answerkey.SESSION_KEY, c.session)
+
+    def test_staff_keep_their_toggle(self):
+        # staff are asked first: their key is a choice, never forced on
+        r = self._as("staff").get("/c/s/")
+        self.assertNotContains(r, "ANSWERELECTRIC")
+        self.assertContains(r, "Show answers")
+
+    def test_a_section_without_blanks_never_asks_the_host(self):
+        # the host's answer can cost a query or two; a page with no key needs none
+        self._as("done").get("/c/plain/")
+        self.assertNotIn("plain", EarnedPolicy.asked)
+
+
+class DefaultEarnedTests(TestCase):
+    def test_the_default_policy_opens_the_key_to_no_one(self):
+        from parody_web.access import DefaultPolicy
+
+        self.assertFalse(DefaultPolicy().can_view_answer_key(None, None))
