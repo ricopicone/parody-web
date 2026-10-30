@@ -67,7 +67,7 @@ wheels = [
 
 [[package]]
 name = "parody-web"
-version = "0.104.0"
+version = "0.105.0"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
