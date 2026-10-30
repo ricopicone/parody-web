@@ -221,6 +221,12 @@ class TwinPdf(models.Model):
     # The English page each twin page holds, in twin page order (the sidecar's
     # ``abspages``): what pairs a twin page with the English page beside it.
     abspages = models.JSONField(default=list, blank=True)
+    # The key twin (parody twin --key): the same pages with the blanks filled,
+    # for a reader the answer key is shown to (answerkey.for_reader). Same
+    # ranges and abspages as the twin; empty when the release built none.
+    key_pdf = models.CharField(max_length=200, blank=True, default="")
+    key_sha256 = models.CharField(max_length=64, blank=True, default="")
+    key_side_by_side_pdf = models.CharField(max_length=200, blank=True, default="")
     imported_at = models.DateTimeField(auto_now=True)
 
     class Meta:

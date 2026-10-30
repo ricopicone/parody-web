@@ -304,6 +304,9 @@ class Command(BaseCommand):
                     "sections": twin.get("sections") or {},
                     "approximate": twin.get("approximate") or [],
                     "abspages": twin.get("abspages") or [],
+                    "key_pdf": (twin.get("key") or {}).get("pdf") or "",
+                    "key_sha256": (twin.get("key") or {}).get("sha256") or "",
+                    "key_side_by_side_pdf": (twin.get("key") or {}).get("side_by_side") or "",
                 })
         book.twins.exclude(language__in=list(self.twins)).delete()
 
@@ -312,7 +315,9 @@ class Command(BaseCommand):
         keyed = (f", answer key for {len(self.key_html)}"
                  if self.key_html else "")
         if self.twins:
-            keyed += ", twins " + ", ".join(sorted(self.twins))
+            keyed += ", twins " + ", ".join(
+                f"{lang}{' (with its key)' if self.twins[lang].get('key') else ''}"
+                for lang in sorted(self.twins))
         self.stdout.write(self.style.SUCCESS(
             f"imported '{book.title}' ({label}): {book.chapters.count()} chapters, "
             f"{n_sec} sections{keyed}"))

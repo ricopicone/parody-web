@@ -228,6 +228,18 @@ def shows_key(state):
     return state in ("shown", "earned")
 
 
+def shows_key_to(request, section):
+    """Whether this reader sees `section`'s answers — so its translation, too,
+    is served with the blanks filled (the key twin)."""
+    return shows_key(for_reader(request, section)[1])
+
+
+def staff_showing(request):
+    """Whether this reader is staff with the answers switched on: the only
+    reader a whole-book key (every section's answers at once) is for."""
+    return _is_staff(request) and bool(request.session.get(SESSION_KEY))
+
+
 def toggle_url(request, state):
     """The link that flips `state`, keeping the page's other parameters."""
     params = request.GET.copy()

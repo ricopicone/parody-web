@@ -11,7 +11,8 @@ last copy behind too. This removes those:
 - a book's section cuts from any build but the current one (``<sha12>/``),
   and everything of a book no longer imported;
 - the cuts, side-by-side cuts and paired PDFs of any twin but the book's
-  current ones (``twin-<lang>-<sha12>[-sbs|-paired]/``);
+  current ones (``twin-<lang>-<sha12>[-key][-sbs|-paired]/``, a key twin's
+  named by its own hash);
 - cuts of an archived version (``v<sha12>/``) once the version is gone from
   the archive, or older than ``--max-age-days`` (the archive cuts it again);
 - annotated copies (``annotated/``, ``annotated-book/``) superseded by a newer
@@ -39,7 +40,7 @@ GRACE_SECONDS = 600
 _SHA = r"[0-9a-f]{12}"
 _BUILD = re.compile(_SHA)
 _VERSION = re.compile(rf"v{_SHA}")
-_TWIN = re.compile(rf"(twin-[a-z]{{2,3}}-{_SHA})(?:-sbs|-paired)?")
+_TWIN = re.compile(rf"(twin-[a-z]{{2,3}}-{_SHA})(?:-key)?(?:-sbs|-paired)?")
 _STAMPED = re.compile(rf"(.+)-({_SHA})\.pdf")
 
 
@@ -109,7 +110,8 @@ class Command(BaseCommand):
             self._doom_tree(ed_dir, "book no longer imported")
             return
         current = (book.print_sha256 or "")[:12]
-        twins = {f"twin-{t.language}-{t.sha256[:12]}" for t in book.twins.all()}
+        twins = {f"twin-{t.language}-{sha[:12]}" for t in book.twins.all()
+                 for sha in (t.sha256, t.key_sha256) if sha}
         archived = set()
         for version in book.print_versions.all():
             path = printing.archived_pdf_path(book.slug, version.sha256)

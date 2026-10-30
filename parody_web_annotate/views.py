@@ -15,10 +15,11 @@ from django.conf import settings
 from django.db import transaction
 from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.utils.cache import patch_cache_control
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
 
-from parody_web import printing
+from parody_web import answerkey, printing
 from parody_web.access import get_policy
 from parody_web.models import Section
 from parody_web.views import _pdf_filename, _pdf_response, _resolve_book, _twin_filename
@@ -381,10 +382,12 @@ def annotated_section_pdf(request, chapter_slug, section_slug):
     # ?twin=<language>: the English and the translation beside it, as the
     # reader saw them, each with its own ink. Only the current version pairs
     # with the translation the book serves now; anything else is the English.
-    twin = None
+    twin, filled = None, False
     if request.GET.get("twin") and (not key or key == current):
         found = printing.twin_for(book, request.GET["twin"])
-        paired = found and printing.twin_paired_pdf_path(book, section, found)
+        # filled in, as the reader showed it, for a reader who sees the answers
+        filled = printing.twin_has_key(found) and answerkey.shows_key_to(request, section)
+        paired = found and printing.twin_paired_pdf_path(book, section, found, filled)
         if paired:
             twin = (found, paired)
     twin_strokes = (layer.twins or {}).get(twin[0].language, {}) if twin else {}
@@ -394,7 +397,7 @@ def annotated_section_pdf(request, chapter_slug, section_slug):
     stamp = hashlib.sha256(json.dumps(
         [layer.strokes, layer.pads] + ([twin[0].sha256, twin_strokes] if twin else []),
         sort_keys=True).encode()).hexdigest()[:12]
-    variant = f"-{twin[0].language}" if twin else ""
+    variant = (f"-{twin[0].language}" + ("-key" if filled else "")) if twin else ""
     dest = (cache / "annotated" / str(request.user.pk) / book.slug
             / f"{section.chapter.slug}-{section.slug}-{(key or '')[:12]}{variant}-{stamp}.pdf")
     if not dest.is_file():
@@ -410,7 +413,10 @@ def annotated_section_pdf(request, chapter_slug, section_slug):
     if twin:
         name = _twin_filename(name, twin[0].language, side_by_side=True)
     name = name.replace(".pdf", "-annotated.pdf")
-    return _pdf_response(dest, name, inline=bool(request.GET.get("inline")))
+    response = _pdf_response(dest, name, inline=bool(request.GET.get("inline")))
+    if twin and filled:
+        patch_cache_control(response, private=True, no_store=True)
+    return response
 
 
 @require_http_methods(["GET"])

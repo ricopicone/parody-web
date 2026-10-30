@@ -554,6 +554,21 @@ Ink on a translation is saved per language: a save replaces the languages it
 sends (the reader sends the one on screen) and keeps the rest, so a tab on
 another language, or with none, cannot erase notes written elsewhere.
 
+**The key twin.** `parody twin --key` also writes `<book>-de-key.pdf` (and
+`<book>-de-sbs-key.pdf`): the same pages with the blanks filled in, which the
+sidecar names under `key` with its own sha256. Import keeps it on the twin (a
+key that is missing or not the PDF described is dropped with a warning; the
+twin still imports). A reader who sees a section's answers on its page — staff
+with `?answers=on`, or a student `can_view_answer_key` admits (see *The answer
+key*) — gets that section's translation from the key: its PDF, sheets, and the
+pages the reader pairs with the English. The whole-book twin is the key only
+for staff with the answers on. parody's key takes exactly the room a blank
+does, so the key's pages are the twin's, filled: ink written beside the blank
+twin lies on the key unchanged, and stays filed under the blank twin's
+identity. A twin with a key is sent `Cache-Control: private` — `no-store` when
+it is the key, `no-cache` otherwise — so no cache hands one reader's file to
+another, or keeps a reader on blanks they have since earned answers to.
+
 ### The annotation seam
 
 `pdf_view.html` renders the PDF in a positioned container with an empty

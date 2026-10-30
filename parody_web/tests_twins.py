@@ -651,3 +651,149 @@ class TwinOfSomeChaptersTests(TestCase):
         html = self.client.get("/two/gamma/pdf/view/").content.decode()
         self.assertNotIn('<span class="pdf-translations-missing">', html)
         self.assertNotIn('<details class="pdf-exit pdf-translations">', html)  # no menu at all
+
+
+from parody_web.tests_staff_only import StudentPolicy  # noqa: E402
+
+
+class KeyTwinPolicy(StudentPolicy):
+    """A course site where "done" has done section alpha's notes, and only it."""
+
+    def can_view_answer_key(self, request, section):
+        user = getattr(request, "user", None)
+        return bool(user and user.username == "done" and section.slug == "alpha")
+
+
+def write_key(root, sidecar_path, content, sbs_content=None, language="de", sha=None):
+    """Add a key twin (parody twin --key) to the twin whose sidecar is at
+    ``sidecar_path``."""
+    pdf = root / f"print-book-{language}-key.pdf"
+    pdf.write_bytes(content)
+    key = {"pdf": pdf.name, "sha256": sha or hashlib.sha256(content).hexdigest(),
+           "side_by_side": None}
+    if sbs_content is not None:
+        (root / f"print-book-{language}-sbs-key.pdf").write_bytes(sbs_content)
+        key["side_by_side"] = f"print-book-{language}-sbs-key.pdf"
+    data = json.loads(sidecar_path.read_text())
+    data["key"] = key
+    sidecar_path.write_text(json.dumps(data))
+    return sidecar_path
+
+
+@override_settings(PARODY_WEB_ACCESS_POLICY="parody_web.tests_twins.KeyTwinPolicy")
+class KeyTwinTests(TestCase):
+    """The key twin: a translation with its blanks filled, for exactly the
+    readers who see the section's answers on its page (task #865)."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from django.test import Client
+
+        from parody_web.tests_printing import make_pdf
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.settings = override_settings(PARODY_WEB_PRINT_ROOT=str(self.root))
+        self.settings.enable()
+        make_pdf(self.root / "print-book.pdf", 20)            # 200 x 200 pages
+        # blank twin pages are 100 + i wide, key pages 500 + i; sheets 300+ / 700+
+        sidecar = write_twin(self.root, content=pdf_bytes(6, 100), sbs_content=pdf_bytes(6, 300),
+                             sidecar={"abspages": [3, 4, 5, 6, 7, 8],
+                                      "sections": {"one/lead-in": [1, 3], "one/alpha": [3, 5]}})
+        write_key(self.root, sidecar, pdf_bytes(6, 500), pdf_bytes(6, 700))
+        self.book, self.err = import_artifact(twin=[str(sidecar)])
+        # both sections have blanks; "done" has done alpha's notes only
+        self.book.sections.filter(slug__in=["alpha", "lead-in"]).update(
+            key_html='<p><span class="cloze-key">x</span></p>')
+        User = get_user_model()
+        for name in ("student", "done"):
+            User.objects.create_user(name, password="pw")
+        User.objects.create_superuser("staff", "s@example.com", "pw")
+
+    def tearDown(self):
+        self.settings.disable()
+        self.tmp.cleanup()
+
+    def _as(self, who):
+        from django.test import Client
+        c = Client()
+        if who:
+            c.login(username=who, password="pw")
+        return c
+
+    def _widths(self, resp):
+        from io import BytesIO
+
+        from pypdf import PdfReader
+        self.assertEqual(resp.status_code, 200)
+        body = b"".join(resp.streaming_content) if resp.streaming else resp.content
+        return [int(p.mediabox.width) for p in PdfReader(BytesIO(body)).pages]
+
+    def test_import_keeps_the_key(self):
+        twin = self.book.twins.get()
+        self.assertEqual(twin.key_pdf, "print-book-de-key.pdf")
+        self.assertEqual(twin.key_side_by_side_pdf, "print-book-de-sbs-key.pdf")
+        self.assertTrue(printing.twin_has_key(twin))
+
+    def test_a_key_that_is_not_the_one_described_is_dropped_not_the_twin(self):
+        sidecar = self.root / "print-book-de.twin.json"
+        write_key(self.root, sidecar, pdf_bytes(6, 500), sha="0" * 64)
+        book, err = import_artifact(twin=[str(sidecar)])
+        twin = book.twins.get()
+        self.assertEqual(twin.key_pdf, "")
+        self.assertFalse(printing.twin_has_key(twin))
+        self.assertIn("key twin", err)
+
+    def test_a_student_who_has_not_done_the_section_gets_blanks(self):
+        for who in (None, "student"):
+            with self.subTest(who=who):
+                c = self._as(who)
+                self.assertEqual(self._widths(c.get("/one/alpha/pdf/de/")), [103, 104, 105])
+                r = c.get("/one/alpha/pdf/de/paired/")
+                self.assertEqual(self._widths(r), [103, 104, 105, 106, 200])
+                # not stored, so the key reaches them the moment they earn it
+                self.assertIn("no-cache", r["Cache-Control"])
+                self.assertNotIn("no-store", r["Cache-Control"])
+
+    def test_a_student_who_has_done_it_gets_its_translation_filled_in(self):
+        c = self._as("done")
+        self.assertEqual(self._widths(c.get("/one/alpha/pdf/de/")), [503, 504, 505])
+        self.assertEqual(self._widths(c.get("/one/alpha/pdf/de/side-by-side/")), [703, 704, 705])
+        r = c.get("/one/alpha/pdf/de/paired/?inline=1")
+        # the reader's pages: the key's, paired with the English page for page
+        self.assertEqual(self._widths(r), [503, 504, 505, 506, 200])
+        self.assertIn("no-store", r["Cache-Control"])
+
+    def test_only_the_section_they_have_done(self):
+        c = self._as("done")
+        self.assertEqual(self._widths(c.get("/one/lead-in/pdf/de/")), [101, 102, 103])
+        # the whole book holds every section's answers: not theirs to have
+        self.assertEqual(self._widths(c.get("/pdf/de/")), [101, 102, 103, 104, 105, 106])
+
+    def test_staff_get_the_key_while_the_answers_are_on(self):
+        c = self._as("staff")
+        self.assertEqual(self._widths(c.get("/one/alpha/pdf/de/")), [103, 104, 105])
+        self.assertEqual(self._widths(c.get("/pdf/de/")), [101, 102, 103, 104, 105, 106])
+        c.get("/one/alpha/?answers=on")
+        self.assertEqual(self._widths(c.get("/one/alpha/pdf/de/")), [503, 504, 505])
+        self.assertEqual(self._widths(c.get("/one/lead-in/pdf/de/")), [501, 502, 503])
+        r = c.get("/pdf/de/")
+        self.assertEqual(self._widths(r), [501, 502, 503, 504, 505, 506])
+        self.assertIn("no-store", r["Cache-Control"])
+        self.assertEqual(self._widths(c.get("/pdf/de/side-by-side/")),
+                         [701, 702, 703, 704, 705, 706])
+
+    def test_the_ink_on_a_translation_is_filed_under_the_blank_twin(self):
+        # The key's pages are the twin's, filled: ink written beside the blank
+        # one stays where it was, under the same identity, once filled.
+        twin = self.book.twins.get()
+        alpha = self.book.sections.get(slug="alpha")
+        blank_key = printing.twin_paired_key(self.book, alpha, twin)
+        self._as("done").get("/one/alpha/pdf/de/paired/")
+        self.assertEqual(printing.twin_paired_key(self.book, alpha, twin), blank_key)
+
+    def test_without_a_key_everyone_gets_the_twin_as_before(self):
+        TwinPdf.objects.filter(book=self.book).update(key_pdf="", key_sha256="",
+                                                      key_side_by_side_pdf="")
+        r = self._as("done").get("/one/alpha/pdf/de/")
+        self.assertEqual(self._widths(r), [103, 104, 105])
+        self.assertNotIn("Cache-Control", r)

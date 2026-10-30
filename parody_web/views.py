@@ -723,9 +723,30 @@ def _twin_filename(name, language, side_by_side):
     return f"{stem}-{language}{'-side-by-side' if side_by_side else ''}.pdf"
 
 
+def _twin_key(request, section, twin):
+    """Whether this reader gets the key twin's pages of ``section`` — the
+    translation with its blanks filled: they see the section's answers on its
+    page (answerkey), and the release built the twin a key."""
+    from .printing import twin_has_key
+
+    return twin_has_key(twin) and answerkey.shows_key_to(request, section)
+
+
+def _twin_cache(response, twin, key):
+    """A twin with a key is a different file per reader at one URL: no cache
+    may hand one reader's to another (no-store for the key), nor keep a
+    reader on their blank one once they have earned the key (no-cache)."""
+    if key:
+        patch_cache_control(response, private=True, no_store=True)
+    elif twin.key_pdf:
+        patch_cache_control(response, private=True, no_cache=True)
+    return response
+
+
 def _section_twin(request, chapter_slug, section_slug, language, side_by_side):
     """A section's pages of a translated twin, gated exactly as its English
-    PDF is; every refusal or absence is the same 404."""
+    PDF is; every refusal or absence is the same 404. Filled in for a reader
+    who sees the section's answers (_twin_key)."""
     from .printing import twin_for, twin_section_pdf_path
 
     book, _ = _resolve_book(request)
@@ -736,11 +757,13 @@ def _section_twin(request, chapter_slug, section_slug, language, side_by_side):
     if not get_policy().can_download_section_pdf(request, section):
         raise Http404("no pdf for this section")
     twin = twin_for(book, language)
-    path = twin and twin_section_pdf_path(book, section, twin, side_by_side)
+    key = _twin_key(request, section, twin)
+    path = twin and twin_section_pdf_path(book, section, twin, side_by_side, key)
     if not path:
         raise Http404("no translation of this section")
-    return _pdf_response(path, _twin_filename(_pdf_filename(book, section), language, side_by_side),
-                         inline=bool(request.GET.get("inline")))
+    return _twin_cache(
+        _pdf_response(path, _twin_filename(_pdf_filename(book, section), language, side_by_side),
+                      inline=bool(request.GET.get("inline"))), twin, key)
 
 
 @xframe_options_sameorigin
@@ -758,11 +781,13 @@ def section_twin_paired(request, chapter_slug, section_slug, language):
     if not get_policy().can_download_section_pdf(request, section):
         raise Http404("no pdf for this section")
     twin = twin_for(book, language)
-    path = twin and twin_paired_pdf_path(book, section, twin)
+    key = _twin_key(request, section, twin)
+    path = twin and twin_paired_pdf_path(book, section, twin, key)
     if not path:
         raise Http404("no translation of this section")
-    return _pdf_response(path, _twin_filename(_pdf_filename(book, section), language, False),
-                         inline=bool(request.GET.get("inline")))
+    return _twin_cache(
+        _pdf_response(path, _twin_filename(_pdf_filename(book, section), language, False),
+                      inline=bool(request.GET.get("inline"))), twin, key)
 
 
 @xframe_options_sameorigin
@@ -778,16 +803,21 @@ def section_twin_sbs(request, chapter_slug, section_slug, language):
 
 
 def _book_twin(request, language, side_by_side):
-    from .printing import twin_for, twin_pdf_path
+    """The whole twin; its key for staff with the answers on, the only reader
+    every section's answers at once are for."""
+    from .printing import twin_for, twin_has_key, twin_pdf_path
 
     book, _ = _resolve_book(request)
     if not get_policy().can_download_book_pdf(request, book):
         raise Http404("no pdf for this book")
     twin = twin_for(book, language)
-    path = twin and twin_pdf_path(twin, side_by_side)
+    key = twin_has_key(twin) and answerkey.staff_showing(request)
+    path = twin and twin_pdf_path(twin, side_by_side, key)
     if not path:
         raise Http404("no translation of this book")
-    return _pdf_response(path, _twin_filename(_pdf_filename(book), language, side_by_side))
+    return _twin_cache(
+        _pdf_response(path, _twin_filename(_pdf_filename(book), language, side_by_side)),
+        twin, key)
 
 
 def book_twin_pdf(request, language):

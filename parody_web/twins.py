@@ -81,4 +81,28 @@ def load_sidecar(path):
         if not (root / _basename(sbs, "side_by_side")).is_file():
             warnings.append(f"side-by-side {sbs} does not exist; serving the twin without it")
             data["side_by_side"] = None
+    try:
+        data["key"] = _key(root, data.get("key"))
+    except ValueError as e:
+        warnings.append(f"key twin: {e}; serving the twin without it")
+        data["key"] = None
     return data, warnings
+
+
+def _key(root, key):
+    """The sidecar's ``key`` entry (parody twin --key), checked as the twin is:
+    None when there is none. Raises ValueError when it names a key that is
+    missing or is not the PDF it describes — which drops only the key."""
+    if not key:
+        return None
+    if not isinstance(key, dict):
+        raise ValueError(f"not a description of one: {key!r}")
+    pdf = root / _basename(key.get("pdf"), "key pdf")
+    if not pdf.is_file():
+        raise ValueError(f"{pdf} does not exist")
+    if _sha256(pdf) != key.get("sha256"):
+        raise ValueError(f"{pdf} is not the PDF the sidecar describes (sha256 differs)")
+    sbs = key.get("side_by_side")
+    if sbs and not (root / _basename(sbs, "key side_by_side")).is_file():
+        sbs = None
+    return {"pdf": pdf.name, "sha256": key["sha256"], "side_by_side": sbs or None}

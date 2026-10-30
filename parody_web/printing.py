@@ -341,19 +341,31 @@ def _servable(book, twin):
                 and twin_pdf_path(twin) is not None)
 
 
-def twin_pdf_path(twin, side_by_side=False):
+def twin_pdf_path(twin, side_by_side=False, key=False):
     """The whole twin (or its side-by-side sheets) on disk, or None — also
     when the twin on disk is not the one recorded. The sheets carry no hash of
-    their own; they come out of the same build as the twin, so they go with it."""
+    their own; they come out of the same build as the twin, so they go with it.
+
+    ``key``: the key twin instead, the same pages with the blanks filled
+    (None when the release built none), checked against its own hash."""
     root = print_root()
-    name = twin.side_by_side_pdf if side_by_side else twin.pdf
-    if not root or not name or not twin.pdf:
+    pdf, sha = (twin.key_pdf, twin.key_sha256) if key else (twin.pdf, twin.sha256)
+    if key:
+        name = twin.key_side_by_side_pdf if side_by_side else twin.key_pdf
+    else:
+        name = twin.side_by_side_pdf if side_by_side else twin.pdf
+    if not root or not name or not pdf:
         return None
     # basename only, as for the English PDF
-    if _recorded(root / Path(twin.pdf).name, twin.sha256) is None:
+    if _recorded(root / Path(pdf).name, sha) is None:
         return None
     path = root / Path(name).name
     return path if path.is_file() else None
+
+
+def twin_has_key(twin):
+    """Whether this twin's key can be served."""
+    return bool(twin is not None and twin.key_pdf and twin_pdf_path(twin, key=True))
 
 
 def _twin_page_count(twin, src):
@@ -364,7 +376,7 @@ def _twin_page_count(twin, src):
     return len(_reader(str(src), src.stat().st_mtime_ns).pages)
 
 
-def twin_section_pdf_path(book, section, twin, side_by_side=False):
+def twin_section_pdf_path(book, section, twin, side_by_side=False, key=False):
     """This section's pages of the twin (or of its side-by-side sheets).
 
     Cut by the twin's own page ranges: the twin starts at its first translated
@@ -374,12 +386,14 @@ def twin_section_pdf_path(book, section, twin, side_by_side=False):
     pages = (twin.sections or {}).get(f"{section.chapter.slug}/{section.slug}")
     if not pages or len(pages) != 2:
         return None
-    src = twin_pdf_path(twin, side_by_side)
+    src = twin_pdf_path(twin, side_by_side, key)
     cache = print_cache_root()
     if src is None or cache is None or not has_pypdf():
         return None
     start, end = pages
-    variant = f"twin-{twin.language}-{twin.sha256[:12]}" + ("-sbs" if side_by_side else "")
+    sha = twin.key_sha256 if key else twin.sha256
+    variant = (f"twin-{twin.language}-{sha[:12]}" + ("-key" if key else "")
+               + ("-sbs" if side_by_side else ""))
     # by its range too: the same twin imported again with other ranges
     dest = (cache / book.slug / (book.edition_id or "_") / variant
             / f"{section.chapter.slug}-{section.slug}-{start}-{end}.pdf")
@@ -451,7 +465,7 @@ def _paired_key(src, mtime_ns, twin_sha256, pages):
     return digest.hexdigest()
 
 
-def twin_paired_pdf_path(book, section, twin):
+def twin_paired_pdf_path(book, section, twin, key=False):
     """The twin page beside each English page of this section, one for one.
 
     What the reader shows next to the English: page k of this PDF holds what
@@ -464,10 +478,16 @@ def twin_paired_pdf_path(book, section, twin):
 
     None when the twin does not list the section or holds none of its pages,
     or anything the pairing needs is missing.
+
+    ``key``: the key twin's pages, paired the same way. Its pages ARE the
+    twin's, filled (parody's key takes exactly the room a blank does), so ink
+    a reader wrote beside the blank twin lies on it unchanged — which is why
+    ``twin_paired_key``, the identity that ink is filed under, is the blank
+    twin's in both cases.
     """
     if not section.print_pages or len(section.print_pages) != 2 or not _twin_lists(twin, section):
         return None
-    src = twin_pdf_path(twin)
+    src = twin_pdf_path(twin, key=key)
     english = book_pdf_path(book)
     cache = print_cache_root()
     if src is None or english is None or cache is None or not has_pypdf():
@@ -479,8 +499,9 @@ def twin_paired_pdf_path(book, section, twin):
     # by the pairing too: the same twin re-imported with its abspages can
     # pair differently from the fallback that cut the cached file
     pairing = hashlib.sha256(repr(pages).encode()).hexdigest()[:8]
+    sha = twin.key_sha256 if key else twin.sha256
     dest = (cache / book.slug / (book.edition_id or "_")
-            / f"twin-{twin.language}-{twin.sha256[:12]}-paired"
+            / f"twin-{twin.language}-{sha[:12]}{'-key' if key else ''}-paired"
             / f"{section.chapter.slug}-{section.slug}-{start}-{end}-{pairing}.pdf")
     if not dest.is_file():
         from pypdf import PdfWriter

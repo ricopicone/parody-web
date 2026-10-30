@@ -68,6 +68,19 @@ class PruneCacheTests(TestCase):
         self.assertFalse((self.ed / OLD).exists())  # and its emptied directory
         self.assertIn("removed 4 files", out)
 
+    def test_a_key_twins_cuts_go_with_it(self):
+        TwinPdf.objects.filter(book=self.book).update(
+            key_pdf="print-book-de-key.pdf", key_sha256="e" * 64)
+        old, key = 2 * DAY, "e" * 12
+        keep = [_file(self.ed / f"twin-de-{key}-key" / "ch-a-1-2.pdf", old),
+                _file(self.ed / f"twin-de-{key}-key-sbs" / "ch-a-1-2.pdf", old),
+                _file(self.ed / f"twin-de-{key}-key-paired" / "ch-a-1-2-abcd1234.pdf", old)]
+        gone = [_file(self.ed / f"twin-de-{OLD}-key-paired" / "ch-a-1-2-abcd1234.pdf", old)]
+        out = self._prune()
+        self.assertTrue(all(p.exists() for p in keep), out)
+        self.assertFalse(any(p.exists() for p in gone), out)
+        self.assertNotIn("left alone", out)
+
     def test_cuts_of_an_archived_version_stay_while_it_is_archived_and_fresh(self):
         BookPrintVersion.objects.create(book=self.book, sha256="c" * 64)
         _file(self.archive / self.book.slug / f"{'c' * 64}.pdf")

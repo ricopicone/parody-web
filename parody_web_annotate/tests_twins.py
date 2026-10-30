@@ -276,3 +276,35 @@ class TwinKeyTests(_TwinBook):
                          content_type="application/json")
         layer = InkLayer.objects.get(slice_key=current)
         self.assertEqual(layer.twin_keys, {"de": "now", "zh": "kz"})
+
+
+@override_settings(PARODY_WEB_ACCESS_POLICY="parody_web.tests_twins.KeyTwinPolicy")
+class KeyTwinDownloadTests(_TwinBook):
+    """The annotated side-by-side download is what the reader showed: the
+    translation filled in for a reader who has done the section (task #865)."""
+
+    def setUp(self):
+        from parody_web.tests_twins import write_key
+
+        super().setUp()
+        sidecar = self.root / "print-book-de.twin.json"
+        write_key(self.root, sidecar, pdf_bytes(5, 500))
+        self.book, _ = import_artifact(twin=[str(sidecar)])
+        self.book.sections.filter(slug="alpha").update(
+            key_html='<p><span class="cloze-key">x</span></p>')
+
+    def _sheets(self):
+        self._put({"strokes": {"1": [PEN]}, "twins": {"de": {"1": [BLUE]}}})
+        resp = self.client.get("/one/alpha/pdf/annotated/?twin=de")
+        self.assertEqual(resp.status_code, 200)
+        return resp, [round(float(p.mediabox.width)) for p in pdf_from(resp).pages]
+
+    def test_a_reader_who_has_done_it_gets_the_translation_filled(self):
+        self.client.force_login(get_user_model().objects.create_user("done", password="x"))
+        resp, widths = self._sheets()
+        self.assertEqual(widths, [701, 702, 703, 704, 705])  # English 200 + key 501..
+        self.assertIn("no-store", resp["Cache-Control"])
+
+    def test_anyone_else_gets_it_blank(self):
+        _, widths = self._sheets()
+        self.assertEqual(widths, [301, 302, 303, 304, 305])
