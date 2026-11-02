@@ -212,3 +212,37 @@ class ClozeHidingMathsTests(SimpleTestCase):
                 r'<span class="math inline">\(x\)</span></span> so</p>')
         cloze = self._clozes(html)[0]
         self.assertIn(r"\%", cloze.latex)
+
+
+class CodeTests(SimpleTestCase):
+    """A program, or what it printed, read out symbol by symbol helps nobody
+    listening; the prose around a listing says what it does. A listing is
+    skipped, and the sentence before it ends there, so the voice pauses where
+    the code sits instead of running on into the next paragraph."""
+
+    PROGRAM = ('<div class="sourceCode"><pre class="sourceCode python">'
+               '<code class="sourceCode python">'
+               '<span class="kw">def</span> f(x):\n    <span class="cf">return</span> x'
+               '</code></pre></div>')
+
+    def test_a_code_block_is_not_read(self):
+        tokens = parse_script("<p>In code:</p>" + self.PROGRAM + "<p>It returns x.</p>")
+        self.assertEqual([t.text for t in tokens], ["In", "code:", "It", "returns", "x."])
+
+    def test_printed_output_is_not_read_either(self):
+        tokens = parse_script("<p>It prints</p><pre><code>8 distinct solutions\n"
+                              "(12.5, -56.3)</code></pre><p>and stops.</p>")
+        self.assertEqual([t.text for t in tokens], ["It", "prints", "and", "stops."])
+
+    def test_the_sentence_before_a_listing_ends_there(self):
+        tokens = parse_script("<p>In code:</p>" + self.PROGRAM + "<p>Next.</p>")
+        self.assertEqual(tokens[1].trail, ".")
+
+    def test_a_sentence_already_ended_is_left_alone(self):
+        tokens = parse_script("<p>The program runs.</p>" + self.PROGRAM)
+        self.assertEqual(tokens[-1].text, "runs.")
+        self.assertEqual(tokens[-1].trail, "")
+
+    def test_inline_code_in_a_sentence_is_still_read(self):
+        tokens = parse_script("<p>call <code>robot.ik</code> once</p>")
+        self.assertEqual([t.text for t in tokens], ["call", "robot.ik", "once"])

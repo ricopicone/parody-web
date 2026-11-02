@@ -17,7 +17,20 @@ from html.parser import HTMLParser
 # Read aloud: prose only. Captions are excluded because LaTeX floats move them
 # out of reading order on the page, so they would never align — see the spec's
 # "Known limit: float reordering".
-SKIP_TAGS = {"script", "style", "figcaption", "table"}
+#
+# Code blocks (`<pre>`: a program, or the output it printed) are skipped too.
+# Read out symbol by symbol they help nobody listening, and the prose around a
+# listing already says what it does. Inline `<code>` in a sentence is still
+# read. The page's words a skip leaves unspoken, as with a table, simply have
+# no token to align with.
+SKIP_TAGS = {"script", "style", "figcaption", "table", "pre"}
+
+# Skipping these ends the sentence before them, so the voice pauses where the
+# block sits rather than running on into the next paragraph ("In code:" would
+# otherwise flow straight into it). The text goes to the speech engine plain,
+# not as SSML, so the pause is a full stop added to what is spoken.
+PAUSE_BEFORE = {"pre"}
+SENTENCE_ENDS = (".", "?", "!")
 
 
 @dataclass
@@ -169,6 +182,8 @@ class _ScriptParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         if tag in SKIP_TAGS:
+            if tag in PAUSE_BEFORE and not self._skip_depth:
+                self._end_sentence()
             self._skip_depth += 1
             return
         if self._skip_depth:
@@ -203,6 +218,18 @@ class _ScriptParser(HTMLParser):
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)
+
+    def _end_sentence(self):
+        """Make the last token end a sentence, if it does not already.
+
+        Only what is spoken changes (`trail`); alignment keys strip
+        punctuation, so the page's words still match.
+        """
+        if not self.tokens:
+            return
+        last = self.tokens[-1]
+        if not (last.trail or last.text).endswith(SENTENCE_ENDS):
+            last.trail += "."
 
     def handle_endtag(self, tag):
         if tag in SKIP_TAGS:
