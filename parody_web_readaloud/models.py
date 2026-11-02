@@ -84,3 +84,40 @@ class ReadAlongTrack(models.Model):
     def cloze_count(self):
         """How many blanks the student will fill on this section."""
         return len(self.clozes or [])
+
+
+class ClozeMap(models.Model):
+    """Where one version of one section's blanks sit, with no audio.
+
+    A track records its section's blanks, but only a book with read-along has
+    tracks, and synthesis is a deliberate, paid decision per book. Where the
+    blanks are costs a PDF parse (`generate.cloze_boxes`), so every blanked
+    book can have this, which is what a host measuring a student's notes
+    against the blanks needs. Written by `map_clozes`; read by the host.
+
+    Keyed like ReadAlongTrack, for the same reason: no Section foreign key,
+    because sections are recreated on every import.
+    """
+
+    book_slug = models.CharField(max_length=100)
+    edition_id = models.CharField(max_length=50, blank=True, default="")
+    section_key = models.CharField(max_length=200)
+    # The version of the section's PDF these boxes are true of: the key
+    # InkLayer stores, so ink is only ever measured against its own pages.
+    slice_key = models.CharField(max_length=64)
+
+    # [{token, kind, page, x0, y0, x1, y1}] — a track's cloze boxes: page
+    # 0-based within the section PDF, PDF points, origin top-left. Empty for a
+    # section with no blanks, which is still a map (nothing to fill).
+    clozes = models.JSONField(default=list, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("book_slug", "edition_id", "section_key", "slice_key")
+        indexes = [models.Index(fields=["book_slug", "section_key"])]
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"{self.book_slug}/{self.section_key}@{self.slice_key[:8]}"

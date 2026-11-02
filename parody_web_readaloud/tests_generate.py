@@ -3,8 +3,8 @@ import fitz
 from django.test import SimpleTestCase
 
 from parody_web_readaloud.generate import (build_track, chunk_text,
-                                          prepare, reuse, synthesise,
-                                          text_key_for)
+                                          cloze_boxes, prepare, reuse,
+                                          synthesise, text_key_for)
 from parody_web_readaloud.speech import SkipMath
 
 
@@ -395,3 +395,35 @@ class ClozeInsideAnEquationTests(SimpleTestCase):
                                 r"\frac{v} {i}")
         self.assertEqual(prepare(plain, _equation_pdf(),
                                  math=FakeMaths()).text, prep.text)
+
+
+class ClozeBoxesTests(SimpleTestCase):
+    """Where the blanks are, for a book nobody has bought read-along for.
+
+    Notes coverage measures ink against these boxes. They used to exist only
+    on a track, so on a book without read-along every section was
+    unmeasurable and no student's notes ever counted as done.
+    """
+
+    def test_the_box_is_the_one_a_track_would_carry(self):
+        boxes = cloze_boxes(HTML, _page_pdf())
+        track = build_track(HTML, _page_pdf(), fake_synth, math=SkipMath())
+        where = ("page", "x0", "y0", "x1", "y1")
+        self.assertEqual([{k: b[k] for k in where} for b in boxes],
+                         [{k: c[k] for k in where} for c in track["clozes"]])
+        self.assertEqual(boxes[0]["kind"], "cloze")
+
+    def test_it_follows_the_page_when_the_book_reflows(self):
+        moved = cloze_boxes(HTML, _page_pdf(drop=30))[0]
+        here = cloze_boxes(HTML, _page_pdf())[0]
+        self.assertAlmostEqual(moved["y0"] - here["y0"], 30, delta=0.5)
+
+    def test_a_clozed_equation_keeps_its_box_without_a_picture(self):
+        """A track drops it (nothing to reveal); the student still writes there."""
+        boxes = cloze_boxes(EQ_HTML, _equation_pdf())
+        self.assertEqual([b["kind"] for b in boxes], ["math_cloze"])
+        track = build_track(EQ_HTML, _equation_pdf(), fake_synth, math=SkipMath())
+        self.assertEqual(track["clozes"], [])
+
+    def test_prose_has_no_blanks(self):
+        self.assertEqual(cloze_boxes("<p>just prose here</p>", _page_pdf()), [])

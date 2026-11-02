@@ -871,6 +871,25 @@ content. Because one synthesis serves every listener, read-along needs no
 access tier of its own — it inherits the book's, asking the policy the same
 question the section PDF asks.
 
+### Where the blanks are, without read-along
+
+A track records where each of its section's blanks sits on the page, which is
+what a host needs to measure a student's notes against the blanks. But only a
+book with read-along has tracks. `map_clozes` records the same boxes with no
+audio (`ClozeMap`, one row per section per pagination), for any blanked book:
+
+```
+python manage.py map_clozes <book_slug> [--section KEY] [--key-artifact PATH] [--force]
+```
+
+It costs a PDF parse per section: no speech, no maths engine, no Polly. Like
+`generate_readalong` it is idempotent (a pagination already mapped reports
+`have`), so it can run on every deploy. A reflow maps the new pages beside the
+old ones, whose map still describes ink written on them. Read a `ClozeMap`
+where a slice has no track. A track's boxes are the same, except that a
+clozed equation whose picture could not be drawn has no reveal and so is left
+off the track, while the map keeps it.
+
 ### Template shadowing
 
 Read-along shadows `parody_web/_pdf_view_head.html` to load its assets, and

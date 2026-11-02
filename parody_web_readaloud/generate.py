@@ -162,6 +162,30 @@ def cloze_count(prep: Prepared) -> int:
                    or is_math_cloze(spot.token)) and spot.box)
 
 
+def cloze_boxes(html: str, pdf_bytes: bytes) -> list:
+    """Where this PDF's blanks are: `[{token, kind, page, x0, y0, x1, y1}]`.
+
+    The boxes a track's clozes carry, found the same way — the script aligned
+    to the page — with nothing said: no speech, no maths engine, no audio. A
+    book without read-along has no tracks, and the tracks were the only record
+    of where its blanks sit, so a host measuring a student's notes against the
+    blanks had nothing to measure against. This is that record on its own.
+
+    One difference from a track, on purpose: a clozed equation keeps its box
+    even when its picture could not be drawn. A track drops it because there is
+    nothing to reveal; the student still writes in it.
+    """
+    tokens = parse_script(html)
+    placed = align(tokens, extract_words(pdf_bytes), extract_blanks(pdf_bytes))
+    return [{"token": spot.index,
+             "kind": "math_cloze" if is_math_cloze(spot.token) else spot.token.kind,
+             "page": spot.page, "x0": spot.box[0], "y0": spot.box[1],
+             "x1": spot.box[2], "y1": spot.box[3]}
+            for spot in placed
+            if spot.box and (spot.token.kind in ("cloze", "figure_cloze")
+                             or is_math_cloze(spot.token))]
+
+
 def build_track(html: str, pdf_bytes: bytes, synth, math=None) -> dict:
     """Prepare and synthesise in one call. The path that costs money."""
     return synthesise(prepare(html, pdf_bytes, math=math), synth)
