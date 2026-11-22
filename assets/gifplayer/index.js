@@ -12,7 +12,7 @@
  */
 import { parseGif, Compositor } from './decode.js';
 import { Controller } from './controller.js';
-import { barView, intersecting, keyAction } from './bar.js';
+import { barView, intersecting, keyAction, placeWidth } from './bar.js';
 
 const svg = (body) =>
   `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" `
@@ -90,6 +90,9 @@ async function enhance(img) {
   }
   const style = img.getAttribute('style');
   if (style) canvas.setAttribute('style', style); // an author's width/height
+  const width = placeWidth(img.style.width);
+  player.style.width = width.player;
+  canvas.style.width = width.canvas;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('no 2d canvas');
   // the compositor always returns the same array, so one ImageData serves
@@ -133,6 +136,7 @@ async function enhance(img) {
     render,
     schedule: (fn, ms) => setTimeout(fn, ms),
     cancel: (h) => clearTimeout(h),
+    now: () => performance.now(),
     onChange: show,
   });
 
@@ -162,6 +166,7 @@ async function enhance(img) {
     first: () => ctl.first(),
     last: () => ctl.last(),
     full: () => { if (canFull) toggleFull(); },
+    held: () => {},
   };
   first.addEventListener('click', act.first);
   back.addEventListener('click', act.back);

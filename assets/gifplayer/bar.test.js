@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { barView, intersecting, keyAction } from './bar.js';
+import { barView, intersecting, keyAction, placeWidth } from './bar.js';
 
 const ICONS = { play: '<svg>play</svg>', pause: '<svg>pause</svg>' };
 
@@ -71,10 +71,35 @@ test('keys on the player itself map to actions; modified keys never do', () => {
   assert.equal(keyAction({ key: ' ', target: { tagName: 'BUTTON' } }), null);
 });
 
+test('a held Space or F acts once; a held arrow keeps stepping', () => {
+  // the auto-repeat of a held key would flicker play/pause, and send the
+  // lecture screen in and out of full screen ten times a second
+  const div = { tagName: 'DIV' };
+  for (const key of [' ', 'k', 'K', 'f', 'F']) {
+    assert.equal(keyAction({ key, repeat: true, target: div }), 'held', key);
+  }
+  assert.equal(keyAction({ key: ' ', repeat: false, target: div }), 'toggle');
+  // 'held' is still the player's key, so the page does not scroll under it
+  assert.equal(keyAction({ key: 'ArrowRight', repeat: true, target: div }), 'next');
+  assert.equal(keyAction({ key: 'PageDown', repeat: true, target: div }), 'next');
+  assert.equal(keyAction({ key: 'ArrowLeft', repeat: true, target: div }), 'back');
+});
+
 test('a batch of intersection entries is read by its latest entry', () => {
   // scrolled away and straight back between two callbacks: the batch is
   // [left, entered], and reading the first froze a figure that was in view
   assert.equal(intersecting([{ isIntersecting: false }, { isIntersecting: true }]), true);
   assert.equal(intersecting([{ isIntersecting: true }, { isIntersecting: false }]), false);
   assert.equal(intersecting([{ isIntersecting: true }]), true);
+});
+
+test('a percentage width is the column\'s: the player takes it, the canvas fills it', () => {
+  // on the canvas, 50% would resolve against the player, which shrinks to the
+  // canvas: the figure came out a fraction of its own size, not of the column
+  assert.deepEqual(placeWidth('50%'), { player: '50%', canvas: '100%' });
+  assert.deepEqual(placeWidth('100%'), { player: '100%', canvas: '100%' });
+  // any other width is the canvas's own, as it was the image's
+  assert.deepEqual(placeWidth('300px'), { player: '', canvas: '300px' });
+  assert.deepEqual(placeWidth('3in'), { player: '', canvas: '3in' });
+  assert.deepEqual(placeWidth(''), { player: '', canvas: '' });
 });

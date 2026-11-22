@@ -1,7 +1,8 @@
 /**
  * The control bar's decisions, kept out of index.js so `node --test` can
  * check them without a DOM: which action a key means, how the bar shows a
- * state, and what a batch of IntersectionObserver entries says.
+ * state, what a batch of IntersectionObserver entries says, and where an
+ * author's width goes.
  */
 
 const KEYS = {
@@ -20,13 +21,21 @@ const NATIVE = {
   INPUT: new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']),
 };
 
-/** The player action a keydown means, or null to leave it to the browser. */
+// keys that act once however long they are held. A held key repeats about ten
+// times a second: play/pause would flicker and full screen would thrash. A
+// held arrow is left to repeat, which steps through the frames.
+const ONCE = new Set(['toggle', 'full']);
+
+/** The player action a keydown means, or null to leave it to the browser.
+ * 'held' is a repeat of a key that acts once: still the player's key (so a
+ * held Space does not scroll the page), but it does nothing. */
 export function keyAction(e) {
   if (e.altKey || e.ctrlKey || e.metaKey) return null;
   const name = KEYS[e.key];
   if (!name) return null;
   const native = NATIVE[e.target && e.target.tagName];
   if (native && native.has(e.key)) return null;
+  if (e.repeat && ONCE.has(name)) return 'held';
   return name;
 }
 
@@ -61,4 +70,14 @@ export function barView({ play, scrub, count }, n, icons) {
  * on screen. */
 export function intersecting(entries) {
   return entries[entries.length - 1].isIntersecting;
+}
+
+/** Where the image's inline width goes: `{ player, canvas }`, '' for none.
+ * A percentage is of the column. On the canvas it would resolve against the
+ * player, which shrinks to fit the canvas, so the figure came out a fraction
+ * of its own size; the player takes it instead and the canvas fills the
+ * player. Any other width is the canvas's own, as it was the image's. */
+export function placeWidth(width) {
+  if (width.endsWith('%')) return { player: width, canvas: '100%' };
+  return { player: '', canvas: width };
 }
