@@ -463,6 +463,10 @@ figure img, img.figure-img {
     width: 32px; height: 32px; padding: 0; border: 0; border-radius: 4px;
     background: none; color: var(--ink-muted); cursor: pointer; }
 .gif-bar button:hover { color: var(--ink); background: var(--paper-sunk); }
+/* The icons are swapped as the state changes. A click whose target (the
+   <svg> under the pointer) leaves the tree between press and release is
+   dropped, so the button, which stays, must be the target. */
+.gif-bar svg { pointer-events: none; }
 .gif-bar button[hidden] { display: none; }
 /* A small basis that grows, not a large one that shrinks: a wrapping flex
    row breaks on the basis before anything shrinks, so at 8rem the full-screen

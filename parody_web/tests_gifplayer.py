@@ -39,3 +39,12 @@ class GifPlayerDeliveryTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertTrue(re.search(r'<script type="module" src="[^"]*parody_web/js/gifplayer[^"]*\.js"',
                                   r.content.decode()))
+
+    def test_the_bar_icons_never_take_the_pointer(self):
+        """The icons are swapped as the state changes; if the <svg> under a
+        pressed mouse button is the click's target and leaves the tree,
+        Chromium drops the click. With the icons transparent to the pointer
+        the target is always the button, which stays."""
+        css = (ROOT / "parody_web" / "static" / "parody_web" / "css"
+               / "content.css").read_text(encoding="utf-8")
+        self.assertRegex(css, r"\.gif-bar svg\s*\{[^}]*pointer-events:\s*none")
