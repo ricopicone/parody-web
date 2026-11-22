@@ -12,6 +12,7 @@
  */
 import { parseGif, Compositor } from './decode.js';
 import { Controller } from './controller.js';
+import { barView, intersecting, keyAction } from './bar.js';
 
 const svg = (body) =>
   `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" `
@@ -27,20 +28,6 @@ const ICONS = {
   pause: svg('<path d="M8.5 6v12"/><path d="M15.5 6v12"/>'),
   full: svg('<path d="M4.5 9V4.5H9"/><path d="M15 4.5h4.5V9"/><path d="M19.5 15v4.5H15"/><path d="M9 19.5H4.5V15"/>'),
   unfull: svg('<path d="M9 4.5V9H4.5"/><path d="M19.5 9H15V4.5"/><path d="M15 19.5V15h4.5"/><path d="M4.5 15H9v4.5"/>'),
-};
-
-const KEYS = {
-  ' ': 'toggle', k: 'toggle', K: 'toggle',
-  ArrowLeft: 'back', PageUp: 'back',
-  ArrowRight: 'next', PageDown: 'next', // presentation clickers send these
-  Home: 'first', End: 'last',
-  f: 'full', F: 'full',
-};
-
-// keys a focused control already answers natively
-const NATIVE = {
-  BUTTON: new Set([' ', 'Enter']),
-  INPUT: new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']),
 };
 
 function isGif(img) {
@@ -137,15 +124,7 @@ async function enhance(img) {
   bar.append(first, back, play, next, scrub, count, full);
   player.append(canvas, bar);
 
-  const show = ({ frame, playing }) => {
-    play.innerHTML = playing ? ICONS.pause : ICONS.play;
-    const label = playing ? 'Pause (space)' : 'Play (space)';
-    play.setAttribute('aria-label', label);
-    play.title = label;
-    scrub.value = String(frame);
-    scrub.setAttribute('aria-valuetext', `Frame ${frame + 1} of ${n}`);
-    count.textContent = `${frame + 1} / ${n}`;
-  };
+  const show = barView({ play, scrub, count }, n, ICONS);
 
   const ctl = new Controller({
     count: n,
@@ -197,11 +176,8 @@ async function enhance(img) {
   // on the player, never the window: two figures on a page, or a reader
   // typing elsewhere, must not have their keys taken
   player.addEventListener('keydown', (e) => {
-    if (e.altKey || e.ctrlKey || e.metaKey) return;
-    const name = KEYS[e.key];
+    const name = keyAction(e);
     if (!name) return;
-    const native = NATIVE[e.target.tagName];
-    if (native && native.has(e.key)) return;
     e.preventDefault();
     act[name]();
   });
@@ -216,8 +192,8 @@ async function enhance(img) {
 
   // stop while out of view, and free the snapshots once well away from it
   if ('IntersectionObserver' in window) {
-    new IntersectionObserver(([e]) => ctl.setVisible(e.isIntersecting)).observe(player);
-    new IntersectionObserver(([e]) => { if (!e.isIntersecting) compositor.dropCache(); },
+    new IntersectionObserver((es) => ctl.setVisible(intersecting(es))).observe(player);
+    new IntersectionObserver((es) => { if (!intersecting(es)) compositor.dropCache(); },
       { rootMargin: '200% 0px' }).observe(player);
   }
 
