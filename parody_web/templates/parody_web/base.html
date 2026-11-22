@@ -22,6 +22,8 @@
 <link rel="stylesheet" href="{% static 'parody_web/css/tokens.css' %}">
 <link rel="stylesheet" href="{% static 'parody_web/css/book.css' %}">
 <link rel="stylesheet" href="{% static 'parody_web/css/content.css' %}">
+{# play controls for GIF figures; does nothing on a page without one #}
+<script type="module" src="{% static 'parody_web/js/gifplayer.js' %}"></script>
 <style>{% theme_css %}</style>
 <script>
 /* Common math packages used by the LaTeX source (bm/boldsymbol, mathtools,

@@ -439,6 +439,56 @@ figure { margin-inline: 0; }
 figure img, img.figure-img {
     zoom: var(--fig-scale); max-width: 100%; height: auto; }
 
+/* ── Animated figures (assets/gifplayer) ───────────────────────────────────
+   A GIF figure is redrawn on a canvas with a control bar under it, and the
+   <img> is hidden. The canvas has to look exactly like the image it replaces,
+   so it takes the image's rules: the same --fig-scale zoom and column cap, the
+   light panel behind it, and the dark-mode padding (in BOTH dark selectors,
+   as the image rules above). The player shrinks to the canvas, like the
+   inline image did, so the bar is as wide as the figure. */
+.gif-player { display: inline-block; max-width: 100%; vertical-align: top; }
+.gif-player:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.gif-player canvas {
+    display: block; margin-inline: auto; cursor: pointer;
+    zoom: var(--fig-scale); max-width: 100%; height: auto;
+    background: var(--paper-panel); border-radius: 3px; }
+:root[data-theme="dark"] .gif-player canvas { padding: var(--s2); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .gif-player canvas { padding: var(--s2); }
+}
+.gif-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+    margin-top: 4px; }
+.gif-bar button {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; padding: 0; border: 0; border-radius: 4px;
+    background: none; color: var(--ink-muted); cursor: pointer; }
+.gif-bar button:hover { color: var(--ink); background: var(--paper-sunk); }
+.gif-bar button[hidden] { display: none; }
+/* A small basis that grows, not a large one that shrinks: a wrapping flex
+   row breaks on the basis before anything shrinks, so at 8rem the full-screen
+   button wrapped to a second row at phone width (measured at 390px). */
+.gif-scrub { flex: 1 1 3rem; min-width: 3rem; margin: 0 6px;
+    accent-color: var(--accent); }
+.gif-count { min-width: 7ch; text-align: right; color: var(--ink-muted);
+    font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+/* Full screen, for lecturing: the frame as large as the screen allows, the bar
+   under it. Separate rules, not one selector list, because a browser that does
+   not know one of the pseudo-classes drops the whole list. */
+.gif-player:fullscreen {
+    display: flex; flex-direction: column; justify-content: center;
+    background: var(--paper); padding: var(--s2); max-width: none; }
+.gif-player:-webkit-full-screen {
+    display: flex; flex-direction: column; justify-content: center;
+    background: var(--paper); padding: var(--s2); max-width: none; }
+.gif-player:fullscreen canvas {
+    zoom: 1; flex: 1 1 0; min-height: 0; width: 100%; max-width: none;
+    box-sizing: border-box; object-fit: contain; }
+.gif-player:-webkit-full-screen canvas {
+    zoom: 1; flex: 1 1 0; min-height: 0; width: 100%; max-width: none;
+    box-sizing: border-box; object-fit: contain; }
+.gif-player:fullscreen .gif-bar { width: min(100%, 48rem); margin-inline: auto; }
+.gif-player:-webkit-full-screen .gif-bar { width: min(100%, 48rem); margin-inline: auto; }
+
 /* ── Data-entry tables ────────────────────────────────────────────────────
    A lab manual's observation table: the reader types readings into the page
    and they are still there next week. The build emits it with Tailwind /

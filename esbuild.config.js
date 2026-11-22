@@ -38,6 +38,21 @@ await build({
   logLevel: 'info',
 });
 
+// The GIF figure player is part of parody_web itself, not an optional app:
+// every book page loads it (base.html), and a page with no GIF pays one small
+// request and does nothing.
+const GIF_OUT = 'parody_web/static/parody_web/js';
+await mkdir(GIF_OUT, { recursive: true });
+await build({
+  entryPoints: ['assets/gifplayer/index.js'],
+  bundle: true,
+  minify: true,
+  format: 'esm',
+  target: ['es2020'],
+  outfile: `${GIF_OUT}/gifplayer.js`,
+  logLevel: 'info',
+});
+
 // The maths-speech helper is COPIED, not bundled.
 //
 // speech-rule-engine resolves its own package.json and locale data relative to

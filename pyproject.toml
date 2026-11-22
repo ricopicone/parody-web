@@ -48,6 +48,7 @@ include = ["parody_web*"]
 parody_web = ["templates/parody_web/*.html", "templates/registration/*.html",
               "static/parody_web/eclipse/*.svg",
               "static/parody_web/css/*.css",
+              "static/parody_web/js/*.js",
               "static/parody_web/fonts/*.woff2",
               "static/parody_web/fonts/OFL.txt"]
 # The annotator's bundle is BUILT but committed, so a host never needs Node.
