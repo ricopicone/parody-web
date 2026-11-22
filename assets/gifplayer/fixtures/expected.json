@@ -75,6 +75,19 @@
    "9fb06d0dead217eb99088846d2793b057ae120337e4d3af0139571b0f7787835"
   ]
  },
+ "fulltable.gif": {
+  "width": 128,
+  "height": 128,
+  "loop": 0,
+  "delays": [
+   100,
+   100
+  ],
+  "frames": [
+   "341f5fd7d1cfe2845480b857e313cb722f8923ed8c7664f4ad749dbc52c59d9d",
+   "7191c1119317fb6bfbd165062c9d5fbca75ea69228d5c94f92c134912d07332b"
+  ]
+ },
  "interlaced.gif": {
   "width": 16,
   "height": 16,
@@ -86,6 +99,19 @@
   "frames": [
    "46bf7d97b4a3ba55b1bd158be1b667a13c8d5c725da4aa184817b8dd1d8b7214",
    "6281bc6bc71c41572e419bfe8083811310c3be21ac16168c38b36ab004943720"
+  ]
+ },
+ "noise.gif": {
+  "width": 128,
+  "height": 128,
+  "loop": 0,
+  "delays": [
+   100,
+   100
+  ],
+  "frames": [
+   "21f503bc34b323ce88c6af586e3f40fa34ea1aec612e30981d224a1a3f77050c",
+   "d2ec29cbfaa7f58d3c97ac005c78ab3404699af6c82f9b4100f713783858e600"
   ]
  },
  "offset.gif": {

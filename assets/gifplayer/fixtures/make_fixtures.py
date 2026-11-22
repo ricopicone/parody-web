@@ -14,6 +14,14 @@ two decoders are free to disagree about it.
 will not make them: it always writes a full-size first frame and a local palette
 per frame, and it drops `interlace=True`. They are "uncompressed" GIFs: LZW with
 a clear code often enough that the codes never grow.
+
+`noise.gif` and `fulltable.gif` are where the codes DO grow: noise fills the
+4096-entry table, so the codes reach 12 bits, and then what happens next is up
+to the writer. Pillow clears and starts again (noise.gif). Other writers keep
+going on the full table with no clear, every code 12 bits and no new entries;
+`fulltable.gif` does that by hand in its first frame and clears in its second.
+Every real book GIF is big enough to fill the table, and none of the small
+fixtures above ever did.
 """
 import hashlib
 import json
@@ -81,6 +89,97 @@ def _lzw_uncompressed(indices, min_code_size):
     return bytes([min_code_size]) + bytes(blocks) + b"\x00"
 
 
+def _lzw(indices, min_code_size, *, clear_when_full):
+    """Real LZW, to the 4096-entry table and past it. A decoder adds an entry
+    for every code but the first after a clear, one code behind the encoder,
+    so the k-th code since a clear is as wide as `end + k` needs, capped at 12
+    bits. With a full table, clear_when_full clears and starts again; without,
+    the encoder carries on with the entries it has."""
+    clear, end = 1 << min_code_size, (1 << min_code_size) + 1
+    codes, filled = [], 0
+
+    def emit(code, k):
+        codes.append((code, min(12, (end + k).bit_length())))
+
+    table, nxt, k = {(i,): i for i in range(clear)}, end + 1, 0
+    codes.append((clear, min_code_size + 1))
+    w = (indices[0],)
+    for v in indices[1:]:
+        wv = w + (v,)
+        if wv in table:
+            w = wv
+            continue
+        emit(table[w], k)
+        k += 1
+        if nxt < 4096:
+            table[wv] = nxt
+            nxt += 1
+        else:
+            filled += 1
+            if clear_when_full:
+                codes.append((clear, 12))
+                table, nxt, k = {(i,): i for i in range(clear)}, end + 1, 0
+        w = (v,)
+    emit(table[w], k)
+    emit(end, k + 1)
+    # a fixture for the full table has to reach it, and go on past it
+    assert filled > (0 if clear_when_full else 1000), f"full for {filled} codes"
+    out, acc, nbits = bytearray(), 0, 0
+    for c, width in codes:
+        acc |= c << nbits
+        nbits += width
+        while nbits >= 8:
+            out.append(acc & 0xFF)
+            acc >>= 8
+            nbits -= 8
+    if nbits:
+        out.append(acc & 0xFF)
+    blocks = bytearray()
+    for i in range(0, len(out), 255):
+        chunk = out[i:i + 255]
+        blocks += bytes([len(chunk)]) + chunk
+    return bytes([min_code_size]) + bytes(blocks) + b"\x00"
+
+
+def _noise(n, seed):
+    """n palette indices in 0..15, the same on every run."""
+    x, out = seed, []
+    for _ in range(n):
+        x = (x * 1103515245 + 12345) & 0x7FFFFFFF
+        out.append((x >> 16) & 15)
+    return out
+
+
+SIDE = 128
+PAL16 = bytes(v for i in range(16) for v in (i * 16, 255 - i * 13, (i * 37) % 256))
+
+
+def fulltable_gif():
+    """Two 128x128 frames of 16-colour noise (96x96 never fills the table).
+    The first keeps going on a full table with no clear code; the second
+    clears when the table fills."""
+    w = h = SIDE
+    body = b""
+    for seed, clear_when_full in ((7, False), (11, True)):
+        gce = b"\x21\xF9\x04" + struct.pack("<BHB", 1 << 2, 10, 0) + b"\x00"
+        desc = b"\x2C" + struct.pack("<HHHHB", 0, 0, w, h, 0)
+        body += gce + desc + _lzw(_noise(w * h, seed), 4,
+                                  clear_when_full=clear_when_full)
+    head = b"GIF89a" + struct.pack("<HHBBB", w, h, 0x80 | 0x03, 0, 0) + PAL16
+    ext = b"\x21\xFF\x0BNETSCAPE2.0\x03\x01" + struct.pack("<H", 0) + b"\x00"
+    return head + ext + body + b"\x3B"
+
+
+def noise_gif_frames():
+    ims = []
+    for seed in (3, 5):
+        im = Image.new("P", (SIDE, SIDE))
+        im.putpalette(PAL16)
+        im.putdata(_noise(SIDE * SIDE, seed))
+        ims.append(im)
+    return ims
+
+
 def _frame(x, y, w, h, pixels, *, delay, disposal, transparent=None,
            interlace=False):
     flags = (disposal << 2) | (1 if transparent is not None else 0)
@@ -136,6 +235,16 @@ def main():
     save("fast.gif", frames(4), duration=10, loop=0)
     (HERE / "offset.gif").write_bytes(offset_gif())
     (HERE / "interlaced.gif").write_bytes(interlaced_gif())
+    save("noise.gif", noise_gif_frames(), duration=100, loop=0)
+    (HERE / "fulltable.gif").write_bytes(fulltable_gif())
+    # the hand-written LZW is only a fixture if it says what it means to:
+    # Pillow must read back exactly the noise that went in
+    ft = Image.open(HERE / "fulltable.gif")
+    for i, seed in enumerate((7, 11)):
+        ft.seek(i)
+        got = ft.convert("RGB").tobytes()
+        want = b"".join(PAL16[3 * v:3 * v + 3] for v in _noise(SIDE * SIDE, seed))
+        assert got == want, f"fulltable.gif frame {i} does not decode to its source"
 
     expected = {}
     for path in sorted(HERE.glob("*.gif")):
