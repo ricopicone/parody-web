@@ -73,3 +73,101 @@ test('rejects non-GIF and truncated input', () => {
   assert.throws(() => parseGif(whole.subarray(0, whole.length >> 1)), /truncated/);
   assert.throws(() => parseGif(new Uint8Array(0)), /not a GIF/);
 });
+
+// ---- decoding and compositing ---------------------------------------------
+
+import { createHash } from 'node:crypto';
+import { Compositor, decodeIndices } from './decode.js';
+
+// alpha-0 pixels carry no colour; normalise as make_fixtures.py does
+function digest(rgba) {
+  const b = Uint8Array.from(rgba);
+  for (let p = 0; p < b.length; p += 4) if (b[p + 3] === 0) b.fill(0, p, p + 4);
+  return createHash('sha256').update(b).digest('hex');
+}
+
+// a budget that makes the snapshot interval exactly k for this GIF
+const budgetFor = (gif, k) => Math.ceil((gif.frames.length * gif.width * gif.height * 4) / k);
+
+test('decodeIndices returns one palette index per pixel of the frame', () => {
+  const gif = parseGif(load('offset.gif'));
+  assert.deepEqual([...decodeIndices(gif.frames[1])], [2, 0, 2, 2, 2, 0, 2, 2, 2, 0, 2, 2]);
+});
+
+test('an interlaced frame comes back in row order', () => {
+  const f = parseGif(load('interlaced.gif')).frames[0];
+  const rows = decodeIndices(f);
+  for (let r = 0; r < 16; r++) assert.equal(rows[r * 16], 1 + (r % 3), `row ${r}`);
+});
+
+for (const [name, want] of Object.entries(EXPECTED)) {
+  test(`${name}: every frame, composited in order, is Pillow's`, () => {
+    const c = new Compositor(parseGif(load(name)));
+    want.frames.forEach((hash, i) => assert.equal(digest(c.frame(i)), hash, `frame ${i}`));
+  });
+}
+
+for (const [name, want] of Object.entries(EXPECTED)) {
+  for (const k of [2, 3]) {
+    test(`${name}: random access equals sequential (snapshot every ${k})`, () => {
+      const gif = parseGif(load(name));
+      const c = new Compositor(gif, { budget: budgetFor(gif, k) });
+      assert.equal(c.interval, Math.min(k, gif.frames.length));
+      const n = want.frames.length;
+      // last, back to the start, middle, the same frame twice, one back
+      const order = [n - 1, 1, n - 2, 0, n >> 1, n >> 1, (n >> 1) - 1];
+      for (const i of order) assert.equal(digest(c.frame(i)), want.frames[i], `frame ${i}`);
+    });
+  }
+}
+
+test('dropping the snapshots loses nothing but time', () => {
+  const name = 'dispose3.gif';
+  const gif = parseGif(load(name));
+  const c = new Compositor(gif, { budget: budgetFor(gif, 2) });
+  c.frame(4);
+  c.dropCache();
+  for (const i of [3, 4, 1, 2]) {
+    assert.equal(digest(c.frame(i)), EXPECTED[name].frames[i], `frame ${i}`);
+    c.dropCache();
+  }
+});
+
+test('the snapshot interval keeps snapshots within the budget', () => {
+  const gif = parseGif(load('delta.gif')); // 6 frames of 32x24
+  const frameBytes = 32 * 24 * 4;
+  assert.equal(new Compositor(gif, { budget: 6 * frameBytes }).interval, 1);
+  assert.equal(new Compositor(gif, { budget: 3 * frameBytes }).interval, 2);
+  assert.equal(new Compositor(gif, { budget: frameBytes }).interval, 6);
+  // never longer than the animation: then only frame 0 is kept
+  assert.equal(new Compositor(gif, { budget: 1 }).interval, 6);
+  assert.equal(new Compositor(gif).interval, 1); // default 16 MiB
+});
+
+test('a frame outside the animation is refused', () => {
+  const c = new Compositor(parseGif(load('delta.gif')));
+  assert.throws(() => c.frame(6), RangeError);
+  assert.throws(() => c.frame(-1), RangeError);
+  assert.throws(() => c.frame(1.5), RangeError);
+});
+
+test('a first frame with disposal 3 restores to nothing, as browsers do', () => {
+  // Pillow keeps such a frame; Chrome restores the empty screen it was drawn
+  // over (Blink's FindRequiredPreviousFrame skips restore-previous frames back
+  // to "no previous frame"). The player stands in for the browser, so it
+  // follows the browser. offset.gif with its first frame patched to disposal 3:
+  const bytes = load('offset.gif');
+  const gce = bytes.findIndex((b, i) => b === 0x21 && bytes[i + 1] === 0xf9);
+  bytes[gce + 3] = (3 << 2) | 1;
+  const gif = parseGif(bytes);
+  assert.equal(gif.frames[0].disposal, 3);
+  const px = new Compositor(gif).frame(1);
+  const f1 = gif.frames[1]; // 4x3 at (3,3): navy, hole, navy, navy
+  for (let y = 0; y < gif.height; y++) {
+    for (let x = 0; x < gif.width; x++) {
+      const inside = x >= f1.x && x < f1.x + f1.w && y >= f1.y && y < f1.y + f1.h;
+      const navy = inside && (x - f1.x) !== 1;
+      assert.equal(px[(y * gif.width + x) * 4 + 3], navy ? 255 : 0, `(${x},${y})`);
+    }
+  }
+});

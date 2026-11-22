@@ -129,7 +129,9 @@ def interlaced_gif():
 def main():
     save("delta.gif", frames(6), duration=60, loop=0)
     save("dispose2.gif", frames(5), duration=60, loop=0, disposal=2, transparency=0)
-    save("dispose3.gif", frames(5), duration=60, loop=0, disposal=3)
+    # the first frame keeps (1): Pillow and browsers disagree about a first
+    # frame with disposal 3 (decode.test.js pins the browsers' reading)
+    save("dispose3.gif", frames(5), duration=60, loop=0, disposal=[1, 3, 3, 3, 3])
     save("once.gif", frames(4), duration=60)
     save("fast.gif", frames(4), duration=10, loop=0)
     (HERE / "offset.gif").write_bytes(offset_gif())

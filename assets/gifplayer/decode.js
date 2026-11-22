@@ -142,3 +142,215 @@ function isLoopApp(b) {
   const id = String.fromCharCode(...b);
   return id === 'NETSCAPE2.0' || id === 'ANIMEXTS1.0';
 }
+
+const MAX_CODES = 4096;
+
+/** LZW-decode one frame: one palette index per pixel, w*h of them, in row
+ * order (an interlaced frame is put back). Pixels the data stops short of
+ * stay 0. */
+export function decodeIndices(frame) {
+  const { w, h, minCodeSize, data } = frame;
+  const n = w * h;
+  const out = new Uint8Array(n);
+  let total = 0;
+  for (const b of data) total += b.length;
+  const bytes = new Uint8Array(total);
+  let at = 0;
+  for (const b of data) { bytes.set(b, at); at += b.length; }
+
+  const clear = 1 << minCodeSize;
+  const eoi = clear + 1;
+  const prefix = new Uint16Array(MAX_CODES);
+  const suffix = new Uint8Array(MAX_CODES);
+  const stack = new Uint8Array(MAX_CODES + 1);
+  for (let i = 0; i < clear; i++) suffix[i] = i;
+
+  let size = minCodeSize + 1;
+  let mask = (1 << size) - 1;
+  let avail = clear + 2;
+  let old = -1;
+  let first = 0;
+  let acc = 0;
+  let bits = 0;
+  let pos = 0;
+  let op = 0;
+  while (op < n) {
+    while (bits < size && pos < total) { acc |= bytes[pos++] << bits; bits += 8; }
+    if (bits < size) break; // data ran out
+    let code = acc & mask;
+    acc >>>= size;
+    bits -= size;
+    if (code === clear) {
+      size = minCodeSize + 1;
+      mask = (1 << size) - 1;
+      avail = clear + 2;
+      old = -1;
+      continue;
+    }
+    if (code === eoi) break;
+    if (old === -1) {
+      if (code >= clear) break; // a first code must be a root
+      out[op++] = suffix[code];
+      old = first = code;
+      continue;
+    }
+    const incoming = code;
+    let sp = 0;
+    if (code >= avail) {
+      if (code > avail) break; // corrupt
+      stack[sp++] = first; // KwKwK: the code being defined right now
+      code = old;
+    }
+    while (code > eoi) { stack[sp++] = suffix[code]; code = prefix[code]; }
+    first = suffix[code];
+    stack[sp++] = first;
+    if (avail < MAX_CODES) {
+      prefix[avail] = old;
+      suffix[avail] = first;
+      avail++;
+      if ((avail & mask) === 0 && avail < MAX_CODES) { size++; mask = (1 << size) - 1; }
+    }
+    old = incoming;
+    while (sp > 0 && op < n) out[op++] = stack[--sp];
+  }
+  return frame.interlaced ? deinterlace(out, w, h) : out;
+}
+
+function deinterlace(src, w, h) {
+  const out = new Uint8Array(src.length);
+  let row = 0;
+  for (const [start, step] of [[0, 8], [4, 8], [2, 4], [1, 2]]) {
+    for (let r = start; r < h; r += step, row++) {
+      out.set(src.subarray(row * w, row * w + w), r * w);
+    }
+  }
+  return out;
+}
+
+/**
+ * The composited picture of any frame, on demand.
+ *
+ * Reaching frame i means drawing frames 0..i in turn, so the compositor keeps
+ * a full copy of the picture every `interval` frames as it goes and starts
+ * from the nearest one at or before i. The interval is chosen so the copies
+ * fit in `budget` bytes, give or take one frame. They are a cache:
+ * `dropCache()` frees them and the next pass forward rebuilds them.
+ *
+ * Measured on robotics' largest GIF (door-frames, 960x640, 80 frames) at the
+ * default budget: a copy every 12 frames (16.4 MiB), 2-4 ms per frame forward,
+ * at most ~24 ms for a step back, ~150 ms for a step back after dropCache().
+ */
+export class Compositor {
+  constructor(gif, { budget = 16 * 2 ** 20 } = {}) {
+    this.gif = gif;
+    const n = gif.frames.length;
+    const frameBytes = gif.width * gif.height * 4;
+    this.interval = Math.min(n, Math.max(1, Math.ceil((n * frameBytes) / budget)));
+    this.pixels = new Uint8ClampedArray(frameBytes);
+    this.current = -1;     // the frame this.pixels shows; -1 = nothing drawn
+    this.restore = null;   // what a disposal-3 frame drew over, for undoing it
+    this.snapshots = new Map();
+  }
+
+  /** RGBA of frame i, width*height*4 bytes. The array is the compositor's
+   * own and changes on the next call. */
+  frame(i) {
+    const n = this.gif.frames.length;
+    if (!Number.isInteger(i) || i < 0 || i >= n) throw new RangeError(`no frame ${i}`);
+    if (i === this.current) return this.pixels;
+    // the nearest snapshot at or before i
+    let s = i - (i % this.interval);
+    while (s >= 0 && !this.snapshots.has(s)) s -= this.interval;
+    if (!(this.current < i && this.current >= s)) {
+      if (s >= 0) {
+        const snap = this.snapshots.get(s);
+        this.pixels.set(snap.pixels);
+        this.restore = snap.restore && { ...snap.restore, pixels: snap.restore.pixels.slice() };
+        this.current = s;
+      } else {
+        this.pixels.fill(0);
+        this.restore = null;
+        this.current = -1;
+      }
+    }
+    while (this.current < i) {
+      this.step();
+      const j = this.current;
+      if (j % this.interval === 0 && !this.snapshots.has(j)) {
+        this.snapshots.set(j, {
+          pixels: this.pixels.slice(),
+          restore: this.restore && { ...this.restore, pixels: this.restore.pixels.slice() },
+        });
+      }
+    }
+    return this.pixels;
+  }
+
+  dropCache() {
+    this.snapshots.clear();
+  }
+
+  /** Draw the next frame over the current picture. */
+  step() {
+    const { frames, width, height } = this.gif;
+    const prev = this.current >= 0 ? frames[this.current] : null;
+    if (prev && prev.disposal === 2) this.clear(prev);
+    if (prev && prev.disposal === 3 && this.restore) this.put(this.restore);
+    this.restore = null;
+
+    const f = frames[this.current + 1];
+    const x0 = Math.min(f.x, width);
+    const y0 = Math.min(f.y, height);
+    const x1 = Math.min(f.x + f.w, width);
+    const y1 = Math.min(f.y + f.h, height);
+    if (f.disposal === 3) this.restore = this.take(x0, y0, x1, y1);
+
+    const idx = decodeIndices(f);
+    const pal = f.palette;
+    const px = this.pixels;
+    const t = f.transparent;
+    for (let y = y0; y < y1; y++) {
+      let src = (y - f.y) * f.w + (x0 - f.x);
+      let dst = (y * width + x0) * 4;
+      for (let x = x0; x < x1; x++, src++, dst += 4) {
+        const c = idx[src];
+        if (c === t) continue;
+        const k = c * 3;
+        px[dst] = pal[k];
+        px[dst + 1] = pal[k + 1];
+        px[dst + 2] = pal[k + 2];
+        px[dst + 3] = 255;
+      }
+    }
+    this.current++;
+  }
+
+  clear(f) {
+    const { width, height } = this.gif;
+    const x1 = Math.min(f.x + f.w, width);
+    const y1 = Math.min(f.y + f.h, height);
+    for (let y = Math.min(f.y, height); y < y1; y++) {
+      this.pixels.fill(0, (y * width + Math.min(f.x, width)) * 4, (y * width + x1) * 4);
+    }
+  }
+
+  take(x0, y0, x1, y1) {
+    const { width } = this.gif;
+    const rw = x1 - x0;
+    const pixels = new Uint8ClampedArray(Math.max(0, rw * (y1 - y0) * 4));
+    for (let y = y0; y < y1; y++) {
+      pixels.set(this.pixels.subarray((y * width + x0) * 4, (y * width + x1) * 4),
+        (y - y0) * rw * 4);
+    }
+    return { x0, y0, x1, y1, pixels };
+  }
+
+  put({ x0, y0, x1, y1, pixels }) {
+    const { width } = this.gif;
+    const rw = x1 - x0;
+    for (let y = y0; y < y1; y++) {
+      this.pixels.set(pixels.subarray((y - y0) * rw * 4, (y - y0 + 1) * rw * 4),
+        (y * width + x0) * 4);
+    }
+  }
+}
