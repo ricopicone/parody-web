@@ -40,8 +40,10 @@ from ... import refs
 from ...generate import (EstimatedSynth, PollySynth, cloze_count, prepare,
                          reuse, synthesise, text_key_for)
 from ...models import ReadAlongTrack
+from ...pronounce import KOKORO, engine_id, spoken_form
+from ...queued import NotVoicedYet, QueuedSynth
 from ...speech import SkipMath, SreMath, sre_available
-from ...storage import write_audio
+from ...storage import queue_backend, write_audio
 
 
 def key_html_index(path):
@@ -118,9 +120,21 @@ class Command(BaseCommand):
         parser.add_argument("book_slug")
         parser.add_argument("--section", default=None,
                             help="Section.key; omit for every section")
-        parser.add_argument("--voice", default="Matthew")
-        parser.add_argument("--engine", default="neural",
-                            choices=["neural", "standard"])
+        # Defaults are the host's settings, because the deploy's heal calls
+        # this command with neither: the settings ARE production's voice.
+        from django.conf import settings
+        parser.add_argument(
+            "--voice",
+            default=getattr(settings, "PARODY_WEB_READALOUD_VOICE", "")
+            or "Matthew")
+        parser.add_argument(
+            "--engine",
+            default=getattr(settings, "PARODY_WEB_READALOUD_ENGINE", "")
+            or "neural",
+            choices=["neural", "standard", KOKORO],
+            help="kokoro queues the text for the laptop worker "
+                 "(parody-voice-queue) and picks its result up on a later "
+                 "run; this machine never runs Kokoro.")
         parser.add_argument("--skip-math", action="store_true",
                             help="Do not shell out to SRE; leave math silent.")
         parser.add_argument("--force", action="store_true",
@@ -218,25 +232,37 @@ class Command(BaseCommand):
         synth = None
         if options["no_audio"]:
             synth = EstimatedSynth(wpm=options["wpm"])
+        elif options["engine"] == KOKORO:
+            # Not under --dry-run either: queueing is a write, and a dry run
+            # must report what would be voiced without asking for it.
+            if not options["dry_run"]:
+                synth = QueuedSynth(options["voice"], KOKORO, queue_backend())
         elif not options["dry_run"]:
             synth = PollySynth(voice_id=options["voice"],
                                engine=options["engine"])
 
-        made = moved = skipped = 0
+        made = moved = queued = skipped = 0
         for section in sections:
             outcome = self._one(book, section, keys, synth, math, options)
             if outcome == "made":
                 made += 1
             elif outcome == "moved":
                 moved += 1
+            elif outcome == "queued":
+                queued += 1
             else:
                 skipped += 1
 
-        self.stdout.write(f"{made} made, {moved} moved, {skipped} skipped")
+        self.stdout.write(
+            f"{made} made, {moved} moved, {queued} queued, {skipped} skipped")
 
     def _one(self, book, section, keys, synth, math, options):
         """Bring one section up to date. Returns made | moved | skipped."""
         voice, engine = options["voice"], options["engine"]
+        # What the row records: kokoro is fingerprinted (table + narration
+        # version) so the cheap exit notices a change in what would be SAID;
+        # Polly's is the bare engine, exactly as before.
+        eid = engine_id(engine)
 
         slice_key = printing.slice_key_for(book, section)
         if not slice_key:
@@ -262,7 +288,8 @@ class Command(BaseCommand):
         # a section whose text really did change finds no prior and is
         # synthesised; one whose text did not is re-boxed for nothing.
         exact = rows.filter(slice_key=slice_key).first()
-        if (exact is not None and exact.text_key and not options["force"]
+        if (exact is not None and exact.text_key and exact.engine == eid
+                and not options["force"]
                 and not options["realign"] and not options["respeak"]):
             self.stdout.write(f"have {section.key}")
             return "skipped"
@@ -280,9 +307,13 @@ class Command(BaseCommand):
             return "skipped"
 
         prep = prepare(html, pdf_path.read_bytes(), math=math)
-        text_key = text_key_for(prep.text, voice, engine)
+        # Kokoro's key covers the correction-table annotations that apply to
+        # THIS text, so a table edit re-keys only sections using the edited
+        # words. For Polly `spoken_form` returns the text itself.
+        text_key = text_key_for(spoken_form(prep.text, engine), voice, engine)
 
-        if exact is not None and not options["force"] \
+        if exact is not None and exact.text_key in ("", text_key) \
+                and not options["force"] \
                 and not options["realign"] and not options["respeak"]:
             # Nothing moved and nothing changed; the row simply never learned
             # its own text key. Stamp it so the NEXT reflow can reuse it.
@@ -290,10 +321,15 @@ class Command(BaseCommand):
             # Not under --respeak: there the text may well have changed, and
             # stamping the NEW key onto the OLD recording would label audio
             # nobody has made as audio already made.
+            #
+            # Also reached when only the engine id moved (a correction-table
+            # or narration change that does not touch this section's words):
+            # the recording is still right, so it is re-stamped, not re-voiced.
             if not options["dry_run"]:
                 exact.text_key = text_key
                 exact.token_count = len(prep.tokens)
-                exact.save(update_fields=["text_key", "token_count"])
+                exact.engine = eid
+                exact.save(update_fields=["text_key", "token_count", "engine"])
             self.stdout.write(f"have {section.key} (text key recorded)")
             return "skipped"
 
@@ -341,7 +377,17 @@ class Command(BaseCommand):
                     f"{section.key}: stored timings do not fit this script; "
                     "synthesising")
                 prior = None
-            track = synthesise(prep, synth)
+            if hasattr(synth, "context"):
+                synth.context = {"book": book.slug,
+                                 "chapter": section.chapter.slug,
+                                 "section": section.key}
+            try:
+                track = synthesise(prep, synth)
+            except NotVoicedYet:
+                # Queued for the laptop worker. No row: the reader keeps
+                # whatever this cut already serves until the audio is back.
+                self.stdout.write(f"queued {section.key}")
+                return "queued"
 
         if prior is not None:
             # The audio is byte-identical to what it was, so it keeps its file.
@@ -361,7 +407,7 @@ class Command(BaseCommand):
         ReadAlongTrack.objects.update_or_create(
             book_slug=book.slug, edition_id=book.edition_id or "",
             section_key=section.key, slice_key=slice_key, voice_id=voice,
-            defaults={"engine": engine, "audio_name": audio_name,
+            defaults={"engine": eid, "audio_name": audio_name,
                       "text_key": text_key,
                       "token_count": track["token_count"],
                       "duration_ms": duration,
@@ -374,6 +420,8 @@ class Command(BaseCommand):
                 f"moved {section.key}: {len(track['words'])} words re-boxed, "
                 "audio reused")
             return "moved"
+        if hasattr(synth, "finish"):
+            synth.finish(text_key)      # the queue hand-off is spent
         self.stdout.write(
             f"made {section.key}: {len(track['words'])} words, "
             f"{len(track['clozes'])} blanks")

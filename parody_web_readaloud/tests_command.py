@@ -405,3 +405,134 @@ class DraftChapterTests(TestCase):
         self.book.sections.all().update(draft=False)
         out, err = self._run(self.book.slug, skip_math=True)
         self.assertNotIn("no matching sections", out + err)
+
+
+class KokoroQueueTests(RepaginationTests):
+    """Engine kokoro: the box queues, the laptop voices, the box picks up."""
+
+    def _kokoro(self, **kwargs):
+        out, err = StringIO(), StringIO()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_READALOUD_CACHE=self.cache.name,
+                               PARODY_WEB_READALOUD_BUCKET=""):
+            call_command("generate_readalong", self.book.slug,
+                         key_artifact=str(self.key_artifact), skip_math=True,
+                         engine="kokoro", voice="am_puck",
+                         stdout=out, stderr=err, **kwargs)
+        return out.getvalue(), err.getvalue()
+
+    @property
+    def queue(self):
+        return Path(self.cache.name) / "queue"
+
+    def _todos(self):
+        return sorted(self.queue.glob("todo-*.json")) if self.queue.is_dir() \
+            else []
+
+    def _voice_the_queue(self):
+        """What kokoro_worker does, with FakePolly standing in for Kokoro."""
+        for todo in self._todos():
+            entry = json.loads(todo.read_text())
+            audio, marks = FakePolly()(entry["text"])
+            key = entry["text_key"]
+            (self.queue / f"done-{key}.mp3").write_bytes(audio)
+            (self.queue / f"done-{key}.marks.json").write_text(
+                json.dumps(marks))
+            todo.unlink()
+
+    def _puck(self):
+        return ReadAlongTrack.objects.filter(section_key="al",
+                                             voice_id="am_puck").first()
+
+    def test_first_run_queues_and_writes_no_row(self):
+        out, _ = self._kokoro()
+        self.assertIn("queued al", out)
+        self.assertIn("1 queued", out)
+        self.assertIsNone(self._puck())
+        self.assertEqual(len(self._todos()), 1)
+
+    def test_pickup_makes_track(self):
+        self._kokoro()
+        self._voice_the_queue()
+        out, _ = self._kokoro()
+        self.assertIn("made al", out)
+        row = self._puck()
+        self.assertRegex(row.engine, r"^kokoro@[0-9a-f]{12}$")
+        self.assertEqual(row.audio_name, f"{row.text_key}-am_puck.mp3")
+        self.assertTrue((Path(self.cache.name) / row.audio_name).exists())
+        self.assertEqual(list(self.queue.glob("done-*")), [])
+
+    def test_third_run_is_have(self):
+        self._kokoro()
+        self._voice_the_queue()
+        self._kokoro()
+        out, _ = self._kokoro()
+        self.assertIn("have al", out)
+        self.assertEqual(self._todos(), [])
+
+    def _with_table(self, extra):
+        from unittest import mock
+
+        from parody_web_readaloud import pronounce
+        table = dict(pronounce.load_table(), **extra)
+        return mock.patch.object(pronounce, "load_table", lambda: table)
+
+    def test_table_edit_absent_word_restamps(self):
+        self._kokoro()
+        self._voice_the_queue()
+        self._kokoro()
+        before = self._puck()
+        with self._with_table({"Bode": "bˈOdi"}):
+            out, _ = self._kokoro()
+        self.assertIn("(text key recorded)", out)
+        after = self._puck()
+        self.assertNotEqual(after.engine, before.engine)
+        self.assertEqual(after.text_key, before.text_key)
+        self.assertEqual(self._todos(), [])
+
+    def test_table_edit_present_word_requeues(self):
+        self._kokoro()
+        self._voice_the_queue()
+        self._kokoro()
+        before = self._puck()
+        with self._with_table({"pace.": "pˈAs"}):
+            out, _ = self._kokoro()
+        self.assertIn("queued al", out)
+        self.assertEqual(len(self._todos()), 1)
+        entry = json.loads(self._todos()[0].read_text())
+        self.assertNotEqual(entry["text_key"], before.text_key)
+        self.assertEqual(self._puck().engine, before.engine)
+
+    def test_pickup_ignores_done_pair_for_other_text(self):
+        self.queue.mkdir(parents=True, exist_ok=True)
+        other = "0" * 64
+        (self.queue / f"done-{other}.mp3").write_bytes(b"ID3-other")
+        (self.queue / f"done-{other}.marks.json").write_text("[]")
+        out, _ = self._kokoro()
+        self.assertIn("queued al", out)
+        self.assertIsNone(self._puck())
+        self.assertTrue((self.queue / f"done-{other}.mp3").exists())
+
+    def test_neural_keys_unchanged(self):
+        from parody_web_readaloud.generate import text_key_for
+        self._run()
+        row = self._track()
+        self.assertEqual(row.engine, "neural")
+        self.assertEqual(row.text_key,
+                         text_key_for(self.polly.calls[0], "Matthew", "neural"))
+
+    def test_voice_and_engine_default_to_settings(self):
+        out, err = StringIO(), StringIO()
+        with override_settings(PARODY_WEB_PRINT_ROOT=str(self.root),
+                               PARODY_WEB_READALOUD_CACHE=self.cache.name,
+                               PARODY_WEB_READALOUD_BUCKET="",
+                               PARODY_WEB_READALOUD_VOICE="am_puck",
+                               PARODY_WEB_READALOUD_ENGINE="kokoro"):
+            call_command("generate_readalong", self.book.slug,
+                         key_artifact=str(self.key_artifact), skip_math=True,
+                         stdout=out, stderr=err)
+        self.assertIn("queued al", out.getvalue())
+        entry = json.loads(self._todos()[0].read_text())
+        self.assertEqual(entry["voice"], "am_puck")
+        self.assertEqual((entry["book"], entry["chapter"], entry["section"]),
+                         (self.book.slug, "one", "al"))
