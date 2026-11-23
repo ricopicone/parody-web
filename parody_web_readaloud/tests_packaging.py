@@ -61,3 +61,14 @@ class PackagingTests(SimpleTestCase):
         head = bundled.read_text(errors="ignore")[:4000]
         self.assertNotIn("from \"mathjax-full", head)
         self.assertNotIn("from \"speech-rule-engine", head)
+
+
+class PronunciationPackagingTests(SimpleTestCase):
+    def test_pronunciations_are_shipped(self):
+        import json
+        patterns = _pyproject()["tool"]["setuptools"]["package-data"]
+        self.assertIn("pronunciations.json", patterns["parody_web_readaloud"])
+        table = json.loads((ROOT / "parody_web_readaloud"
+                            / "pronunciations.json").read_text())
+        self.assertIsInstance(table, dict)
+        self.assertTrue(table)

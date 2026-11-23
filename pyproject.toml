@@ -58,6 +58,8 @@ parody_web_annotate = ["templates/parody_web/*.html",
                        "static/parody_web_annotate/js/*.js",
                        "static/parody_web_annotate/css/*.css"]
 parody_web_readaloud = ["templates/parody_web/*.html",
+                        # Kokoro's correction table (pronounce.py).
+                        "pronunciations.json",
                         "static/parody_web_readaloud/js/*.js",
                         # The maths-speech helper, bundled with its deps: it
                         # runs on the host at generation time and cannot ask
