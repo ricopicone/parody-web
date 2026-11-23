@@ -109,11 +109,72 @@ def tidy_math_speech(said: str) -> str:
     return out.lstrip(". ").strip()
 
 
+# A unit SRE has recognised is named in full and plural ("divided by seconds");
+# after "per" it is singular. Only unit words: a variable after a slash is a
+# letter ("divided by m"), and those stay ratios.
+_UNIT_SINGULAR = {
+    "seconds": "second", "milliseconds": "millisecond", "minutes": "minute",
+    "hours": "hour", "meters": "meter", "millimeters": "millimeter",
+    "centimeters": "centimeter", "kilometers": "kilometer",
+    "radians": "radian", "rad": "rad", "degrees": "degree",
+    "revolutions": "revolution", "grams": "gram", "kilograms": "kilogram",
+    "amperes": "ampere", "volts": "volt", "Newtons": "Newton",
+    "newtons": "newton", "watts": "watt", "joules": "joule", "ohms": "ohm",
+}
+_PER_UNIT = re.compile(r"\bdivided by (%s)\b" % "|".join(_UNIT_SINGULAR))
+_LECTURER_WORDS = [
+    # ^\top and ^{\mathrm{T}}: speak.mjs makes every transpose a ⊤. When SRE
+    # takes the base for a function (R[\omega]R^{\mathrm{T}}) it reads the
+    # power before it: "the down tack-th power of R". The base is one word.
+    (re.compile(r"\bthe negative down tack-th power of (\w+)"),
+     r"\1 inverse transpose"),
+    (re.compile(r"\bthe down tack-th power of (\w+)"), r"\1 transpose"),
+    (re.compile(r"\braised to the negative down tack power\b"),
+     "inverse transpose"),
+    (re.compile(r"\braised to the down tack power\b"), "transpose"),
+    (re.compile(r"\bsuper down tack\b"), "transpose"),
+    (re.compile(r"\bpartial differential\b"), "partial"),
+    # SRE takes f, h and F_K for functions, and then a slash after one for
+    # its argument: f/C came out "f of slash C".
+    (re.compile(r"\bof slash\b"), "over"),
+    (re.compile(r"\bdivided by\b"), "over"),
+    # What is left is a slash written in text, \text{rad/s}: always a unit.
+    (re.compile(r"\bslash\b"), "per"),
+]
+
+
+def natural_math_words(said):
+    """SRE's words for a slash, a transpose and a partial, as said aloud.
+
+    Rico, task 981, after listening to Puck: "slash" for a ratio is awkward,
+    "over" is better — and between units it is "per", with the unit after it
+    singular ("0.5 rad per second"). A transpose was "R to the T power" or
+    "raised to the down tack power"; ∂ was "partial differential".
+
+    Words, not tree, because these are SRE's own phrases for a symbol and the
+    symbol is all that decides them. What depends on the expression around a
+    symbol — a derivative's missing "over", cross against by — is decided in
+    speak.mjs, where the expression is.
+    """
+    if not said:
+        return said
+    out = _PER_UNIT.sub(lambda m: "per " + _UNIT_SINGULAR[m.group(1)], said)
+    for pattern, word in _LECTURER_WORDS:
+        out = pattern.sub(word, out)
+    return out
+
+
 # Bumped whenever what `build_speech` says changes, so a fingerprinted engine
 # (Kokoro: see `pronounce.engine_id`) knows its recordings describe an older
 # script and re-voices the sections whose words moved. "2": simple subscripts
-# are read without "sub" (task 981).
-SPEECH_VERSION = "2"
+# are read without "sub" (task 981). "3": Rico's listening notes, task 981 —
+# no "bold"/"italic", × is "cross" (or "times" beside a number, "by" in a
+# dimension), a ratio is "over" and a derivative has no word between, a
+# multi-digit subscript is read digit by digit, an upright T is "transpose".
+# Most of that lives in speak.mjs, which the box runs from a hand-installed
+# copy: bumping this is what makes the queue re-voice, but the box only says
+# the new words once its speak.mjs is replaced.
+SPEECH_VERSION = "3"
 
 # A subscript on one of these is a LIMIT ("the sum from k equals 0"), which SRE
 # never reads as "sub" — so it is neither simple nor compound for the rule.
@@ -268,7 +329,8 @@ class SreMath:
         return _sre_script()
 
     def speak_all(self, items):
-        return [tidy_math_speech(said) for said in self._call(items)["texts"]]
+        return [natural_math_words(tidy_math_speech(said))
+                for said in self._call(items)["texts"]]
 
     def render_all(self, items):
         """SVG per expression, for the blanks that have to reveal one."""

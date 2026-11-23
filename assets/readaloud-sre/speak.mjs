@@ -233,12 +233,16 @@ function removeWrapped(node) {
 // Fonts that say nothing a listener can use. System Dynamics' \mathsf{v} and
 // \mathsf{f} came out "sans serif v sub ..." 463 times, and robotics' mass
 // \mathfrak{m} "German m sub ..." 344 times, which made the equations around
-// them hard to follow. Bold stays (a vector beside its scalar) and so does
-// script (\mathcal{V}, read "script V" in lectures too).
+// them hard to follow. Bold and italic went too (task 981, Rico: "the slight
+// ambiguity introduced is worth the natural reading") — "bold italic x of t"
+// 414 times, mostly System Dynamics' \bm{x}. Script stays (\mathcal{V} beside
+// V, read "script V" in lectures too), and so does double-struck (\mathbb{R}
+// is "the real numbers").
 const QUIET_FONTS = new Map([
   ['sans-serif', null], ['sans-serif-italic', null], ['fraktur', null],
-  ['bold-sans-serif', 'bold'], ['sans-serif-bold-italic', 'bold-italic'],
-  ['bold-fraktur', 'bold'],
+  ['bold', null], ['italic', null], ['bold-italic', null],
+  ['bold-sans-serif', null], ['sans-serif-bold-italic', null],
+  ['bold-fraktur', null], ['bold-script', 'script'],
 ]);
 
 function quietFont(node) {
@@ -249,11 +253,247 @@ function quietFont(node) {
   else unsetVariant(node);
 }
 
+// ---------------------------------------------------------------------------
+// Read as a lecturer reads it: Rico's listening notes on Puck (task 981).
+// Each rewrite is decided by the expression around a symbol, which is why it
+// is here and not in speech.py (which renames SRE's words for a symbol alone).
+// ---------------------------------------------------------------------------
+
+const INVISIBLE_TIMES = '⁢';
+
+// The nearest non-space neighbour of `node` in its row, one way or the other:
+// the row's children, the neighbour's index in them, and its token.
+function neighbour(node, step) {
+  const at = outer(node);
+  const row = parentOf(at);
+  if (!row || !isRow(row)) return null;
+  const siblings = row.childNodes;
+  for (let i = siblings.indexOf(at) + step; i >= 0 && i < siblings.length; i += step) {
+    if (!isSpace(siblings[i])) return { row: siblings, index: i, token: lone(siblings[i]) };
+  }
+  return null;
+}
+
+// d or ∂, or a power of one (d^2 x): where a differential starts.
+function isDifferential(node) {
+  let token = lone(node);
+  if (token && token.isKind('msup')) token = lone(token.childNodes[0]);
+  return !!token && token.isToken && token.isKind('mi')
+    && /^[d∂]$/u.test(token.getText());
+}
+
+// The parts of a fraction's numerator or denominator, spaces aside.
+function members(node) {
+  let at = node;
+  while (at && !at.isToken && isRow(at) && at.childNodes.length === 1) at = at.childNodes[0];
+  if (!at) return [];
+  if (at.isToken || !isRow(at)) return [at];
+  return at.childNodes.filter((child) => !isSpace(child));
+}
+
+// d h over d t, ∂f/∂x, d over dt: differentials over differentials. A
+// lecturer says "d h d t" — no word between — and "slash" (SRE's word for an
+// inline one after a letter it takes for a function) was the worst of all.
+function isDerivative(numerator, denominator) {
+  const top = members(numerator);
+  const bottom = members(denominator);
+  return top.length >= 1 && top.length <= 2 && isDifferential(top[0])
+    && (top.length === 1 || !isDifferential(top[1]))
+    && bottom.length >= 2 && bottom.length % 2 === 0
+    && bottom.every((part, i) => (i % 2 === 0) === isDifferential(part));
+}
+
+// A thin space (\, \: \;) is SRE's cue for an explicit product — but not once
+// a fraction has become a row: SRE folds the row into one implied product and
+// the "times" goes ("d theta d s s dot" for \frac{d\theta}{ds}\,\dot{s}). So
+// a thin space beside a rewritten derivative becomes the times it was read as.
+function isThinSpace(node) {
+  if (!isSpace(node)) return false;
+  const token = lone(node);
+  if (!token.isKind('mspace')) return false;
+  const width = /^([\d.]+)em$/.exec(String(token.attributes.get('width') || ''));
+  return !width || parseFloat(width[1]) < 0.5;
+}
+
+function timesBeside(row, at, factory) {
+  const index = row.childNodes.indexOf(at);
+  for (const i of [index - 1, index + 1]) {
+    if (i < 0 || i >= row.childNodes.length || !isThinSpace(row.childNodes[i])) continue;
+    const times = factory.create('mo');
+    times.appendChild(factory.create('text').setText('⋅'));
+    row.replaceChild(times, row.childNodes[i]);
+  }
+}
+
+// \frac{dh}{dt} becomes "d h", an invisible times, "d t". The invisible times
+// keeps SRE from reading "d f d t" as f applied to "d t" ("d f of d t").
+function speakDerivativeFractions(root) {
+  const fractions = [];
+  root.walkTree((node) => { if (node.isKind('mfrac')) fractions.push(node); });
+  for (const fraction of fractions) {
+    const [numerator, denominator] = fraction.childNodes;
+    if (!isDerivative(numerator, denominator)) continue;
+    const up = parentOf(fraction) || fraction.parent;
+    if (!up) continue;
+    const { factory } = fraction;
+    const times = factory.create('mo');
+    times.appendChild(factory.create('text').setText(INVISIBLE_TIMES));
+    const read = factory.create('mrow', {}, [numerator, times, denominator]);
+    up.replaceChild(read, fraction);
+    if (isRow(up)) timesBeside(up, read, factory);
+  }
+}
+
+// The same written inline, d\theta/dt or d/dt: only the slash goes.
+function speakDerivativeSlashes(tokens) {
+  for (const node of tokens) {
+    if (!node.isKind('mo') || node.getText() !== '/') continue;
+    const before = neighbour(node, -1);
+    const after = neighbour(node, +1);
+    if (!before || !after) continue;
+    // d/dt: a lone differential on top; dh/dt: a differential, then one thing.
+    const first = neighbour(before.row[before.index], -1);
+    const numerator = isDifferential(before.token)
+      || (!!first && isDifferential(first.token));
+    const second = neighbour(after.row[after.index], +1);
+    const denominator = isDifferential(after.token)
+      && !!second && !isDifferential(second.token);
+    if (numerator && denominator) setText(node, INVISIBLE_TIMES);
+  }
+}
+
+// × is "cross" unless the expression says otherwise (Rico: "almost always the
+// explicit times symbol is cross product"). The engine reads it "cross"
+// (MultsymbolX_Cross); this decides the exceptions, measured over every ×
+// the voiced books speak:
+//   by     a dimension:  3 × 3, m × n, \mathbb{R}^{6 × n}, I_{n × n},
+//                        n × n\ \text{matrix}
+//   times  beside a number: 3.3 × 10^{-5}, 0.30 × 4, (0, 0.9, 0) × 0.5, (-2) × 10
+//   cross  the rest:     ω × v, r × f, (0, 0, 1) × (1, -2, 0), \mathbb{R}^2 × S^1
+const isInteger = (n) => !!n && n.isKind('mn') && /^\d+$/.test(n.getText());
+const isDimensionLetter = (n) => !!n && n.isKind('mi') && /^[mnkr]$/.test(n.getText())
+  && n.attributes.getExplicit('mathvariant') === undefined;
+const isDimension = (n) => isInteger(n) || isDimensionLetter(n);
+
+function inScript(node) {
+  for (let at = node, up = parentOf(node); up && !up.isKind('math'); at = up, up = parentOf(up)) {
+    if (SCRIPTS.has(up.kind) && up.childNodes[0] !== at) return true;
+  }
+  return false;
+}
+
+// The whole expression is "a × b".
+function standsAlone(node) {
+  const row = parentOf(outer(node));
+  if (!row) return false;
+  const top = row.isKind('math') || (parentOf(row) && parentOf(row).isKind('math'));
+  return !!top && row.childNodes.filter((child) => !isSpace(child)).length === 3;
+}
+
+// "n × n matrix": the product is followed by the word.
+function namesAMatrix(side) {
+  const next = neighbour(side.row[side.index], +1);
+  return !!next && next.token.isKind('mtext') && /^\s*(matri|array)/i.test(next.token.getText());
+}
+
+// A number, a power of one (10^{-6}), or a bracketed number such as (-2) —
+// but not a tuple: (0, 0, 1) × (1, -2, 0) is a cross product.
+function isNumeric(side, step) {
+  if (!side) return false;
+  const { token } = side;
+  if (token.isKind('mn')) return true;
+  if (token.isKind('msup') || token.isKind('msub')) {
+    const base = lone(token.childNodes[0]);
+    return !!base && base.isKind('mn');
+  }
+  const closing = step < 0 ? /^[)\]]$/ : /^[(\[]$/;
+  const opening = step < 0 ? /^[(\[]$/ : /^[)\]]$/;
+  if (!token.isKind('mo') || !closing.test(token.getText())) return false;
+  let depth = 0;
+  let digits = 0;
+  for (let i = side.index; i >= 0 && i < side.row.length; i += step) {
+    const part = lone(side.row[i]);
+    if (!part || !part.isToken) return false;
+    const text = part.getText();
+    if (part.isKind('mo') && closing.test(text)) depth++;
+    else if (part.isKind('mo') && opening.test(text)) { if (--depth === 0) return digits > 0; }
+    else if (part.isKind('mn')) digits++;
+    else if (text === ',' || !(part.isKind('mo') || isSpace(part))) return false;
+  }
+  return false;
+}
+
+function speakTimes(tokens) {
+  for (const node of tokens) {
+    if (!node.isKind('mo') || node.getText() !== '×') continue;
+    const left = neighbour(node, -1);
+    const right = neighbour(node, +1);
+    const l = left && left.token;
+    const r = right && right.token;
+    if (isDimension(l) && isDimension(r)
+        && (inScript(node) || standsAlone(node) || namesAMatrix(right)
+            || (isDimensionLetter(l) && isDimensionLetter(r)))) {
+      setText(node, 'by');
+    } else if (isNumeric(left, -1) || isNumeric(right, +1)) {
+      setText(node, '⋅');                      // read "times"
+    }
+  }
+}
+
+// R^{\mathrm{T}}, q^{\mathsf{T}}, x^\top: a transpose. SRE read them "R to
+// the T power" (252 times in robotics) and "raised to the down tack power"
+// (System Dynamics' \top); each becomes a ⊤ here, and speech.py says
+// "transpose". An italic T stays a power: \int_0^T. J^{-\mathrm{T}} is
+// "J inverse transpose".
+function isTransposeMark(token) {
+  if (!token || !token.isToken) return false;
+  const text = token.getText();
+  const variant = token.attributes.getExplicit('mathvariant');
+  return text === '⊤' || text === '⊺'
+    || (text === 'T' && (variant === 'normal' || variant === 'sans-serif'));
+}
+
+function markTransposes(root) {
+  root.walkTree((node) => {
+    if (!node.isKind('msup') && !node.isKind('msubsup')) return;
+    let mark = lone(node.childNodes[node.sup]);
+    if (mark && !mark.isToken && isRow(mark)) {             // ^{-\mathrm{T}}
+      const parts = members(mark);
+      const minus = parts.length === 2 && lone(parts[0]);
+      mark = minus && minus.isKind('mo') && /^[-−]$/.test(minus.getText())
+        ? lone(parts[1]) : null;
+    }
+    if (!isTransposeMark(mark)) return;
+    setText(mark, '⊤');
+    unsetVariant(mark);
+  });
+}
+
+// c_{11} is "c one one", the way a matrix entry is read, not "c eleven".
+function spellSubscriptDigits(root) {
+  root.walkTree((node) => {
+    if (!node.isKind('msub') && !node.isKind('msubsup')) return;
+    const base = lone(node.childNodes[0]);
+    if (base && base.isKind('mo')) return;          // \sum_{10}: a limit
+    const sub = lone(node.childNodes[node.sub]);
+    if (sub && sub.isToken && sub.isKind('mn') && /^\d{2,}$/.test(sub.getText())) {
+      setText(sub, [...sub.getText()].join(' '));
+    }
+  });
+}
+
 function forSpeech(root) {
   PARENTS = new Map();
   indexParents(root);
+  speakDerivativeFractions(root);
+  PARENTS = new Map();                               // the tree changed
+  indexParents(root);
+  markTransposes(root);
+  spellSubscriptDigits(root);
   const tokens = [];
   root.walkTree((node) => { if (node.isToken) tokens.push(node); });
+  speakDerivativeSlashes(tokens);
+  speakTimes(tokens);
   for (const node of tokens) {
     quietFont(node);
     if (node.isKind('mo') && node.getText() === '∘') {
@@ -325,7 +565,10 @@ async function main() {
   const visitor = new SerializedMmlVisitor();
   // TriangleSymbol_Delta: clearspeak's default reads Δ as "triangle", so
   // Δt came out "triangle t". With this preference it is "Delta t".
-  await SRE.setupEngine({ domain: 'clearspeak', style: 'TriangleSymbol_Delta',
+  // MultsymbolX_Cross: × is "cross" — speakTimes() turns the ones that are
+  // not into a "times" or a "by" first.
+  await SRE.setupEngine({ domain: 'clearspeak',
+                          style: 'TriangleSymbol_Delta:MultsymbolX_Cross',
                           locale: 'en' });
 
   const texts = items.map(({ latex, display }) => {

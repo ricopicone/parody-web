@@ -161,7 +161,8 @@ class SreMathTests(SimpleTestCase):
         so this failed with no error anywhere — only by listening.
         """
         said = SreMath().speak_all([("\\bm{x} = \\abs{y}", False)])
-        self.assertEqual(said[0], "bold italic x equals the absolute value of y")
+        # Not "bold italic x" either, since task 981: fonts are not announced.
+        self.assertEqual(said[0], "x equals the absolute value of y")
 
     @unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
                          "needs node and the SRE script")
@@ -223,32 +224,32 @@ class UprightLettersTests(SimpleTestCase):
     def test_an_upright_letter_that_is_not_after_a_number_is_a_letter(self):
         # Was "R to the tons power" (795 times in robotics) and "watts hat".
         self.assertEqual(self.say("R_2^{\\mathrm{T}}", "\\hat{\\mathrm{w}}"),
-                         ["R sub 2 to the T power", "w hat"])
+                         ["R sub 2 transpose", "w hat"])
 
     def test_compound_units_stay_units(self):
         self.assertEqual(
             self.say("9.81\\ \\mathrm{m/s^2}", "0.05\\ \\mathrm{N\\,m/A}",
                      "90^\\circ/\\mathrm{s}", "r = (1, 0, 1)\\ \\mathrm{m}"),
-            ["9.81 meters divided by seconds squared",
-             "0.05 Newtons meters divided by amperes",
-             "90 degrees divided by seconds",
+            ["9.81 meters per second squared",
+             "0.05 Newtons meters per ampere",
+             "90 degrees per second",
              "r equals open paren 1 comma 0 comma 1 close paren times meters"])
 
     def test_a_tex_space_is_not_read_as_empty_but_a_thin_space_keeps_its_times(self):
         # Was "1 empty milliseconds". The thin space is SRE's cue for a
         # product, so dropping it too would lose "times".
         self.assertEqual(self.say("1\\ \\mathrm{ms}", "C\\, dv/dt"),
-                         ["1 millisecond", "C times d v divided by d t"])
+                         ["1 millisecond", "C times d v d t"])
 
     def test_sans_serif_and_fraktur_are_not_announced(self):
         # Was "sans serif v sub 1" (463 times in System Dynamics) and
-        # "German m sub 2" (robotics' mass). Script and bold still are: they
-        # tell apart symbols that sit side by side.
+        # "German m sub 2" (robotics' mass). Script still is: \mathcal{V}
+        # beside V. Bold is not, since task 981 (see LecturerReadingTests).
         self.assertEqual(
             self.say("\\mathsf{v}_1 = \\mathsf{f}(t)", "\\mathfrak{m}_2",
                      "\\mathcal{V}_s", "\\bm{x}"),
             ["v sub 1 equals f of t", "m sub 2", "script V sub s",
-             "bold italic x"])
+             "x"])
 
     def test_a_degree_is_a_degree(self):
         # Was "360 raised to the composed with power".
@@ -410,3 +411,168 @@ class TerseSubscriptRobustnessTests(SimpleTestCase):
             text, _ = build_speech(tokens,
                                    math=_SubMath({"v_1": "v sub 1"}))
         self.assertEqual(text, "v sub 1")
+
+
+class NaturalMathWordsTests(SimpleTestCase):
+    """SRE's words for a slash, a transpose and a partial, as said aloud.
+
+    Rico, task 981, after listening: "slash" for a ratio is awkward, "over"
+    is better. Between units it is "per", and the unit after it is singular.
+    """
+
+    def say(self, said):
+        from parody_web_readaloud.speech import natural_math_words
+        return natural_math_words(said)
+
+    def test_a_ratio_is_over(self):
+        self.assertEqual(self.say("C equals 1 divided by K"), "C equals 1 over K")
+        self.assertEqual(self.say("q squared divided by 2 C"),
+                         "q squared over 2 C")
+
+    def test_the_function_misparse_of_a_slash_is_over_too(self):
+        # SRE takes f, h and F_K for functions, so f/C came out "f of slash C".
+        self.assertEqual(self.say("f of slash C"), "f over C")
+        self.assertEqual(self.say("F sub K of slash K"), "F sub K over K")
+
+    def test_a_slash_between_units_is_per_and_the_unit_singular(self):
+        self.assertEqual(self.say("0.5 rad divided by seconds"),
+                         "0.5 rad per second")
+        self.assertEqual(self.say("10 meters divided by seconds squared"),
+                         "10 meters per second squared")
+        self.assertEqual(self.say("0.4 meters divided by rad"),
+                         "0.4 meters per rad")
+        # A unit written as text (\text{krad/s}) is read character by character.
+        self.assertEqual(self.say("62.8 krad slash s period"),
+                         "62.8 krad per s period")
+
+    def test_a_transpose_is_a_transpose(self):
+        self.assertEqual(self.say("R raised to the down tack power R equals I"),
+                         "R transpose R equals I")
+        # SRE's reading when it takes R for a function, R[\omega]R^{\mathrm{T}}:
+        # it was "the T power of R" before, also wrong.
+        self.assertEqual(
+            self.say("R of omega the down tack-th power of R equals R."),
+            "R of omega R transpose equals R.")
+        self.assertEqual(self.say("open bracket Ad sub T close bracket super down tack"),
+                         "open bracket Ad sub T close bracket transpose")
+        self.assertEqual(self.say("J raised to the negative down tack power"),
+                         "J inverse transpose")
+        self.assertEqual(
+            self.say("f equals the negative down tack-th power of J of theta"),
+            "f equals J inverse transpose of theta")
+
+    def test_a_partial_is_a_partial(self):
+        self.assertEqual(
+            self.say("partial differential f partial differential x"),
+            "partial f partial x")
+
+    def test_nothing_else_changes(self):
+        for said in ("x squared", "v over i", "a cross b", "", None):
+            with self.subTest(said=said):
+                self.assertEqual(self.say(said), said)
+
+
+@unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
+                     "needs node and the SRE script")
+class LecturerReadingTests(SimpleTestCase):
+    """Rico's listening notes on Puck, task 981 (2026-11-23).
+
+    Each phrase it replaces is what the engine said before, measured over
+    every expression the three voiced books speak (5,530 distinct).
+    """
+
+    def say(self, *latex):
+        return SreMath().speak_all([(each, False) for each in latex])
+
+    def test_bold_and_italic_are_not_announced(self):
+        # Was "bold italic x of t" (414 times, mostly System Dynamics).
+        self.assertEqual(
+            self.say("\\bm{x}(t)", "\\mathbf{T}_{sb}", "\\mathit{x}",
+                     "\\boldsymbol{\\tau}"),
+            ["x of t", "T sub s b", "x", "tau"])
+
+    def test_script_and_blackboard_still_are(self):
+        self.assertEqual(self.say("\\mathcal{V}_s", "\\mathbb{R}"),
+                         ["script V sub s", "the real numbers"])
+
+    def test_times_is_cross_by_default(self):
+        self.assertEqual(
+            self.say("\\omega \\times v", "\\bm{a} \\times \\bm{b}",
+                     "f_a \\times f_a = 0", "r \\times f"),
+            ["omega cross v", "a cross b", "f sub a cross f sub a equals 0",
+             "r cross f"])
+
+    def test_times_beside_a_number_is_times(self):
+        self.assertEqual(
+            self.say("3.3\\times 10^{-5}", "0.30 \\times 4",
+                     "(0, 0.9, 0) \\times 0.5"),
+            ["3.3 times 10 to the negative 5 power", "0.30 times 4",
+             "open paren 0 comma 0.9 comma 0 close paren times 0.5"])
+
+    def test_two_tuples_are_a_cross_product(self):
+        self.assertEqual(
+            self.say("(0, 0, 1) \\times (1, -2, 0)"),
+            ["open paren 0 comma 0 comma 1 close paren cross open paren 1 "
+             "comma negative 2 comma 0 close paren"])
+
+    def test_a_dimension_is_by(self):
+        self.assertEqual(
+            self.say("3 \\times 3", "6 \\times n", "m \\times n",
+                     "I_{n \\times n}"),
+            ["3 by 3", "6 by n", "m by n", "I sub n by n"])
+        self.assertIn("by n", self.say("J \\in \\mathbb{R}^{6 \\times n}")[0])
+
+    def test_arithmetic_between_integers_is_times(self):
+        self.assertEqual(self.say("(1 \\times 29 + 2 \\times 10)"),
+                         ["open paren 1 times 29 plus 2 times 10 close paren"])
+
+    def test_a_derivative_is_read_without_a_word_between(self):
+        # Was "d h of slash d t" and "d theta divided by d t".
+        self.assertEqual(
+            self.say("dh/dt", "d\\theta/dt", "dv_C/dt", "\\frac{dh}{dt}",
+                     "\\frac{d^2 x}{dt^2}", "\\frac{d}{dt}",
+                     "d\\mathsf{f}/dt = \\mathsf{v}/\\mathsf{L}"),
+            ["d h d t", "d theta d t", "d v sub C d t", "d h d t",
+             "d squared x d t squared", "d d t",
+             "d f d t equals v over L"])
+
+    def test_a_thin_space_beside_a_derivative_is_still_times(self):
+        # Robotics' chain rule. Without it: "d theta d s s dot above".
+        self.assertEqual(
+            self.say("\\frac{d\\theta}{ds}\\,\\dot{s}",
+                     "m\\, \\frac{d^2}{dt^2} x"),
+            ["d theta d s times s dot above", "m times d squared d t squared x"])
+
+    def test_a_partial_derivative_too(self):
+        # Was "the fraction with numerator partial differential f and ...".
+        self.assertEqual(
+            self.say("\\frac{\\partial f}{\\partial x}",
+                     "\\partial f/\\partial x"),
+            ["partial f partial x", "partial f partial x"])
+
+    def test_any_other_ratio_is_over(self):
+        self.assertEqual(
+            self.say("\\mathsf{f}/\\mathsf{C}", "V/R", "F_K/K"),
+            ["f over C", "V over R", "F sub K over K"])
+
+    def test_multi_digit_subscripts_are_read_digit_by_digit(self):
+        # c_{11} is "c one one", not "c eleven".
+        self.assertEqual(
+            self.say("c_{11}", "a_{12} x_2", "T_{01}", "x^{12}"),
+            ["c sub 1 1", "a sub 1 2 x sub 2", "T sub 0 1",
+             "x to the 12th power"])
+
+    def test_an_upright_t_superscript_is_a_transpose(self):
+        # Was "R to the T power" (252 in robotics), "raised to the down tack
+        # power" (System Dynamics' \top). An italic T stays a power.
+        self.assertEqual(
+            self.say("R^{\\mathrm{T}} R = I", "x^\\top", "q^{\\mathsf{T}}",
+                     "x^T"),
+            ["R transpose R equals I", "x transpose", "q transpose",
+             "x to the T power"])
+        self.assertEqual(self.say("J^{-\\mathrm{T}}"), ["J inverse transpose"])
+
+    def test_build_speech_reads_a_matrix_entry_lecturer_style(self):
+        tokens = [Token("math", latex="c_{11}")]
+        text, _ = build_speech(tokens, math=SreMath())
+        self.assertEqual(text, "c 1 1")
