@@ -245,3 +245,55 @@ class S3AudioViewTests(ReadAlongEndpointTests):
                                PARODY_WEB_READALOUD_BUCKET="bkt"):
             response = self.client.get(self.audio_url)
         self.assertEqual(response.status_code, 302)
+
+
+class VoiceFallbackTests(ReadAlongEndpointTests):
+    """The configured voice, and Matthew until its track exists (task 981)."""
+
+    def _puck(self, **extra):
+        return self._settings(PARODY_WEB_READALOUD_VOICE="am_puck", **extra)
+
+    def test_falls_back_to_other_voice(self):
+        self._make_track(audio_name="matthew.mp3")
+        with self._puck():
+            body = self.client.get(self.url).json()
+        self.assertEqual(body["voice_id"], "Matthew")
+        self.assertTrue(body["audio_url"].endswith("?voice=Matthew"))
+
+    def test_prefers_configured_voice(self):
+        self._make_track(audio_name="matthew.mp3")
+        self._make_track(voice_id="am_puck", engine="kokoro@abcdef012345",
+                         audio_name="puck.mp3")
+        with self._puck():
+            body = self.client.get(self.url).json()
+        self.assertEqual(body["voice_id"], "am_puck")
+
+    def test_explicit_voice_is_exact(self):
+        self._make_track(audio_name="matthew.mp3")
+        with self._puck():
+            response = self.client.get(self.url + "?voice=am_puck")
+        self.assertEqual(response.status_code, 404)
+
+    def test_audio_follows_fallback_voice(self):
+        self._make_track(audio_name="matthew.mp3")
+        Path(self.cache.name, "matthew.mp3").write_bytes(b"ID3-matthew")
+        with self._puck():
+            body = self.client.get(self.url).json()
+            response = self.client.get(body["audio_url"])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), b"ID3-matthew")
+
+    def test_fallback_ignores_other_slices(self):
+        self._make_track(audio_name="matthew.mp3", slice_key="f" * 64)
+        with self._puck():
+            response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_default_voice_is_matthew_when_unset(self):
+        from parody_web_readaloud.views import DEFAULT_VOICE, default_voice
+        self.assertEqual(DEFAULT_VOICE, "Matthew")
+        with override_settings():
+            from django.conf import settings
+            if hasattr(settings, "PARODY_WEB_READALOUD_VOICE"):
+                del settings.PARODY_WEB_READALOUD_VOICE
+            self.assertEqual(default_voice(), "Matthew")

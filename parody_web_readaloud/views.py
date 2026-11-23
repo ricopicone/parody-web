@@ -28,6 +28,12 @@ from .models import ReadAlongTrack
 DEFAULT_VOICE = "Matthew"
 
 
+def default_voice() -> str:
+    """The voice a reader hears unless they ask: PARODY_WEB_READALOUD_VOICE."""
+    from django.conf import settings
+    return getattr(settings, "PARODY_WEB_READALOUD_VOICE", "") or DEFAULT_VOICE
+
+
 def _section_or_404(request, chapter_slug, section_slug):
     book, _ = _resolve_book(request)
     section = get_object_or_404(
@@ -39,12 +45,21 @@ def _section_or_404(request, chapter_slug, section_slug):
 
 def _track_or_404(request, chapter_slug, section_slug):
     book, section = _section_or_404(request, chapter_slug, section_slug)
-    voice = request.GET.get("voice") or DEFAULT_VOICE
-    track = ReadAlongTrack.objects.filter(
+    rows = ReadAlongTrack.objects.filter(
         book_slug=book.slug, edition_id=book.edition_id or "",
         section_key=section.key,
-        slice_key=printing.slice_key_for(book, section),
-        voice_id=voice).first()
+        slice_key=printing.slice_key_for(book, section))
+    asked = request.GET.get("voice")
+    if asked:
+        # The track JSON names its own voice in `audio_url`, so the audio
+        # endpoint must serve exactly that row — the fallback's too.
+        track = rows.filter(voice_id=asked).first()
+    else:
+        # The configured voice, and while it is still being voiced, whatever
+        # voice this exact cut of the section already has: a reader keeps the
+        # old audio through a change of voice instead of losing it (task 981).
+        track = (rows.filter(voice_id=default_voice()).first()
+                 or rows.order_by("-updated_at").first())
     if track is None:
         raise Http404("no read-along for this section")
     return book, section, track
