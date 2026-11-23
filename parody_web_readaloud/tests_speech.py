@@ -165,6 +165,17 @@ class SreMathTests(SimpleTestCase):
 
     @unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
                          "needs node and the SRE script")
+    def test_a_revealed_bold_vector_is_drawn_not_spelled(self):
+        # The same gap, seen: a blank's reveal is an SVG drawn by the same
+        # MathJax, and an unknown macro draws as its own name in red — an
+        # `mtext` node. A reader saw "\bm" under a revealed blank.
+        svg = SreMath().render_all([("\\bm{x}", False)])[0]
+        self.assertIsNotNone(svg)
+        self.assertNotIn('data-mml-node="mtext"', svg)
+        self.assertNotIn('fill="red"', svg)
+
+    @unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
+                         "needs node and the SRE script")
     def test_no_macro_the_page_knows_is_spoken_as_its_name(self):
         # Every macro, with letters for its arguments. "backslash" in the
         # speech means MathJax did not know the macro; nothing said at all
