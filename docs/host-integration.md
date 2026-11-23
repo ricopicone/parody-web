@@ -763,7 +763,7 @@ surface in front of a student.)
 
 ```
 python manage.py generate_readalong <book_slug> [--section KEY] [--voice Matthew]
-                                    [--engine neural|standard] [--skip-math]
+                                    [--engine neural|standard|kokoro] [--skip-math]
                                     [--force] [--realign] [--respeak]
                                     [--dry-run]
 ```
@@ -772,6 +772,48 @@ python manage.py generate_readalong <book_slug> [--section KEY] [--voice Matthew
 character count or merely re-aligned, without calling Polly. Run it before
 committing to a voice: cost scales with characters × voices × re-synthesis, and
 not at all with listeners.
+
+### Voicing with Kokoro on a laptop (`--engine kokoro`)
+
+Polly bills the word timings as well as the audio, so read-along pays twice per
+character. Kokoro-82M (open weights) is free and its word timings are exact by
+construction, but it needs torch and a GPU-class CPU, which a small web host
+does not have. So with `--engine kokoro` the host never voices anything:
+
+1. `generate_readalong` (the deploy's heal, typically) finds a section with no
+   audio for its words and writes the exact script to a queue —
+   `todo-<text_key>.json` under `readalong-queue/` in the same bucket (or
+   `<PARODY_WEB_READALOUD_CACHE>/queue/` on disk) — reporting `queued`. No row
+   is written, so readers keep what this cut already serves.
+2. On a machine with cheap compute, `parody-voice-queue` voices the queue and
+   leaves `done-<text_key>.mp3` and `done-<text_key>.marks.json` beside it:
+
+   ```
+   uv run --python 3.12 --with 'parody-web[kokoro]' parody-voice-queue --bucket <bucket> [--book SLUG] [--chapter SLUG ...] [--limit N] [--dry-run]
+   ```
+
+   Kokoro needs Python <= 3.12. On macOS it also needs `brew install
+   espeak-ng`: the espeak-ng bundled in `espeakng-loader` ignores its data path
+   and kills the process. The model (`hexgrad/Kokoro-82M`) downloads on first
+   use. The last line printed is a JSON summary, including the books voiced.
+3. The next `generate_readalong` for that book finds the pair, makes the track
+   (`made`), stores the audio as usual, and clears the hand-off.
+
+The worker says exactly what the host queued and times exactly the host's
+words, so a laptop on a different parody-web or SRE cannot produce audio for
+the wrong text.
+
+Settings: `PARODY_WEB_READALOUD_VOICE` (e.g. `"am_puck"`) and
+`PARODY_WEB_READALOUD_ENGINE` (`"kokoro"`) are the command's defaults and the
+voice readers hear. While a voice change is in progress, a section whose new
+voice has no track yet at its current cut serves its newest track in any voice.
+
+**The correction table.** `parody_web_readaloud/pronunciations.json` maps a word
+to misaki phonemes (Laplace, Kirchhoff, e.g., units such as mA or Hz); a host
+adds or overrides entries with `PARODY_WEB_READALOUD_PRONUNCIATIONS`. Kokoro
+only. The row records a fingerprint of the table and the narration version
+(`engine` = `kokoro@<12 hex>`), so after a table edit the next run re-voices the
+sections containing the changed words and merely re-stamps the rest.
 
 ### Re-running it after an edit
 
