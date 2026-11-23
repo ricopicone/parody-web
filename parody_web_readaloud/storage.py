@@ -26,6 +26,9 @@ from django.conf import settings
 AUDIO_CONTENT_TYPE = "audio/mpeg"
 
 DEFAULT_PREFIX = "readalong/"
+# Kokoro's hand-off with the laptop worker (queued.py, kokoro_worker.py).
+# Its own prefix, so `prune_readalong_audio` never sees a queue object.
+QUEUE_PREFIX = "readalong-queue/"
 DEFAULT_REGION = "us-west-2"
 DEFAULT_EXPIRE = 3600
 
@@ -58,14 +61,14 @@ def cache_root() -> Path:
     return Path(value)
 
 
-def audio_path(name: str) -> Path:
-    """Resolve a track's audio file inside the cache.
+def audio_path(name: str, root: Path | None = None) -> Path:
+    """Resolve a track's audio file inside the cache (or another `root`).
 
     Belt and braces behind `safe_name`: a symlink in the cache could still
     resolve outside it.
     """
     safe_name(name)
-    root = cache_root().resolve()
+    root = (cache_root() if root is None else Path(root)).resolve()
     path = (root / name).resolve()
     if path != root and root not in path.parents:
         raise ValueError(f"audio name escapes the cache root: {name!r}")
@@ -73,25 +76,32 @@ def audio_path(name: str) -> Path:
 
 
 class DiskAudio:
-    """Audio as files under PARODY_WEB_READALOUD_CACHE."""
+    """Audio as files under PARODY_WEB_READALOUD_CACHE (or another root)."""
+
+    def __init__(self, root: Path | None = None):
+        self.root = root
 
     def path(self, name: str) -> Path:
-        return audio_path(name)
+        return audio_path(name, self.root)
 
-    def write(self, name: str, data: bytes) -> None:
-        path = audio_path(name)
+    def write(self, name: str, data: bytes,
+              content_type: str = AUDIO_CONTENT_TYPE) -> None:
+        path = self.path(name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
+    def read(self, name: str) -> bytes:
+        return self.path(name).read_bytes()
+
     def exists(self, name: str) -> bool:
-        return audio_path(name).exists()
+        return self.path(name).exists()
 
     def url(self, name: str):
         """No URL of its own: the caller serves the bytes itself."""
         return None
 
     def delete(self, name: str) -> None:
-        audio_path(name).unlink(missing_ok=True)
+        self.path(name).unlink(missing_ok=True)
 
     def entries(self):
         """Every audio file in the root: (name, bytes, last modified).
@@ -100,7 +110,7 @@ class DiskAudio:
         what the database believes is there — the difference between those two
         is the whole point of pruning.
         """
-        root = cache_root()
+        root = cache_root() if self.root is None else Path(self.root)
         if not root.is_dir():
             return
         for path in sorted(root.iterdir()):
@@ -168,12 +178,13 @@ class S3Audio:
         """No local path: there is no file to stream."""
         return None
 
-    def write(self, name: str, data: bytes) -> None:
+    def write(self, name: str, data: bytes,
+              content_type: str = AUDIO_CONTENT_TYPE) -> None:
         # ContentType at PUT time rather than as a presign override: the object
         # then serves correctly however it is reached, including by anything
         # that is not this view.
         params = {"Bucket": self.bucket, "Key": self.key(name), "Body": data,
-                  "ContentType": AUDIO_CONTENT_TYPE}
+                  "ContentType": content_type}
         if self.sse:
             params["ServerSideEncryption"] = self.sse
         self.client.put_object(**params)
@@ -192,6 +203,10 @@ class S3Audio:
             # that looks exactly like an ungenerated track.
             raise
         return True
+
+    def read(self, name: str) -> bytes:
+        return self.client.get_object(
+            Bucket=self.bucket, Key=self.key(name))["Body"].read()
 
     def delete(self, name: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=self.key(name))
@@ -250,6 +265,16 @@ def backend():
              if getattr(settings, "PARODY_WEB_READALOUD_SSE", None) is not None
              else getattr(settings, "AWS_S3_SSE", "")) or "",
     )
+
+
+def queue_backend():
+    """Where Kokoro's queue lives: the same bucket under QUEUE_PREFIX, or a
+    `queue/` directory beneath the cache when audio is kept on disk."""
+    store = backend()
+    if isinstance(store, S3Audio):
+        return S3Audio(bucket=store.bucket, prefix=QUEUE_PREFIX,
+                       region=store.region, expire=store.expire, sse=store.sse)
+    return DiskAudio(cache_root() / "queue")
 
 
 def write_audio(name: str, data: bytes) -> None:
