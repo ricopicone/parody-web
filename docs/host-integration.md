@@ -806,6 +806,14 @@ Permissions: the host's role needs `s3:GetObject`, `s3:PutObject`,
 `readalong-queue/*`. The worker sends no server-side-encryption header, so a
 bucket policy that demands one will refuse its writes.
 
+Word times come from the model's own frame durations (`pred_dur`, 25 ms
+frames; the audio is exactly frames × 600 samples), not from KPipeline's
+`start_ts`, which starts each chunk 75 ms early and puts each word mid-space.
+Each Kokoro word also carries `spoken_end_ms` (when its own sound stops), and
+a blank holds there rather than at the next word's start, which with exact
+onsets would clip the answer or let the next word begin. The MP3 is constant
+bitrate (~64 kbps), so a seek lands where the highlight believes it does.
+
 The worker says exactly what the host queued and times exactly the host's
 words, so a laptop on a different parody-web or SRE cannot produce audio for
 the wrong text.

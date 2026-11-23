@@ -474,3 +474,53 @@ class ClozeBoxesTests(SimpleTestCase):
 
     def test_prose_has_no_blanks(self):
         self.assertEqual(cloze_boxes("<p>just prose here</p>", _page_pdf()), [])
+
+
+class SpokenEndTests(SimpleTestCase):
+    """A blank holds when its answer has been SAID, not when the next word
+    starts: Kokoro marks are exact onsets, so holding at the next word's start
+    clipped the answer (and, early, cut its tail; task 981)."""
+
+    HTML = ('<p>at a fixed <span class="cloze-key">sampling rate</span>, '
+            'which sets the pace.</p>')
+
+    def _with_ends(self, text):
+        marks, offset, clock = [], 0, 0
+        for word in text.split():
+            marks.append({"type": "word", "start": offset, "time": clock,
+                          "end": clock + 60, "value": word})
+            offset += len(word.encode("utf-8")) + 1
+            clock += 100
+        return b"ID3-fake-audio", marks
+
+    def test_synthesise_keeps_spoken_end(self):
+        track = build_track(self.HTML, _page_pdf(), self._with_ends,
+                            math=SkipMath())
+        self.assertTrue(all("spoken_end_ms" in w for w in track["words"]))
+        self.assertEqual(track["words"][0]["spoken_end_ms"], 60)
+
+    def test_cloze_holds_at_its_answers_spoken_end(self):
+        track = build_track(self.HTML, _page_pdf(), self._with_ends,
+                            math=SkipMath())
+        cloze = track["clozes"][0]
+        answer = [w for w in track["words"] if w["token"] == cloze["token"]]
+        self.assertEqual(cloze["end_ms"], answer[-1]["spoken_end_ms"])
+        self.assertLess(cloze["end_ms"], answer[-1]["end_ms"])
+
+    def test_polly_marks_hold_at_the_next_words_start(self):
+        track = build_track(self.HTML, _page_pdf(), fake_synth,
+                            math=SkipMath())
+        cloze = track["clozes"][0]
+        answer = [w for w in track["words"] if w["token"] == cloze["token"]]
+        self.assertEqual(cloze["end_ms"], answer[-1]["end_ms"])
+        self.assertNotIn("spoken_end_ms", answer[-1])
+
+    def test_reuse_keeps_spoken_end(self):
+        made = build_track(self.HTML, _page_pdf(), self._with_ends,
+                           math=SkipMath())
+        moved = reuse(prepare(self.HTML, _page_pdf(drop=1), math=SkipMath()),
+                      made["words"])
+        self.assertEqual([w.get("spoken_end_ms") for w in moved["words"]],
+                         [w.get("spoken_end_ms") for w in made["words"]])
+        self.assertEqual(moved["clozes"][0]["end_ms"],
+                         made["clozes"][0]["end_ms"])

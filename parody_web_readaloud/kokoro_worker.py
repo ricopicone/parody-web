@@ -30,15 +30,65 @@ import time
 from pathlib import Path
 
 RATE = 24_000
+HOP = 600                    # samples per Kokoro duration frame (25 ms)
 PREFIX = "readalong-queue/"
 REPO = "hexgrad/Kokoro-82M"
 _ESPEAK_PREFIXES = ("/opt/homebrew/opt/espeak-ng", "/usr/local/opt/espeak-ng")
 
 
+def token_timings(tokens, pred_dur, vocab=None, hop: int = HOP,
+                  rate: int = RATE) -> list:
+    """[(token text, onset s, end s)] for one KPipeline result, from frames.
+
+    Kokoro's own `start_ts` (KPipeline.join_timestamps) is not where a word
+    starts: it begins each chunk 3 frames (75 ms) before the first phoneme and
+    puts every later word in the middle of the space before it, and a
+    phoneme-less token with whitespace shifts the rest of the chunk by one id.
+    Measured against the audio, its marks ran from 100 ms early to 50 ms late
+    (task 981: "the highlighter runs ahead of the voice").
+
+    The model's `pred_dur` is how many 25 ms frames each input id lasts, and
+    the audio is exactly sum(pred_dur) * 600 samples, so a token's onset is the
+    frames before its first phoneme and its end the frames through its last.
+    The ids are the phoneme string KPipeline builds (`tokens_to_ps`: each
+    token's phonemes, a space after it when it has whitespace, stripped), less
+    any character outside the model's vocabulary, between <bos> and <eos>.
+    A token with no phonemes gets (text, None, None).
+    """
+    durations = [int(d) for d in pred_dur]
+    cumulative = [0]
+    for d in durations:
+        cumulative.append(cumulative[-1] + d)
+    full = "".join(t.phonemes + (" " if t.whitespace else "") for t in tokens)
+    lead = len(full) - len(full.lstrip())
+    kept = [vocab is None or c in vocab for c in full]
+    # ids_before[k]: how many ids the characters before position k became.
+    ids_before = [0]
+    for k, c in enumerate(full):
+        ids_before.append(ids_before[-1] + (1 if k >= lead and kept[k] else 0))
+    last = len(cumulative) - 1
+
+    def seconds(char_pos):
+        frames = cumulative[min(1 + ids_before[char_pos], last)]   # +1: <bos>
+        return frames * hop / rate
+
+    out, pos = [], 0
+    for t in tokens:
+        if t.phonemes:
+            out.append((t.text, seconds(pos), seconds(pos + len(t.phonemes))))
+        else:
+            out.append((t.text, None, None))
+        pos += len(t.phonemes) + (1 if t.whitespace else 0)
+    return out
+
+
 def marks_from_tokens(text: str, timed: list) -> tuple:
     """Word marks for `text`, in Polly's shape, from Kokoro's timed tokens.
 
-    `timed` is [(token text, start in seconds or None)], in speaking order. Each
+    `timed` is [(token text, start s or None[, end s or None])], in speaking
+    order. A word whose tokens carry an end gets `"end"` (ms): when its own
+    sound stops, before any pause or punctuation after it — which is where a
+    blank should hold, rather than at the next word's start. Each
     whitespace word of `text` takes the start of the first token found inside
     it by a forward search; tokens with no letter or digit (brackets, quotes,
     full stops) mark no word. A word no token timed is interpolated between its
@@ -59,8 +109,11 @@ def marks_from_tokens(text: str, timed: list) -> tuple:
         at += len(word)
 
     times = [None] * len(words)
+    ends = [None] * len(words)
     cursor = 0
-    for token, start in timed:
+    for item in timed:
+        token, start = item[0], item[1]
+        end = item[2] if len(item) > 2 else None
         if not token or not any(c.isalnum() for c in token):
             continue
         found = text.find(token, cursor)
@@ -68,8 +121,12 @@ def marks_from_tokens(text: str, timed: list) -> tuple:
             continue
         cursor = found + len(token)
         index = bisect.bisect_right(char_starts, found) - 1
-        if index >= 0 and times[index] is None and start is not None:
+        if index < 0:
+            continue
+        if times[index] is None and start is not None:
             times[index] = float(start)
+        if end is not None:
+            ends[index] = max(float(end), ends[index] or 0.0)
 
     known = [i for i, t in enumerate(times) if t is not None]
     interpolated = 0
@@ -89,10 +146,12 @@ def marks_from_tokens(text: str, timed: list) -> tuple:
             times[i] = times[prev_i] + (times[next_i] - times[prev_i]) * share
 
     marks, last = [], 0
-    for word, start, seconds in zip(words, byte_starts, times):
+    for word, start, seconds, end in zip(words, byte_starts, times, ends):
         ms = max(last, int(round(seconds * 1000)))
-        marks.append({"time": ms, "type": "word", "start": start,
-                      "value": word})
+        mark = {"time": ms, "type": "word", "start": start, "value": word}
+        if end is not None:
+            mark["end"] = max(ms, int(round(end * 1000)))
+        marks.append(mark)
         last = ms
     return marks, interpolated
 
@@ -199,17 +258,34 @@ class KokoroVoice:
         return self._pipeline
 
     def render(self, spoken: str, voice: str):
-        """(samples at 24 kHz, [(token, absolute start seconds or None)])."""
+        """(samples at 24 kHz, [(token, absolute onset s, absolute end s)]).
+
+        Times come from the model's frame durations (`token_timings`), not
+        KPipeline's `start_ts`; chunks are laid end to end by their sample
+        counts, which are exactly their frame counts times 600.
+        """
         import numpy as np
 
+        pipe = self._pipe()
+        vocab = getattr(getattr(pipe, "model", None), "vocab", None)
         chunks, timed, elapsed = [], [], 0.0
-        for result in self._pipe()(spoken, voice=voice):
+        for result in pipe(spoken, voice=voice):
             audio = result.audio
             audio = audio.numpy() if hasattr(audio, "numpy") else np.asarray(audio)
-            for token in result.tokens or []:
-                start = getattr(token, "start_ts", None)
-                timed.append((token.text,
-                              None if start is None else elapsed + start))
+            pred_dur = getattr(result, "pred_dur", None)
+            if pred_dur is not None:
+                durations = (pred_dur.tolist() if hasattr(pred_dur, "tolist")
+                             else list(pred_dur))
+                for text, start, end in token_timings(result.tokens or [],
+                                                      durations, vocab):
+                    timed.append((text,
+                                  None if start is None else elapsed + start,
+                                  None if end is None else elapsed + end))
+            else:                                   # no durations: best effort
+                for token in result.tokens or []:
+                    start = getattr(token, "start_ts", None)
+                    timed.append((token.text,
+                                  None if start is None else elapsed + start))
             chunks.append(audio)
             elapsed += len(audio) / RATE
         samples = (np.concatenate(chunks) if chunks
@@ -220,8 +296,13 @@ class KokoroVoice:
 def encode_mp3(samples, rate: int = RATE) -> bytes:
     import soundfile
 
+    # Constant bitrate, ~64 kbps at 24 kHz mono. A VBR stream is seeked by its
+    # Xing table of contents, which is approximate: "read from here" and a
+    # restored position landed away from where the highlight believed the
+    # voice was. In CBR a time's byte offset is exact (Polly's were CBR too).
     buffer = io.BytesIO()
-    soundfile.write(buffer, samples, rate, format="MP3")
+    soundfile.write(buffer, samples, rate, format="MP3",
+                    bitrate_mode="CONSTANT", compression_level=0.6)
     return buffer.getvalue()
 
 

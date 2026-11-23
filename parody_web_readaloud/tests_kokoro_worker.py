@@ -196,3 +196,83 @@ class WorkerRobustnessTests(SimpleTestCase):
             self.assertEqual(summary["voiced"], 1)
             self.assertTrue(queue.exists("todo-k1.json"))
             self.assertTrue(queue.exists("done-k2.mp3"))
+
+
+class Tok:
+    """A misaki MToken, as far as token_timings reads one."""
+
+    def __init__(self, text, phonemes, whitespace):
+        self.text, self.phonemes, self.whitespace = text, phonemes, whitespace
+
+
+class TokenTimingTests(SimpleTestCase):
+    """Word times from the model's own frame durations, not KPipeline's
+    start_ts, which starts every chunk 3 frames (75 ms) early and puts each
+    word in the middle of the space before it (task 981, Puck ran ahead)."""
+
+    def test_onsets_and_ends_are_exact_frame_counts(self):
+        from parody_web_readaloud.kokoro_worker import token_timings
+        tokens = [Tok("ab", "ab", " "), Tok("-", "", " "), Tok("c", "c", ""),
+                  Tok(",", ",", " "), Tok("de", "de", "")]
+        # ids: <bos> a b ' ' ' ' c , ' ' d e <eos>
+        pred_dur = [5, 2, 3, 1, 4, 2, 6, 1, 2, 2, 3]
+        got = token_timings(tokens, pred_dur)
+        self.assertEqual(got[0], ("ab", 5 / 40, 10 / 40))
+        self.assertEqual(got[1], ("-", None, None))
+        self.assertEqual(got[2], ("c", 15 / 40, 17 / 40))
+        self.assertEqual(got[3], (",", 17 / 40, 23 / 40))
+        self.assertEqual(got[4], ("de", 24 / 40, 28 / 40))
+
+    def test_a_leading_space_is_stripped_as_kokoro_strips_it(self):
+        from parody_web_readaloud.kokoro_worker import token_timings
+        tokens = [Tok("“", "", " "), Tok("ab", "ab", "")]
+        got = token_timings(tokens, [5, 2, 3, 1])
+        self.assertEqual(got[1], ("ab", 5 / 40, 10 / 40))
+
+    def test_characters_outside_the_vocab_take_no_frame(self):
+        from parody_web_readaloud.kokoro_worker import token_timings
+        tokens = [Tok("ab", "aǂb", " "), Tok("c", "c", "")]
+        got = token_timings(tokens, [5, 2, 3, 1, 2, 1],
+                            vocab=set("abc "))
+        self.assertEqual(got[0], ("ab", 5 / 40, 10 / 40))
+        self.assertEqual(got[1], ("c", 11 / 40, 13 / 40))
+
+
+class WordEndTests(SimpleTestCase):
+    def test_marks_carry_each_words_spoken_end(self):
+        marks, _ = marks_from_tokens(
+            "the answer, then",
+            [("the", 0.0, 0.1), ("answer", 0.12, 0.5), (",", 0.5, 0.8),
+             ("then", 0.85, 1.0)])
+        self.assertEqual([m.get("end") for m in marks], [100, 500, 1000])
+
+    def test_two_tuples_still_work_and_carry_no_end(self):
+        marks, _ = marks_from_tokens("a b", [("a", 0.0), ("b", 0.5)])
+        self.assertEqual([m["time"] for m in marks], [0, 500])
+        self.assertNotIn("end", marks[0])
+
+    def test_an_interpolated_word_has_no_end(self):
+        marks, _ = marks_from_tokens("a b c",
+                                     [("a", 0.0, 0.1), ("c", 1.0, 1.2)])
+        self.assertNotIn("end", marks[1])
+        self.assertEqual(marks[2]["end"], 1200)
+
+
+class ConstantBitrateTests(SimpleTestCase):
+    def test_encode_mp3_is_constant_bitrate(self):
+        try:
+            import numpy
+            import soundfile
+        except ImportError:
+            raise unittest.SkipTest("soundfile/numpy not installed")
+        if "MP3" not in soundfile.available_formats():
+            raise unittest.SkipTest("this libsndfile cannot write MP3")
+        from parody_web_readaloud.kokoro_worker import encode_mp3
+        tone = numpy.sin(numpy.arange(24000 * 3) * 0.05).astype("float32")
+        data = encode_mp3(tone)
+        # Every MPEG frame of a CBR stream at one sample rate has the same
+        # size (padding aside): the byte offset of a time is then exact, which
+        # is what a browser's seek assumes. VBR made "read from here" land
+        # somewhere else than the highlight believed.
+        kbps = len(data) * 8 / 3 / 1000
+        self.assertLess(abs(kbps - 64), 8, kbps)

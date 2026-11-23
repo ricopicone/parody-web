@@ -223,9 +223,13 @@ def synthesise(prep: Prepared, synth) -> dict:
         if position is None or position >= len(prep.owners):
             continue                     # Polly split inside a word; skip it
         index = prep.owners[position]
-        words.append(_boxed({"word": mark.get("value", ""),
-                             "start_ms": mark.get("time", 0), "token": index},
-                            prep.placed[index]))
+        entry = {"word": mark.get("value", ""),
+                 "start_ms": mark.get("time", 0), "token": index}
+        if mark.get("end") is not None:
+            # When the word's own sound stops (Kokoro marks carry it; Polly's
+            # do not). A blank holds here instead of at the next word's start.
+            entry["spoken_end_ms"] = mark["end"]
+        words.append(_boxed(entry, prep.placed[index]))
 
     for i, entry in enumerate(words):
         entry["end_ms"] = (words[i + 1]["start_ms"] if i + 1 < len(words)
@@ -250,10 +254,13 @@ def reuse(prep: Prepared, prior_words: list) -> "dict | None":
         index = prior.get("token")
         if not isinstance(index, int) or not 0 <= index < len(prep.placed):
             return None
-        words.append(_boxed({"word": prior.get("word", ""),
-                             "start_ms": prior.get("start_ms", 0),
-                             "end_ms": prior.get("end_ms", 0),
-                             "token": index},
+        entry = {"word": prior.get("word", ""),
+                 "start_ms": prior.get("start_ms", 0),
+                 "end_ms": prior.get("end_ms", 0),
+                 "token": index}
+        if prior.get("spoken_end_ms") is not None:
+            entry["spoken_end_ms"] = prior["spoken_end_ms"]
+        words.append(_boxed(entry,
                             prep.placed[index]))
     # None, not b"": there is no new audio, and the caller keeps the file the
     # timings were made from rather than writing a second copy of it.
@@ -283,6 +290,19 @@ def _assemble(prep: Prepared, words: list, audio_bytes) -> dict:
         span[0] = min(span[0], entry["start_ms"])
         span[1] = max(span[1], entry["end_ms"])
 
+    # When a token's own sound stops, where every one of its words knows it.
+    # A word's `end_ms` is the NEXT word's start, which with exact (Kokoro)
+    # onsets is the instant the next word begins: a blank held there clipped
+    # its answer or let the next word start. Hold when the answer is said.
+    said = {}
+    for entry in words:
+        token = entry["token"]
+        end = entry.get("spoken_end_ms")
+        if end is None:
+            said[token] = None
+        elif said.get(token, 0) is not None:
+            said[token] = max(said.get(token, 0), end)
+
     clozes = []
     for spot in prep.placed:
         math_cloze = is_math_cloze(spot.token)
@@ -295,6 +315,8 @@ def _assemble(prep: Prepared, words: list, audio_bytes) -> dict:
         if math_cloze and not prep.svgs.get(spot.index):
             continue
         start, end = window.get(spot.index, (0, 0))
+        if said.get(spot.index) is not None:
+            end = max(start, min(end, said[spot.index]))
         clozes.append({
             "token": spot.index,
             "kind": "math_cloze" if math_cloze else spot.token.kind,
