@@ -49,6 +49,53 @@ HTML = ('<p>at a fixed <span class="cloze-key">sampling rate</span>'
         ', which sets</p>')
 
 
+def _footnote_pdf():
+    """Two pages: a footnote at the foot of the first, the prose on the next.
+
+    The prose's "here," extracts glued to what precedes it — as system
+    dynamics' "𝑠here," does — so the page's only bare "here" is the
+    footnote's. A blank sits between "y" and "zhere,".
+    """
+    doc = fitz.open()
+    first = doc.new_page(width=300, height=200)
+    first.insert_text((10, 20), "alpha", fontsize=10)
+    first.insert_text((10, 180), "1 we exclude them here.", fontsize=8)
+    second = doc.new_page(width=300, height=200)
+    second.insert_text((10, 20), "x y x y", fontsize=10)
+    second.draw_line(fitz.Point(60, 22), fitz.Point(90, 22), width=0.6)
+    second.insert_text((95, 20), "zhere, omega", fontsize=10)
+    out = doc.tobytes()
+    doc.close()
+    return out
+
+
+FOOTNOTE_HTML = (
+    '<p>alpha x y x y <span class="cloze-key">gain</span> here, omega'
+    '<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref">'
+    '<sup>1</sup></a></p>\n'
+    '<section id="footnotes" class="footnotes footnotes-end-of-document" '
+    'role="doc-endnotes">\n<hr />\n<ol>\n<li id="fn1"><p>we exclude them '
+    'here.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a>'
+    '</p></li>\n</ol>\n</section>\n')
+
+
+class FootnoteAlignmentTests(SimpleTestCase):
+    """The footnotes are not spoken, but the page prints them: both routes
+    from a script to its boxes must still count their words."""
+
+    def test_the_prose_is_boxed_on_its_own_page(self):
+        prep = prepare(FOOTNOTE_HTML, _footnote_pdf(), math=SkipMath())
+        words = [p for p in prep.placed if p.token.kind == "word"]
+        self.assertEqual([p.token.text for p in words],
+                         ["alpha", "x", "y", "x", "y", "here,", "omega"])
+        self.assertEqual([p.page for p in words], [0, 1, 1, 1, 1, 1, 1])
+
+    def test_the_blank_is_found_between_its_neighbours(self):
+        boxes = cloze_boxes(FOOTNOTE_HTML, _footnote_pdf())
+        self.assertEqual([(b["kind"], b["page"]) for b in boxes],
+                         [("cloze", 1)])
+
+
 class BuildTrackTests(SimpleTestCase):
     def setUp(self):
         self.track = build_track(HTML, _page_pdf(), fake_synth, math=SkipMath())

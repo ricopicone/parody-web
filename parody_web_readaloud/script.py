@@ -32,6 +32,22 @@ SKIP_TAGS = {"script", "style", "figcaption", "table", "pre"}
 PAUSE_BEFORE = {"pre"}
 SENTENCE_ENDS = (".", "?", "!")
 
+# Footnotes are not read, and neither is the mark that calls one. Pandoc
+# gathers every footnote's body into one `<section class="footnotes">` at the
+# END of the section, so the voice read them all out after the last paragraph,
+# where the page shows none of them to highlight: print sets each at the foot
+# of its own page. The mark (`<a class="footnote-ref"><sup>1</sup></a>`) was
+# read as a bare number, "the self-driving car one and of the latter". The
+# page's notes and marks are then words with no token, like a table's, except
+# that the aligner is still told about them (`unspoken_words`).
+SKIP_CLASSES = {"footnotes", "footnote-ref"}
+
+
+def _skipped(tag: str, attrs: dict) -> bool:
+    if tag in SKIP_TAGS:
+        return True
+    return not SKIP_CLASSES.isdisjoint((attrs.get("class") or "").split())
+
 
 @dataclass
 class Token:
@@ -166,7 +182,13 @@ class _ScriptParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.tokens = []
-        self._skip_depth = 0
+        # [tag, depth, keep_words] of the element being skipped: only its own
+        # tag can close it, so a `<section>` inside the footnotes does not end
+        # them. keep_words: its words go to `unspoken` (footnotes only).
+        self._skip = None
+        # The words of the footnotes and their marks: never spoken, but the
+        # page prints them, so the aligner must still count them.
+        self.unspoken = []
         self._math = None                  # "inline" | "display" while open
         self._inline_cloze = False
         # An inline cloze can HIDE MATHS — "\\cloze{$V_e$}" — and the answer is
@@ -181,12 +203,14 @@ class _ScriptParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
-        if tag in SKIP_TAGS:
-            if tag in PAUSE_BEFORE and not self._skip_depth:
-                self._end_sentence()
-            self._skip_depth += 1
+        if self._skip:
+            if tag == self._skip[0]:
+                self._skip[1] += 1
             return
-        if self._skip_depth:
+        if _skipped(tag, a):
+            if tag in PAUSE_BEFORE:
+                self._end_sentence()
+            self._skip = [tag, 1, tag not in SKIP_TAGS]
             return
 
         # Everything inside a cloze block is the answer, maths included, so it
@@ -232,10 +256,11 @@ class _ScriptParser(HTMLParser):
             last.trail += "."
 
     def handle_endtag(self, tag):
-        if tag in SKIP_TAGS:
-            self._skip_depth = max(0, self._skip_depth - 1)
-            return
-        if self._skip_depth:
+        if self._skip:
+            if tag == self._skip[0]:
+                self._skip[1] -= 1
+                if not self._skip[1]:
+                    self._skip = None
             return
 
         if self._block_depth:
@@ -270,7 +295,9 @@ class _ScriptParser(HTMLParser):
             self._cloze_parts = []
 
     def handle_data(self, data):
-        if self._skip_depth:
+        if self._skip:
+            if self._skip[2]:
+                self.unspoken.extend(data.split())
             return
         if self._block_depth:
             self._buf.append(data)
@@ -294,8 +321,21 @@ class _ScriptParser(HTMLParser):
             self.tokens.append(Token(kind="word", text=word))
 
 
-def parse_script(html: str) -> list:
+def _parsed(html: str) -> _ScriptParser:
     parser = _ScriptParser()
     parser.feed(html or "")
     parser.close()
-    return parser.tokens
+    return parser
+
+
+def parse_script(html: str) -> list:
+    return _parsed(html).tokens
+
+
+def unspoken_words(html: str) -> list:
+    """The words the page prints and the script leaves out ON PURPOSE.
+
+    The footnotes, and their marks. Not tables, captions or code, which the
+    aligner has never been told about: those sections align exactly as before.
+    """
+    return _parsed(html).unspoken

@@ -126,7 +126,7 @@ def _join(boxes):
             max(b[2] for b in boxes), max(b[3] for b in boxes))
 
 
-def _anchors(a: list, b: list) -> list:
+def _anchors(a: list, b: list, unspoken=()) -> list:
     """Patience anchors: tokens occurring exactly once in each stream.
 
     Plain LCS matching goes wrong on a section-sized pair. Prose is mostly
@@ -138,10 +138,18 @@ def _anchors(a: list, b: list) -> list:
 
     Words unique on both sides cannot be paired wrongly, so the longest
     increasing run of them is a skeleton the rest can be fitted around.
+
+    `unspoken` holds the keys of what the page prints and the script leaves
+    out on purpose (the footnotes). They count towards uniqueness on the
+    script's side as if they were still in it: otherwise a word the prose and
+    a footnote share looks unique in the script, and if the page's copy in the
+    prose extracted oddly, its one bare copy on the page is the footnote's, and
+    the anchor pins the prose to the foot of the page.
     """
     from collections import Counter
 
     count_a, count_b = Counter(a), Counter(b)
+    count_a.update(unspoken)
     where_b = {}
     for j, key in enumerate(b):
         if count_b[key] == 1:
@@ -177,9 +185,9 @@ def _anchors(a: list, b: list) -> list:
     return best
 
 
-def _segments(a: list, b: list):
+def _segments(a: list, b: list, unspoken=()):
     """(i1, i2, j1, j2) windows between successive anchors, anchors included."""
-    anchors = _anchors(a, b)
+    anchors = _anchors(a, b, unspoken)
     if not anchors:
         yield 0, len(a), 0, len(b)
         return
@@ -191,13 +199,16 @@ def _segments(a: list, b: list):
     yield prev_i, len(a), prev_j, len(b)
 
 
-def align(tokens: list, words: list, rules: list) -> list:
+def align(tokens: list, words: list, rules: list, unspoken=()) -> list:
+    """`unspoken`: words the page prints that the script does not say
+    (`script.unspoken_words`). They are never placed; they only stop a word
+    they share with the prose from being taken for a unique one."""
     placed = [Placed(token=t, index=i) for i, t in enumerate(tokens)]
 
     a = [_token_key(t) for t in tokens]
     b = [_key(w.text) for w in words]
 
-    for si, ei, sj, ej in _segments(a, b):
+    for si, ei, sj, ej in _segments(a, b, [_fold(w) for w in unspoken]):
         if si >= ei and sj >= ej:
             continue
         _align_window(placed, words, a, b, si, ei, sj, ej)

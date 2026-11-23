@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 from .align import align
 from .geometry import extract_blanks, extract_words, page_sizes
-from .script import parse_script
+from .script import parse_script, unspoken_words
 from .speech import build_speech
 
 CHUNK_LIMIT = 2900          # Polly's per-request character ceiling, with room
@@ -127,7 +127,8 @@ def prepare(html: str, pdf_bytes: bytes, math=None) -> Prepared:
     return Prepared(
         tokens=tokens,
         placed=align(tokens, extract_words(pdf_bytes),
-                     extract_blanks(pdf_bytes)),
+                     extract_blanks(pdf_bytes),
+                     unspoken=unspoken_words(html)),
         # [[widthPt, heightPt], ...]. The client divides the rendered page
         # width by this to recover the zoom scale, which is how it converts a
         # PDF box to CSS pixels without holding the annotator's viewport.
@@ -176,7 +177,8 @@ def cloze_boxes(html: str, pdf_bytes: bytes) -> list:
     nothing to reveal; the student still writes in it.
     """
     tokens = parse_script(html)
-    placed = align(tokens, extract_words(pdf_bytes), extract_blanks(pdf_bytes))
+    placed = align(tokens, extract_words(pdf_bytes), extract_blanks(pdf_bytes),
+                   unspoken=unspoken_words(html))
     return [{"token": spot.index,
              "kind": "math_cloze" if is_math_cloze(spot.token) else spot.token.kind,
              "page": spot.page, "x0": spot.box[0], "y0": spot.box[1],

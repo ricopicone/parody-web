@@ -1,7 +1,7 @@
 """Reading a `--clozes key` artifact into an ordered script."""
 from django.test import SimpleTestCase
 
-from parody_web_readaloud.script import parse_script
+from parody_web_readaloud.script import parse_script, unspoken_words
 
 
 class ParseScriptTests(SimpleTestCase):
@@ -246,3 +246,77 @@ class CodeTests(SimpleTestCase):
     def test_inline_code_in_a_sentence_is_still_read(self):
         tokens = parse_script("<p>call <code>robot.ik</code> once</p>")
         self.assertEqual([t.text for t in tokens], ["call", "robot.ik", "once"])
+
+
+class FootnoteTests(SimpleTestCase):
+    """Footnotes are not read. Pandoc gathers every footnote's body at the END
+    of the section, so the voice read them all out after the last paragraph,
+    where the page shows none of them to highlight — print sets each one at the
+    foot of its own page. The mark in the sentence went too: it was read as a
+    bare number, "the self-driving car one and of the latter".
+
+    The markup is pandoc's, exactly as it is in the robotics key artifact."""
+
+    @staticmethod
+    def _mark(n):
+        return (f'<a href="#fn{n}" class="footnote-ref" id="fnref{n}" '
+                f'role="doc-noteref"><sup>{n}</sup></a>')
+
+    @staticmethod
+    def _notes(*bodies):
+        items = "".join(
+            f'<li id="fn{n}"><p>{body}<a href="#fnref{n}" class="footnote-back" '
+            f'role="doc-backlink">↩︎</a></p></li>\n'
+            for n, body in enumerate(bodies, start=1))
+        return ('<section id="footnotes" class="footnotes '
+                'footnotes-end-of-document" role="doc-endnotes">\n<hr />\n'
+                f'<ol>\n{items}</ol>\n</section>\n')
+
+    def _words(self, html):
+        return [t.text + t.trail for t in parse_script(html)]
+
+    def test_the_footnotes_at_the_end_are_not_read(self):
+        html = (f"<p>A robot is designed by humans.{self._mark(1)}</p>\n"
+                + self._notes("Or, at least, if it was designed by a robot."))
+        self.assertEqual(self._words(html),
+                         ["A", "robot", "is", "designed", "by", "humans."])
+
+    def test_the_mark_in_the_sentence_is_not_read(self):
+        html = f"<p>the self-driving car{self._mark(1)} and the arm.</p>"
+        self.assertEqual(self._words(html),
+                         ["the", "self-driving", "car", "and", "the", "arm."])
+
+    def test_punctuation_after_a_mark_stays_with_the_word_before_it(self):
+        html = f"<p>most motors{self._mark(1)}, of quality</p>"
+        self.assertEqual(self._words(html), ["most", "motors,", "of", "quality"])
+
+    def test_nothing_inside_a_footnote_is_read(self):
+        # Maths, a figure and a nested section: none of it is a token, not
+        # even the figure cloze or the equation, because none of it is spoken.
+        body = ('a rover <span class="math inline">\\(v\\)</span> '
+                '<img src="rover.svg" data-cloze-of="rover.svg">'
+                '<section><p>nested</p></section> and more')
+        html = f"<p>a rover.{self._mark(1)}</p>" + self._notes(body)
+        self.assertEqual(self._words(html), ["a", "rover."])
+
+    def test_reading_resumes_after_the_footnotes(self):
+        html = (f"<p>One.{self._mark(1)}</p>" + self._notes("a note")
+                + "<p>Two.</p>")
+        self.assertEqual(self._words(html), ["One.", "Two."])
+
+    def test_the_footnotes_words_are_kept_for_the_aligner(self):
+        # The page still prints them, at the foot of the page, and a word the
+        # prose shares with a footnote must not look unique to the aligner.
+        html = (f"<p>loops we exclude.{self._mark(1)}</p>"
+                + self._notes("we exclude them here."))
+        words = unspoken_words(html)
+        self.assertEqual([w for w in words if w.isalpha()],
+                         ["we", "exclude", "them"])
+        self.assertIn("here.", words)
+        self.assertNotIn("loops", words)
+
+    def test_a_tables_words_are_not_on_that_list(self):
+        # A table has never been in the script, and the aligner has always
+        # been fitted around it; sections without footnotes align as before.
+        html = "<p>see</p><table><tr><td>gain</td></tr></table>"
+        self.assertEqual(unspoken_words(html), [])

@@ -139,6 +139,25 @@ class PatienceAnchorTests(SimpleTestCase):
         self.assertTrue(all(p.box for p in rare),
                         "unique words must anchor across the interpolation")
 
+    def test_a_word_the_page_prints_unspoken_cannot_anchor(self):
+        # system-dynamics' element-interconnection-laws: the prose "here," is
+        # extracted glued to the maths before it ("𝑠here,"), so the only bare
+        # "here" on the page is the one in the FOOTNOTE. With the footnotes
+        # out of the script, "here" was unique on both sides, became an anchor,
+        # and pinned the prose word to the footnote — the words before it then
+        # sat in a window too lopsided to match, and 14 of them lost their box.
+        tokens = [Token("word", w) for w in
+                  ["alpha", "x", "y", "x", "y", "here,", "omega"]]
+        footnote = ["we", "exclude", "them", "here."]
+        page = ([_w("alpha", x0=0)]
+                + [_w(w, page=0, x0=200 + i) for i, w in enumerate(footnote)]
+                + [_w(w, page=1, x0=10 * i) for i, w in
+                   enumerate(["x", "y", "x", "y", "𝑠here,", "omega"])])
+        placed = align(tokens, page, [], unspoken=footnote)
+        self.assertEqual([p.page for p in placed], [0, 1, 1, 1, 1, 1, 1])
+        self.assertEqual(placed[5].box[0], 40,
+                         "'here,' belongs on the prose, not in the footnote")
+
 
 class DisplayMathExtentTests(SimpleTestCase):
     """A display equation is ONE token that typesets as many extracted chunks.
