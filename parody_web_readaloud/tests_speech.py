@@ -193,6 +193,59 @@ class SreMathTests(SimpleTestCase):
             self.assertNotIn("backslash", words, f"{latex} -> {words!r}")
 
 
+@unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
+                     "needs node and the SRE script")
+class UprightLettersTests(SimpleTestCase):
+    """SRE takes an upright letter for a UNIT, or announces its font.
+
+    speak.mjs decides by position: a unit follows a number (or a unit, or a
+    unit and a / or a dot); anything else upright is a variable. Each phrase
+    below is what the engine said before, measured over every expression in
+    the three voiced books (13,657).
+    """
+
+    def say(self, *latex):
+        return SreMath().speak_all([(each, False) for each in latex])
+
+    def test_omega_is_a_variable_unless_it_follows_a_number(self):
+        # Was "ohms sub J": System Dynamics' angular velocity, 307 expressions.
+        self.assertEqual(self.say("\\Omega_J", "\\Omega = 3"),
+                         ["Omega sub J", "Omega equals 3"])
+        self.assertEqual(
+            self.say("R = 0.8\\ \\Omega", "100\\,\\Omega", "2\\ \\mathrm{k}\\Omega"),
+            ["R equals 0.8 ohms", "100 ohms", "2 kilohms"])
+
+    def test_greek_capitals_are_not_announced_by_font(self):
+        # Was "normal Phi of t" and "normal triangle t".
+        self.assertEqual(self.say("\\Phi(t)", "\\Delta t", "20\\,\\Delta t"),
+                         ["Phi of t", "Delta t", "20 Delta t"])
+
+    def test_an_upright_letter_that_is_not_after_a_number_is_a_letter(self):
+        # Was "R to the tons power" (795 times in robotics) and "watts hat".
+        self.assertEqual(self.say("R_2^{\\mathrm{T}}", "\\hat{\\mathrm{w}}"),
+                         ["R sub 2 to the T power", "w hat"])
+
+    def test_compound_units_stay_units(self):
+        self.assertEqual(
+            self.say("9.81\\ \\mathrm{m/s^2}", "0.05\\ \\mathrm{N\\,m/A}",
+                     "90^\\circ/\\mathrm{s}", "r = (1, 0, 1)\\ \\mathrm{m}"),
+            ["9.81 meters divided by seconds squared",
+             "0.05 Newtons meters divided by amperes",
+             "90 degrees divided by seconds",
+             "r equals open paren 1 comma 0 comma 1 close paren times meters"])
+
+    def test_a_tex_space_is_not_read_as_empty_but_a_thin_space_keeps_its_times(self):
+        # Was "1 empty milliseconds". The thin space is SRE's cue for a
+        # product, so dropping it too would lose "times".
+        self.assertEqual(self.say("1\\ \\mathrm{ms}", "C\\, dv/dt"),
+                         ["1 millisecond", "C times d v divided by d t"])
+
+    def test_a_degree_is_a_degree(self):
+        # Was "360 raised to the composed with power".
+        self.assertEqual(self.say("360^\\circ"), ["360 degrees"])
+        self.assertEqual(self.say("f \\circ g"), ["f composed with g"])
+
+
 class SreAvailableTests(SimpleTestCase):
     """The preflight that stops a whole book being generated mute.
 
