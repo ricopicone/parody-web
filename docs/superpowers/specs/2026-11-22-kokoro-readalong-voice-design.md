@@ -42,6 +42,30 @@ sums per token).
   Matthew track until its Puck track exists.
 - **The Polly path keeps working** (engine `neural`), unchanged and unmigrated.
 
+## Amendments after approval (Rico, 2026-11-22)
+
+- **System Dynamics gets read-along too.** homepage-django's
+  `content-manifest.json` sets `features.readalong: true` for
+  `system-dynamics`; its key artifact is already fetched for `map_clozes`. So
+  the books are **electronics, modern-robotics and system-dynamics**.
+- **The builder extends the correction table** from the measured hard-word
+  report, and Rico reviews it by ear afterwards.
+- **Audio lands as soon as it's voiced, with no deploy needed.** Rico doesn't
+  want audio tied to the deploy. homepage-django gets a local script,
+  `scripts/voice_readalong.sh`, that:
+  1. runs the parody-web worker;
+  2. sends one SSM command to the box, run as **`ubuntu`** (never root, see
+     Constraints), that runs `generate_readalong <slug> --key-artifact …` for
+     each book that had entries voiced.
+
+  That run is the pickup in §3. parody-web's worker stays host-agnostic; the
+  SSM step belongs to the host.
+- **Rico authorized** the PyPI upload and the homepage-django `main` push for
+  this work.
+- **Out of scope here, its own project next:** streamlining the whole content
+  release (local LaTeX and translation builds, landing in parallel as each
+  finishes). This design's queue already lets audio land independently.
+
 ## Non-goals
 
 - A custom voice in Rico's own voice: task 983.
