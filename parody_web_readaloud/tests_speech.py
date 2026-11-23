@@ -310,3 +310,82 @@ class TidyMathSpeechTests(SimpleTestCase):
     def test_it_does_not_leave_leading_punctuation(self):
         from parody_web_readaloud.speech import tidy_math_speech
         self.assertEqual(tidy_math_speech("Line 1: a equals b"), "a equals b")
+
+
+class _SubMath:
+    """Speaks each item as the reply mapped from its latex."""
+
+    def __init__(self, replies):
+        self.replies = replies
+
+    def speak_all(self, items):
+        return [self.replies[latex] for latex, _display in items]
+
+
+class TerseSubscriptTests(SimpleTestCase):
+    """Rico, task 981: v_1 is "vee one", not "v sub 1" — when it is safe."""
+
+    def test_simple_subscripts_drop_sub(self):
+        from parody_web_readaloud.speech import terse_subscripts
+        self.assertEqual(
+            terse_subscripts(
+                "v sub 1 i sub 1 equals negative v sub 2 i sub 2",
+                r"v_{1} i_{1} = -v_2 i_2"),
+            "v 1 i 1 equals negative v 2 i 2")
+
+    def test_compound_subscript_keeps_every_sub(self):
+        from parody_web_readaloud.speech import terse_subscripts
+        said = "x sub k plus 1 equals x sub k plus 1"
+        self.assertEqual(terse_subscripts(said, r"x_{k+1} = x_k + 1"), said)
+
+    def test_word_subscripts_are_simple(self):
+        from parody_web_readaloud.speech import subscripts_are_simple
+        self.assertTrue(subscripts_are_simple(
+            r"q_{\text{in}} + \tau_{\mathrm{max}} + V_{CC}"
+            r" + \mathbf{T}_{sb} + \theta_1"))
+
+    def test_compound_forms(self):
+        from parody_web_readaloud.speech import subscripts_are_simple
+        for latex in (r"a_{n-1}", r"x_{i,j}", r"x_{(k)}",
+                      r"y_{\frac{1}{2}}", r"z_{a_b}"):
+            with self.subTest(latex=latex):
+                self.assertFalse(subscripts_are_simple(latex))
+
+    def test_big_operator_limits_are_not_subscripts(self):
+        from parody_web_readaloud.speech import terse_subscripts
+        self.assertEqual(
+            terse_subscripts("the sum from k equals 0 to n of a sub k",
+                             r"\sum_{k=0}^{n} a_k"),
+            "the sum from k equals 0 to n of a k")
+        for op in (r"\prod", r"\int", r"\lim", r"\max", r"\min",
+                   r"\sum\limits", r"\int\nolimits"):
+            with self.subTest(op=op):
+                self.assertEqual(
+                    terse_subscripts("op of a sub k", op + r"_{k=0} a_k"),
+                    "op of a k")
+
+    def test_escaped_underscore_is_not_a_subscript(self):
+        from parody_web_readaloud.speech import subscripts_are_simple
+        self.assertTrue(subscripts_are_simple(r"\text{max\_speed}"))
+
+    def test_only_whole_word_sub(self):
+        from parody_web_readaloud.speech import terse_subscripts
+        self.assertEqual(terse_subscripts("x sub 1 subtract", "x_1"),
+                         "x 1 subtract")
+
+    def test_build_speech_applies_rule(self):
+        tokens = [Token("word", "where"), Token("math", latex="v_1")]
+        text, owners = build_speech(tokens, math=_SubMath({"v_1": "v sub 1"}))
+        self.assertEqual(text, "where v 1")
+        self.assertEqual(len(owners), len(text.split()))
+
+    def test_build_speech_keeps_sub_for_compound(self):
+        tokens = [Token("math", latex="a_{n-1}")]
+        text, _ = build_speech(
+            tokens, math=_SubMath({"a_{n-1}": "a sub n minus 1"}))
+        self.assertEqual(text, "a sub n minus 1")
+
+    def test_build_speech_applies_rule_to_a_maths_cloze(self):
+        tokens = [Token("cloze", latex="R_L", answer=["R_L"])]
+        text, _ = build_speech(tokens, math=_SubMath({"R_L": "R sub L"}))
+        self.assertEqual(text, "R L")

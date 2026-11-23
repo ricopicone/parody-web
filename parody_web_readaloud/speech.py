@@ -109,6 +109,112 @@ def tidy_math_speech(said: str) -> str:
     return out.lstrip(". ").strip()
 
 
+# Bumped whenever what `build_speech` says changes, so a fingerprinted engine
+# (Kokoro: see `pronounce.engine_id`) knows its recordings describe an older
+# script and re-voices the sections whose words moved. "2": simple subscripts
+# are read without "sub" (task 981).
+SPEECH_VERSION = "2"
+
+# A subscript on one of these is a LIMIT ("the sum from k equals 0"), which SRE
+# never reads as "sub" — so it is neither simple nor compound for the rule.
+_LIMIT_OPERATORS = {
+    "sum", "prod", "int", "oint", "lim", "max", "min", "sup", "inf",
+    "bigcup", "bigcap",
+}
+_WORD_WRAPPERS = {"text", "mathrm", "mathbf", "mathit", "mathsf",
+                  "operatorname"}
+_SIMPLE_SUBSCRIPT = re.compile(r"^\s*(?:[A-Za-z0-9]+|\\[A-Za-z]+)\s*$")
+_SUB_WORD = re.compile(r"(?<!\S)sub(?!\S)\s*")
+_COMMAND = re.compile(r"\\([A-Za-z]+|.)")
+
+
+def _braced(latex, start):
+    """The balanced `{...}` group opening at `start`: (inner, end index)."""
+    depth, i = 0, start
+    while i < len(latex):
+        if latex[i] == "\\":
+            i += 2                      # an escaped brace is not a brace
+            continue
+        if latex[i] == "{":
+            depth += 1
+        elif latex[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return latex[start + 1:i], i + 1
+        i += 1
+    return latex[start + 1:], len(latex)
+
+
+def _subscripts(latex):
+    """Each subscript's argument, skipping escaped `\\_` and operator limits."""
+    found, i = [], 0
+    while i < len(latex):
+        if latex[i] == "\\":
+            i += len(_COMMAND.match(latex, i).group(0)) if \
+                _COMMAND.match(latex, i) else 1
+            continue
+        if latex[i] != "_":
+            i += 1
+            continue
+        # What is this `_` attached to? Look back past \limits / \nolimits.
+        before = re.sub(r"\\(?:no)?limits\s*$", "", latex[:i]).rstrip()
+        base = re.search(r"\\([A-Za-z]+)$", before)
+        j = i + 1
+        while j < len(latex) and latex[j] == " ":
+            j += 1
+        if j >= len(latex):
+            break
+        if latex[j] == "{":
+            arg, end = _braced(latex, j)
+        elif latex[j] == "\\":
+            command = _COMMAND.match(latex, j)
+            arg, end = command.group(0), j + len(command.group(0))
+            if command.group(1) in _WORD_WRAPPERS and \
+                    end < len(latex) and latex[end] == "{":
+                inner, end = _braced(latex, end)
+                arg = f"{arg}{{{inner}}}"
+        else:
+            arg, end = latex[j], j + 1
+        if not (base and base.group(1) in _LIMIT_OPERATORS):
+            found.append(arg)
+        i = end
+    return found
+
+
+def _is_simple(arg):
+    wrapped = re.match(r"^\s*\\([A-Za-z]+)\s*\{(.*)\}\s*$", arg, re.DOTALL)
+    if wrapped and wrapped.group(1) in _WORD_WRAPPERS:
+        arg = wrapped.group(2).replace("\\_", "")
+    return bool(_SIMPLE_SUBSCRIPT.match(arg))
+
+
+def subscripts_are_simple(latex: str) -> bool:
+    """True when every subscript in `latex` is one symbol, or one word.
+
+    Simple: digits, letters, a single Greek letter or other command, or a word
+    in `\\text{}` / `\\mathrm{}` and the like. Compound: anything holding an
+    operator, relation, comma, fraction, parenthesis or a nested script. Limits
+    on \\sum, \\int, \\lim and friends are not subscripts for this purpose.
+    """
+    return all(_is_simple(arg) for arg in _subscripts(latex or ""))
+
+
+def terse_subscripts(said: str, latex: str) -> str:
+    """Drop the word "sub" from spoken maths whose subscripts are all simple.
+
+    SRE never marks where a subscript ENDS, so "v sub 1 i sub 1" can lose its
+    "sub"s safely ("v 1 i 1"), while "a sub n minus 1" cannot: there "sub" is
+    the only cue that a subscript began, and without it a_{n-1} sounds like
+    a·n − 1. So an expression holding any compound subscript keeps every "sub".
+
+    NOTE this changes the spoken text, and the spoken text is what `text_key`
+    hashes — so it changes the key of every section with subscripted maths.
+    """
+    if not said or not subscripts_are_simple(latex):
+        return said
+    return _SUB_WORD.sub("", said).strip()
+
+
 class SkipMath:
     """Say nothing for math."""
 
@@ -202,7 +308,8 @@ def build_speech(tokens, math=None):
                       if t.latex and t.kind in ("math", "cloze")]
     spoken_math = math.speak_all(
         [(tokens[i].latex, tokens[i].display) for i in math_positions])
-    said_by_index = dict(zip(math_positions, spoken_math))
+    said_by_index = {i: terse_subscripts(said, tokens[i].latex)
+                     for i, said in zip(math_positions, spoken_math)}
 
     words = []
     owners = []
