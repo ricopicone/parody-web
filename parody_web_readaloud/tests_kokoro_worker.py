@@ -276,3 +276,35 @@ class ConstantBitrateTests(SimpleTestCase):
         # somewhere else than the highlight believed.
         kbps = len(data) * 8 / 3 / 1000
         self.assertLess(abs(kbps - 64), 8, kbps)
+
+
+class SecondReviewTests(SimpleTestCase):
+    def test_untimed_word_starts_after_the_previous_words_sound(self):
+        # "answer —" : the dash has no token time; it must not start inside
+        # "answer", or a blank ending at "answer" would hold mid-answer.
+        marks, _ = marks_from_tokens(
+            "the answer — then",
+            [("the", 0.0, 0.1), ("answer", 0.2, 0.7), ("then", 0.9, 1.1)])
+        self.assertGreaterEqual(marks[2]["time"], 700)
+        self.assertLessEqual(marks[2]["time"], 900)
+
+    def test_trailing_untimed_word_starts_at_the_previous_end(self):
+        marks, _ = marks_from_tokens("so the end )",
+                                     [("so", 0.0, 0.1), ("the", 0.2, 0.3),
+                                      ("end", 0.4, 0.9)])
+        self.assertEqual(marks[3]["time"], 900)
+
+    def test_main_stops_before_voicing_when_mp3_cannot_be_written(self):
+        from unittest import mock
+
+        from parody_web_readaloud import kokoro_worker
+        with tempfile.TemporaryDirectory() as root:
+            queue = DirQueue(Path(root))
+            todo(queue, "k1", "the pace")
+            with mock.patch.object(kokoro_worker, "encode_mp3",
+                                   side_effect=TypeError("bitrate_mode")), \
+                    mock.patch.object(kokoro_worker, "KokoroVoice") as voice:
+                status = kokoro_worker.main(["--queue-dir", root])
+            self.assertNotEqual(status, 0)
+            voice.return_value.render.assert_not_called()
+            self.assertTrue(queue.exists("todo-k1.json"))

@@ -137,13 +137,19 @@ def marks_from_tokens(text: str, timed: list) -> tuple:
         after = bisect.bisect_right(known, i)
         prev_i = known[after - 1] if after > 0 else None
         next_i = known[after] if after < len(known) else None
+        # Never before the previous word's own sound has ended: an untimed
+        # dash after a blank's answer must not start inside the answer, or the
+        # blank (which holds at the next word's start) would hold mid-answer.
+        floor = (None if prev_i is None else
+                 ends[prev_i] if ends[prev_i] is not None else times[prev_i])
         if prev_i is None:
             times[i] = 0.0
         elif next_i is None:
-            times[i] = times[prev_i]
+            times[i] = floor
         else:
+            ceiling = max(times[next_i], floor)
             share = (i - prev_i) / (next_i - prev_i)
-            times[i] = times[prev_i] + (times[next_i] - times[prev_i]) * share
+            times[i] = floor + (ceiling - floor) * share
 
     marks, last = [], 0
     for word, start, seconds, end in zip(words, byte_starts, times, ends):
@@ -372,6 +378,18 @@ def main(argv=None) -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+
+    if not args.dry_run:
+        # Fail before a single section is synthesised, not after every one
+        # has been: an old soundfile (no bitrate_mode) or a libsndfile without
+        # MP3 would otherwise discard hours of Kokoro output, one by one.
+        try:
+            encode_mp3([0.0] * RATE)
+        except Exception as error:                  # noqa: BLE001
+            print(f"cannot write MP3 here ({type(error).__name__}: {error}); "
+                  "needs soundfile >= 0.13 with an MP3-capable libsndfile",
+                  file=sys.stderr, flush=True)
+            return 2
 
     if args.queue_dir:
         queue = DirQueue(Path(args.queue_dir))

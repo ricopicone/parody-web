@@ -2231,7 +2231,7 @@ requires-dist = [
     { name = "misaki", extras = ["en"], marker = "python_full_version < '3.13' and extra == 'kokoro'", specifier = "==0.9.4" },
     { name = "pymupdf", marker = "extra == 'readalong'", specifier = ">=1.24" },
     { name = "pypdf", marker = "extra == 'print'", specifier = ">=4.0" },
-    { name = "soundfile", marker = "extra == 'kokoro'", specifier = ">=0.12" },
+    { name = "soundfile", marker = "extra == 'kokoro'", specifier = ">=0.13" },
 ]
 provides-extras = ["print", "readalong", "kokoro"]
 

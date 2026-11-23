@@ -43,7 +43,7 @@ readalong = [
 kokoro = [
     "kokoro==0.9.4; python_version < '3.13'",
     "misaki[en]==0.9.4; python_version < '3.13'",
-    "soundfile>=0.12",
+    "soundfile>=0.13",
     "boto3>=1.34",
 ]
 
