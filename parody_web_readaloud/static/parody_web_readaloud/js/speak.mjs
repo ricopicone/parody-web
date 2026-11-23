@@ -45,6 +45,7 @@ const PACKAGES = AllPackages.filter((name) => name !== 'bussproofs');
 //   0.8\ \Omega      "0.8 empty ohms"    (a TeX space is an mtext SRE reads)
 //   2\ \mathrm{k}\Omega  "2 empty normal k ohms"
 //   360^\circ        "360 raised to the composed with power"
+//   \mathsf{v}_1      "sans serif v sub 1"; \mathfrak{m} "German m"
 //
 // A unit is a unit by where it sits: right after a number, possibly through a
 // space or an SI prefix. Everywhere else an upright letter is a variable, and
@@ -229,12 +230,32 @@ function removeWrapped(node) {
   up.childNodes.splice(up.childNodes.indexOf(at), 1);
 }
 
+// Fonts that say nothing a listener can use. System Dynamics' \mathsf{v} and
+// \mathsf{f} came out "sans serif v sub ..." 463 times, and robotics' mass
+// \mathfrak{m} "German m sub ..." 344 times, which made the equations around
+// them hard to follow. Bold stays (a vector beside its scalar) and so does
+// script (\mathcal{V}, read "script V" in lectures too).
+const QUIET_FONTS = new Map([
+  ['sans-serif', null], ['sans-serif-italic', null], ['fraktur', null],
+  ['bold-sans-serif', 'bold'], ['sans-serif-bold-italic', 'bold-italic'],
+  ['bold-fraktur', 'bold'],
+]);
+
+function quietFont(node) {
+  const font = node.attributes.getExplicit('mathvariant');
+  if (!QUIET_FONTS.has(font)) return;
+  const plain = QUIET_FONTS.get(font);
+  if (plain) node.attributes.set('mathvariant', plain);
+  else unsetVariant(node);
+}
+
 function forSpeech(root) {
   PARENTS = new Map();
   indexParents(root);
   const tokens = [];
   root.walkTree((node) => { if (node.isToken) tokens.push(node); });
   for (const node of tokens) {
+    quietFont(node);
     if (node.isKind('mo') && node.getText() === '∘') {
       // ^\circ as a superscript is a degree sign, not function composition.
       const up = parentOf(outer(node));

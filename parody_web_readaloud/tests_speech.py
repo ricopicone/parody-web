@@ -240,6 +240,16 @@ class UprightLettersTests(SimpleTestCase):
         self.assertEqual(self.say("1\\ \\mathrm{ms}", "C\\, dv/dt"),
                          ["1 millisecond", "C times d v divided by d t"])
 
+    def test_sans_serif_and_fraktur_are_not_announced(self):
+        # Was "sans serif v sub 1" (463 times in System Dynamics) and
+        # "German m sub 2" (robotics' mass). Script and bold still are: they
+        # tell apart symbols that sit side by side.
+        self.assertEqual(
+            self.say("\\mathsf{v}_1 = \\mathsf{f}(t)", "\\mathfrak{m}_2",
+                     "\\mathcal{V}_s", "\\bm{x}"),
+            ["v sub 1 equals f of t", "m sub 2", "script V sub s",
+             "bold italic x"])
+
     def test_a_degree_is_a_degree(self):
         # Was "360 raised to the composed with power".
         self.assertEqual(self.say("360^\\circ"), ["360 degrees"])
