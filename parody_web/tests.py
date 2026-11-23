@@ -1815,6 +1815,18 @@ class BookHostGatingTests(TestCase):
         # contains {\boldsymbol{#1}} and friends.
         self.assertNotIn("{% comment %}", html)
 
+    def test_page_typesets_with_the_shared_macro_list(self):
+        # The page's MathJax config is rendered from parody_web.mathjax, the
+        # list read-along speaks with. Read it back out of a served page and
+        # parse it: equal to MACROS means the page and the voice agree, and
+        # parsing proves the tag emitted a well-formed object, not just text.
+        from parody_web.mathjax import MACROS
+        html = self.anon.get("/hardware/specific-t1/").content.decode()
+        config = html.split("window.MathJax = {", 1)[1].split("</script>", 1)[0]
+        literal = config.split("macros: ", 1)[1].rsplit("}", 2)[0]
+        self.assertEqual(json.loads(literal), MACROS)
+        self.assertEqual(json.loads(literal)["bm"], ["{\\boldsymbol{#1}}", 1])
+
     def test_section_breadcrumb_includes_chapter_rung(self):
         # On a section page the breadcrumb shows the chapter level, linking back
         # to the chapter landing page, and marks it truncatable so a long title
@@ -2599,18 +2611,18 @@ class ClozeAssetsTests(TestCase):
         # the home for (\bm, \diff, \sgn and friends are already here). They
         # are pinned because their failure is silent: MathJax renders an
         # unknown macro as its own name, mid-sentence, with no error anywhere.
-        base = self.BASE.read_text(encoding="utf-8")
+        from parody_web.mathjax import MACROS
         for name in ("abs", "norm"):
-            self.assertIn(f"{name}: [", base, f"\\{name} is not declared")
+            self.assertIn(name, MACROS, f"\\{name} is not declared")
 
     def test_probability_operators_are_declared(self):
         # The maths notes write expectation and its friends as \E{X}, \Var{X},
         # \Cov{X,Y} — one mandatory argument, rendered bracketed. Same silent
         # failure as \abs above: 25 expressions across Probability and
         # Statistics read "EX" and "VarX" on the live page instead.
-        base = self.BASE.read_text(encoding="utf-8")
+        from parody_web.mathjax import MACROS
         for name in ("E", "Var", "Cov", "Cor", "Skew", "Kurt"):
-            self.assertIn(f"{name}: [", base, f"\\{name} is not declared")
+            self.assertIn(name, MACROS, f"\\{name} is not declared")
 
     def test_cloze_classes_are_styled(self):
         css = (self.STATIC / "content.css").read_text(encoding="utf-8")

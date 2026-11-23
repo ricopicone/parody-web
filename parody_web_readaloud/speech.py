@@ -126,15 +126,20 @@ class SreMath:
     expression SRE cannot parse, should cost that equation its narration and
     nothing else.
 
-    `macros` is passed through to MathJax so a book's own \\newcommand set can
-    be resolved; without it, an expression using a custom macro is silently
-    unspeakable.
+    `macros` is passed through to MathJax so the books' own macros resolve.
+    It defaults to the SAME list the web page typesets with
+    (`parody_web.mathjax.MACROS`). It used to default to none, and an
+    undefined macro does not fail here: MathJax keeps its name as text and SRE
+    reads that aloud, so every \\bm{x} in a voiced section was spoken as
+    "backslash B M x". Pass `macros={}` to really mean none.
     """
 
     def __init__(self, node="node", timeout=300.0, macros=None):
+        from parody_web.mathjax import MACROS
+
         self.node = node
         self.timeout = timeout
-        self.macros = macros or {}
+        self.macros = MACROS if macros is None else macros
 
     @property
     def script(self):

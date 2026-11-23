@@ -45,53 +45,11 @@ window.MathJax = {
        undefined-macro error. */
     packages: { '[+]': ['boldsymbol', 'mathtools', 'cancel', 'color', 'upgreek',
                         'html'] },
-    macros: {
-    /* numbering injects \tag{C.n} for equation numbers; \label is mapped to a
-       no-op so any raw \label left in a multi-label aligned block (kept by the
-       build so each row can be \tag-ged) never breaks typesetting. */
-    label: ['', 1],
-    bm: ['{\\boldsymbol{#1}}', 1],
-    mat: ['{\\boldsymbol{#1}}', 1],
-    vec: ['{\\boldsymbol{#1}}', 1],
-    bnot: ['{\\overline{#1}}', 1],
-    /* Paired delimiters. An undefined macro is NOT a red error in this
-       configuration — MathJax typesets the macro NAME into the sentence, so
-       System Dynamics read "the magnitude \abs H(j\omega)" on the live site
-       and nothing anywhere said so. The math notes use \norm the same way. */
-    abs: ['{\\left\\lvert #1 \\right\\rvert}', 1],
-    norm: ['{\\left\\lVert #1 \\right\\rVert}', 1],
-    /* Probability and statistics operators, one mandatory argument, bracketed:
-       \E{X} sets E[X]. The book's LaTeX declares them with xparse so a starred
-       form drops the brackets; nothing in any book uses the star, so these
-       take the plain form. Silent-failure class again — Probability read
-       "EX" and "VarX" on the page. */
-    E: ['{\\operatorname{E}\\left[#1\\right]}', 1],
-    Var: ['{\\operatorname{Var}\\left[#1\\right]}', 1],
-    Cov: ['{\\operatorname{Cov}\\left[#1\\right]}', 1],
-    Cor: ['{\\operatorname{Cor}\\left[#1\\right]}', 1],
-    Skew: ['{\\operatorname{Skew}\\left[#1\\right]}', 1],
-    Kurt: ['{\\operatorname{Kurt}\\left[#1\\right]}', 1],
-    bigcdot: '{\\cdot}',
-    band: ['{#1\\cdot #2}', 2],
-    bor: ['{#1+#2}', 2],
-    bnand: ['{#1\\mathbin{\\mathrm{nand}}#2}', 2],
-    bnor: ['{#1\\mathbin{\\mathrm{nor}}#2}', 2],
-    bxor: ['{#1\\mathbin{\\mathrm{xor}}#2}', 2],
-    bxnor: ['{#1\\mathbin{\\mathrm{xnor}}#2}', 2],
-    sgn: '{\\operatorname{sgn}}',
-    atantwo: '{\\operatorname{atan}_2}',
-    arctantwo: '{\\operatorname{arctan}_2}',
-    arctanh: '{\\operatorname{arctanh}}',
-    adj: '{\\operatorname{adj}}',
-    Div: '{\\operatorname{div}}',
-    curl: '{\\operatorname{curl}}',
-    grad: '{\\operatorname{grad}}',
-    diff: '{d}',
-    Diff: ['{d^{#1}}', 1],
-    argmax: '{\\operatorname*{argmax}}',
-    argmin: '{\\operatorname*{argmin}}',
-    parallelsum: '{\\mathbin{\\|}}'
-  } }
+    /* The books' custom macros (\bm, \abs, \E, ...). The list lives in
+       parody_web/mathjax.py because read-along's speech engine reads it too:
+       one list, so the page and the voice cannot disagree about a macro. */
+    macros: {% mathjax_macros %}
+  }
 };
 </script>
 <!-- v4 drops the /es5 path segment v3 used, and the docs load it `defer`

@@ -213,6 +213,16 @@ def theme_css(context):
                           getattr(book, "slug", None)))
 
 
+@register.simple_tag
+def mathjax_macros():
+    """The books' custom maths macros, as the JS object MathJax's config wants.
+
+    Rendered from parody_web.mathjax, the one list read-along's speech engine
+    reads too — so the page and the voice can never disagree about \\bm."""
+    from ..mathjax import macros_js
+    return mark_safe(macros_js())
+
+
 @register.simple_tag(takes_context=True)
 def account(context):
     """The reader's identity for the masthead chip.

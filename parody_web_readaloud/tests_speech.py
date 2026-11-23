@@ -134,6 +134,53 @@ class SreMathTests(SimpleTestCase):
         self.assertEqual(said[0], "Z sub C")
         self.assertEqual(said[1], "v sub plus")
 
+    def test_the_engine_is_given_the_pages_macros_by_default(self):
+        # The default IS the page's list, not a copy of it: a macro added for
+        # the page is spoken without anyone remembering read-along.
+        from parody_web.mathjax import MACROS
+
+        sent = []
+
+        class Recording(SreMath):
+            def _invoke(self, payload):
+                sent.append(payload)
+                return {"texts": ["x"]}
+
+        Recording().speak_all([("\\bm{x}", False)])
+        self.assertIs(sent[0]["macros"], MACROS)
+        sent.clear()
+        Recording(macros={}).speak_all([("\\bm{x}", False)])
+        self.assertEqual(sent[0]["macros"], {})
+
+    @unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
+                         "needs node and the SRE script")
+    def test_a_bold_vector_is_not_read_as_its_macro_name(self):
+        """The reported bug: read-along said "backslash B M".
+
+        MathJax keeps an undefined macro's name as text and SRE reads it out,
+        so this failed with no error anywhere — only by listening.
+        """
+        said = SreMath().speak_all([("\\bm{x} = \\abs{y}", False)])
+        self.assertEqual(said[0], "bold italic x equals the absolute value of y")
+
+    @unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
+                         "needs node and the SRE script")
+    def test_no_macro_the_page_knows_is_spoken_as_its_name(self):
+        # Every macro, with letters for its arguments. "backslash" in the
+        # speech means MathJax did not know the macro; nothing said at all
+        # means the expansion itself failed to parse.
+        from parody_web.mathjax import MACROS
+
+        items = []
+        for name, value in MACROS.items():
+            arity = value[1] if isinstance(value, list) else 0
+            args = "".join("{%s}" % letter for letter in "ab"[:arity])
+            items.append((f"x \\{name}{args}", False))
+        said = SreMath().speak_all(items)
+        for (latex, _), words in zip(items, said):
+            self.assertIsNotNone(words, f"{latex} was not spoken at all")
+            self.assertNotIn("backslash", words, f"{latex} -> {words!r}")
+
 
 class SreAvailableTests(SimpleTestCase):
     """The preflight that stops a whole book being generated mute.
