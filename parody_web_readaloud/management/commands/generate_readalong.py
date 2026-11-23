@@ -40,7 +40,7 @@ from ... import refs
 from ...generate import (EstimatedSynth, PollySynth, cloze_count, prepare,
                          reuse, synthesise, text_key_for)
 from ...models import ReadAlongTrack
-from ...pronounce import KOKORO, engine_id, spoken_form
+from ...pronounce import KOKORO, engine_family, engine_id, spoken_form
 from ...queued import NotVoicedYet, QueuedSynth
 from ...speech import SkipMath, SreMath, sre_available
 from ...storage import queue_backend, write_audio
@@ -288,7 +288,12 @@ class Command(BaseCommand):
         # a section whose text really did change finds no prior and is
         # synthesised; one whose text did not is re-boxed for nothing.
         exact = rows.filter(slice_key=slice_key).first()
-        if (exact is not None and exact.text_key and exact.engine == eid
+        # The engine check is Kokoro's only: a Polly row made under another
+        # engine was left alone before this and still is (it must never buy
+        # Polly audio it did not use to).
+        fingerprint_ok = (engine_family(engine) != KOKORO
+                          or (exact is not None and exact.engine == eid))
+        if (exact is not None and exact.text_key and fingerprint_ok
                 and not options["force"]
                 and not options["realign"] and not options["respeak"]):
             self.stdout.write(f"have {section.key}")
@@ -325,11 +330,18 @@ class Command(BaseCommand):
             # Also reached when only the engine id moved (a correction-table
             # or narration change that does not touch this section's words):
             # the recording is still right, so it is re-stamped, not re-voiced.
+            #
+            # Only a row that never had a text key learns this parse's token
+            # count: a row whose key already matches keeps its own, because its
+            # stored words index THAT count's tokens and `_prior` relies on it.
             if not options["dry_run"]:
-                exact.text_key = text_key
-                exact.token_count = len(prep.tokens)
+                fields = ["engine"]
                 exact.engine = eid
-                exact.save(update_fields=["text_key", "token_count", "engine"])
+                if not exact.text_key:
+                    exact.text_key = text_key
+                    exact.token_count = len(prep.tokens)
+                    fields += ["text_key", "token_count"]
+                exact.save(update_fields=fields)
             self.stdout.write(f"have {section.key} (text key recorded)")
             return "skipped"
 

@@ -389,3 +389,24 @@ class TerseSubscriptTests(SimpleTestCase):
         tokens = [Token("cloze", latex="R_L", answer=["R_L"])]
         text, _ = build_speech(tokens, math=_SubMath({"R_L": "R sub L"}))
         self.assertEqual(text, "R L")
+
+
+class TerseSubscriptRobustnessTests(SimpleTestCase):
+    """A cosmetic rule must never be able to stop generation (final review)."""
+
+    def test_backslash_at_end_does_not_crash(self):
+        from parody_web_readaloud.speech import subscripts_are_simple
+        for latex in ("x_\\", "x_\\\n", "x_", "x_{", "x_{a", "_", "\\"):
+            with self.subTest(latex=latex):
+                self.assertIn(subscripts_are_simple(latex), (True, False))
+
+    def test_build_speech_survives_a_failing_rule(self):
+        from unittest import mock
+
+        from parody_web_readaloud import speech
+        tokens = [Token("math", latex="v_1")]
+        with mock.patch.object(speech, "terse_subscripts",
+                               side_effect=RuntimeError("boom")):
+            text, _ = build_speech(tokens,
+                                   math=_SubMath({"v_1": "v sub 1"}))
+        self.assertEqual(text, "v sub 1")

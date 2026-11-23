@@ -175,3 +175,24 @@ class StandaloneTests(SimpleTestCase):
         data = encode_mp3(numpy.zeros(24000, dtype="float32"))
         self.assertTrue(data[:3] == b"ID3" or
                         (data[0] == 0xFF and data[1] & 0xE0 == 0xE0))
+
+
+class BrokenVoicer(FakeVoicer):
+    def render(self, spoken, voice):
+        if "bad" in spoken:
+            raise RuntimeError("cannot say this")
+        return super().render(spoken, voice)
+
+
+class WorkerRobustnessTests(SimpleTestCase):
+    def test_one_failing_entry_does_not_stop_the_run(self):
+        with tempfile.TemporaryDirectory() as root:
+            queue = DirQueue(Path(root))
+            todo(queue, "k1", "a bad one")
+            todo(queue, "k2", "a good one")
+            summary = process(queue, BrokenVoicer(), encode=fake_encode,
+                              log=lambda *_: None)
+            self.assertEqual(summary["failed"], 1)
+            self.assertEqual(summary["voiced"], 1)
+            self.assertTrue(queue.exists("todo-k1.json"))
+            self.assertTrue(queue.exists("done-k2.mp3"))

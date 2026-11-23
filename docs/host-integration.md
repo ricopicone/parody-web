@@ -799,6 +799,13 @@ does not have. So with `--engine kokoro` the host never voices anything:
 3. The next `generate_readalong` for that book finds the pair, makes the track
    (`made`), stores the audio as usual, and clears the hand-off.
 
+Permissions: the host's role needs `s3:GetObject`, `s3:PutObject`,
+`s3:DeleteObject` and `s3:ListBucket` on `readalong-queue/*` as well as
+`readalong/*` (without ListBucket, a HeadObject on a missing queue key is a
+403, and the run stops). The worker's credentials need the same on
+`readalong-queue/*`. The worker sends no server-side-encryption header, so a
+bucket policy that demands one will refuse its writes.
+
 The worker says exactly what the host queued and times exactly the host's
 words, so a laptop on a different parody-web or SRE cannot produce audio for
 the wrong text.

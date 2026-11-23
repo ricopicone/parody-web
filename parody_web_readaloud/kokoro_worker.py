@@ -228,7 +228,7 @@ def encode_mp3(samples, rate: int = RATE) -> bytes:
 def process(queue, voicer, *, encode=encode_mp3, book=None, chapters=(),
             limit=None, dry_run=False, log=print) -> dict:
     """Voice every matching todo entry; returns a summary for the host."""
-    voiced = cleared = pending = interpolated = 0
+    voiced = cleared = pending = interpolated = failed = 0
     books = set()
     for name in queue.todo():
         entry = json.loads(queue.read(name).decode("utf-8"))
@@ -252,11 +252,18 @@ def process(queue, voicer, *, encode=encode_mp3, book=None, chapters=(),
             books.add(entry.get("book", ""))
             continue
         began = time.monotonic()
-        samples, timed = voicer.render(entry["spoken"], entry["voice"])
-        marks, filled = marks_from_tokens(entry["text"], timed)
-        queue.write(audio_name, encode(samples), "audio/mpeg")
-        queue.write(marks_name, json.dumps(marks).encode("utf-8"),
-                    "application/json")
+        try:
+            samples, timed = voicer.render(entry["spoken"], entry["voice"])
+            marks, filled = marks_from_tokens(entry["text"], timed)
+            queue.write(audio_name, encode(samples), "audio/mpeg")
+            queue.write(marks_name, json.dumps(marks).encode("utf-8"),
+                        "application/json")
+        except Exception as error:          # noqa: BLE001
+            # One entry Kokoro cannot say must not wedge the queue: the list
+            # is sorted, so every re-run would die at the same place.
+            failed += 1
+            log(f"FAILED {where}: {type(error).__name__}: {error}")
+            continue
         queue.delete(name)                  # last: a crash re-voices, never loses
         voiced += 1
         interpolated += filled
@@ -264,7 +271,8 @@ def process(queue, voicer, *, encode=encode_mp3, book=None, chapters=(),
         log(f"voiced {where}: {len(marks)} words "
             f"({filled} interpolated) in {time.monotonic() - began:.1f}s")
     return {"voiced": voiced, "cleared": cleared, "pending": pending,
-            "interpolated": interpolated, "books": sorted(b for b in books if b)}
+            "interpolated": interpolated, "failed": failed,
+            "books": sorted(b for b in books if b)}
 
 
 def main(argv=None) -> int:
@@ -296,7 +304,7 @@ def main(argv=None) -> int:
                       dry_run=args.dry_run,
                       log=lambda line: print(line, flush=True))
     print(json.dumps(summary), flush=True)     # last line: the host parses it
-    return 0
+    return 1 if summary["failed"] else 0
 
 
 if __name__ == "__main__":

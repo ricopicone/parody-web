@@ -168,6 +168,9 @@ def _subscripts(latex):
             arg, end = _braced(latex, j)
         elif latex[j] == "\\":
             command = _COMMAND.match(latex, j)
+            if command is None:         # a lone backslash before a newline/end
+                found.append("\\")
+                break
             arg, end = command.group(0), j + len(command.group(0))
             if command.group(1) in _WORD_WRAPPERS and \
                     end < len(latex) and latex[end] == "{":
@@ -213,6 +216,19 @@ def terse_subscripts(said: str, latex: str) -> str:
     if not said or not subscripts_are_simple(latex):
         return said
     return _SUB_WORD.sub("", said).strip()
+
+
+def _tersely(said, latex):
+    """`terse_subscripts`, which must never be able to stop generation.
+
+    It is a nicety. A crash in it would escape `prepare` and stop
+    `generate_readalong` — the deploy's heal — for every book, over one
+    malformed equation; saying "sub" there instead is the right failure.
+    """
+    try:
+        return terse_subscripts(said, latex)
+    except Exception:                                   # noqa: BLE001
+        return said
 
 
 class SkipMath:
@@ -308,7 +324,7 @@ def build_speech(tokens, math=None):
                       if t.latex and t.kind in ("math", "cloze")]
     spoken_math = math.speak_all(
         [(tokens[i].latex, tokens[i].display) for i in math_positions])
-    said_by_index = {i: terse_subscripts(said, tokens[i].latex)
+    said_by_index = {i: _tersely(said, tokens[i].latex)
                      for i, said in zip(math_positions, spoken_math)}
 
     words = []

@@ -536,3 +536,25 @@ class KokoroQueueTests(RepaginationTests):
         self.assertEqual(entry["voice"], "am_puck")
         self.assertEqual((entry["book"], entry["chapter"], entry["section"]),
                          (self.book.slug, "one", "al"))
+
+
+class FinalReviewCommandTests(KokoroQueueTests):
+    def test_polly_row_of_another_engine_is_left_alone(self):
+        """Polly behaviour is unchanged: the engine check is Kokoro's only."""
+        self._run(engine="standard")
+        out, _ = self._run()                    # default engine: neural
+        self.assertIn("have al", out)
+        self.assertEqual(len(self.polly.calls), 1)
+
+    def test_restamp_keeps_the_rows_token_count(self):
+        self._kokoro()
+        self._voice_the_queue()
+        self._kokoro()
+        row = self._puck()
+        ReadAlongTrack.objects.filter(pk=row.pk).update(token_count=999)
+        with self._with_table({"Bode": "bˈOdi"}):
+            out, _ = self._kokoro()
+        self.assertIn("(text key recorded)", out)
+        after = self._puck()
+        self.assertEqual(after.token_count, 999)
+        self.assertNotEqual(after.engine, row.engine)
