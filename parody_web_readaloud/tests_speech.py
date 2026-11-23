@@ -457,6 +457,15 @@ class NaturalMathWordsTests(SimpleTestCase):
                          "open bracket Ad sub T close bracket transpose")
         self.assertEqual(self.say("J raised to the negative down tack power"),
                          "J inverse transpose")
+        # A bracketed base, (A^T \lambda)^T and (J^{-1})^T: robotics 8.x.
+        self.assertEqual(
+            self.say("open paren A transpose lamda close paren raised to the "
+                     "exponent down tack end exponent times theta"),
+            "open paren A transpose lamda close paren transpose times theta")
+        self.assertEqual(
+            self.say("close paren raised to the exponent negative down tack "
+                     "end exponent"),
+            "close paren inverse transpose")
         self.assertEqual(
             self.say("f equals the negative down tack-th power of J of theta"),
             "f equals J inverse transpose of theta")

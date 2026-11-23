@@ -133,6 +133,12 @@ _LECTURER_WORDS = [
      "inverse transpose"),
     (re.compile(r"\braised to the down tack power\b"), "transpose"),
     (re.compile(r"\bsuper down tack\b"), "transpose"),
+    # A bracketed base, (A^{\mathrm{T}}\lambda)^{\mathrm{T}}: SRE marks where
+    # the exponent ends.
+    (re.compile(r"\braised to the exponent negative down tack end exponent\b"),
+     "inverse transpose"),
+    (re.compile(r"\braised to the exponent down tack end exponent\b"),
+     "transpose"),
     (re.compile(r"\bpartial differential\b"), "partial"),
     # SRE takes f, h and F_K for functions, and then a slash after one for
     # its argument: f/C came out "f of slash C".
@@ -173,8 +179,10 @@ def natural_math_words(said):
 # multi-digit subscript is read digit by digit, an upright T is "transpose".
 # Most of that lives in speak.mjs, which the box runs from a hand-installed
 # copy: bumping this is what makes the queue re-voice, but the box only says
-# the new words once its speak.mjs is replaced.
-SPEECH_VERSION = "3"
+# the new words once its speak.mjs is replaced. "4": a transpose on a
+# bracketed base, (A^T \lambda)^T, was still "raised to the exponent down tack
+# end exponent" (robotics 8.x); words only, no speak.mjs change.
+SPEECH_VERSION = "4"
 
 # A subscript on one of these is a LIMIT ("the sum from k equals 0"), which SRE
 # never reads as "sub" — so it is neither simple nor compound for the rule.
