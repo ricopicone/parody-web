@@ -72,3 +72,13 @@ class PronunciationPackagingTests(SimpleTestCase):
                             / "pronunciations.json").read_text())
         self.assertIsInstance(table, dict)
         self.assertTrue(table)
+
+
+class KokoroPackagingTests(SimpleTestCase):
+    def test_kokoro_extra_and_script(self):
+        project = _pyproject()["project"]
+        joined = " ".join(project["optional-dependencies"]["kokoro"])
+        for name in ("kokoro", "misaki", "soundfile", "boto3"):
+            self.assertIn(name, joined)
+        self.assertEqual(project["scripts"]["parody-voice-queue"],
+                         "parody_web_readaloud.kokoro_worker:main")
