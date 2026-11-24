@@ -369,6 +369,14 @@ class TerseSubscriptTests(SimpleTestCase):
         from parody_web_readaloud.speech import subscripts_are_simple
         self.assertTrue(subscripts_are_simple(r"\text{max\_speed}"))
 
+    def test_a_brace_label_is_not_a_subscript(self):
+        # \underbrace{P^{-1}AP}_{A'} is read "P inverse A P, which is A
+        # prime": its label is no subscript, so it must not keep every "sub".
+        from parody_web_readaloud.speech import subscripts_are_simple
+        self.assertTrue(subscripts_are_simple(
+            r"\underbrace{P^{-1} A P}_{A'} x_1 + \underbrace {x_{2}} _{y+1}"))
+        self.assertFalse(subscripts_are_simple(r"\underbrace{a_{n-1}}_{b}"))
+
     def test_only_whole_word_sub(self):
         from parody_web_readaloud.speech import terse_subscripts
         self.assertEqual(terse_subscripts("x sub 1 subtract", "x_1"),
@@ -487,6 +495,33 @@ class NaturalMathWordsTests(SimpleTestCase):
                          "theta dot equals omega")
         self.assertEqual(self.say("x two dots plus x"), "x double dot plus x")
         self.assertEqual(self.say("s \u20db of t"), "s triple dot of t")
+
+    def test_an_accent_has_a_name_a_voice_can_say(self):
+        # \overline's mark was "horizontal bar" (46 System Dynamics
+        # expressions, its equilibrium x-bar); \check's SRE passes through
+        # bare, and \mathring's is "ring above".
+        self.assertEqual(self.say("x horizontal bar equals u"),
+                         "x bar equals u")
+        self.assertEqual(self.say("x \u02c7"), "x check")
+        self.assertEqual(self.say("x ring above"), "x ring")
+
+    def test_a_brace_label_is_which_is(self):
+        # speak.mjs reads \underbrace{X}_{Y} as X "whichis" Y "endbrace": a
+        # pause before the name, and one after it unless the line ends there.
+        self.assertEqual(
+            self.say("P A P whichis A prime endbrace x prime plus u"),
+            "P A P, which is A prime, x prime plus u")
+        self.assertEqual(self.say("D whichis D prime endbrace. y equals"),
+                         "D, which is D prime. y equals")
+        self.assertEqual(self.say("y whichis K endbrace period"),
+                         "y, which is K period")
+        self.assertEqual(self.say("y whichis K endbrace comma"),
+                         "y, which is K comma")
+        self.assertEqual(self.say("y whichis K endbrace"), "y, which is K")
+        # SRE puts the "times" of what follows before the marker.
+        self.assertEqual(self.say("x whichis b times c times endbrace Y"),
+                         "x, which is b times c, times Y")
+
 
 
 @unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
@@ -624,3 +659,111 @@ class LecturerReadingTests(SimpleTestCase):
         tokens = [Token("math", latex="\\dot{\\theta}_1 = \\omega_1")]
         text, _ = build_speech(tokens, math=SreMath())
         self.assertEqual(text, "theta 1 dot equals omega 1")
+
+    def test_an_accent_is_read_after_a_simple_subscript(self):
+        # Rico, task 981: hats and bars as the dot, "x 1 hat", not "x hat 1".
+        self.assertEqual(
+            self.say("\\hat{x}_1", "\\bar{x}_1", "\\tilde{\\tau}_1",
+                     "\\hat{\\bm{x}}_k", "\\hat{x}_k^2", "\\overline{x}_1",
+                     "\\widehat{x}_1"),
+            ["x sub 1 hat", "x sub 1 bar", "tau sub 1 tilde", "x sub k hat",
+             "x sub k hat squared", "x sub 1 bar", "x sub 1 hat"])
+
+    def test_an_accent_stays_before_a_compound_subscript(self):
+        # As the dot. J\infty counts as compound here as it does for "sub".
+        self.assertEqual(
+            self.say("\\bar{v}_{C_2}", "\\tilde{\\Omega}_{J\\infty}",
+                     "\\hat{x}_{k+1}"),
+            ["v bar sub C sub 2", "Omega tilde sub J infinity",
+             "x hat sub k plus 1"])
+
+    def test_an_accent_over_a_subscripted_symbol_keeps_its_place(self):
+        # \overline{T_s}_\mathrm{max}: the bar is on T_s, "max" qualifies it.
+        self.assertEqual(self.say("\\overline{T_s}_\\mathrm{max}"),
+                         ["T sub s bar sub max"])
+
+    def test_an_underlined_space_is_a_blank(self):
+        # System Dynamics' fill-in H(s): was "horizontal bar s plus ...".
+        self.assertEqual(
+            self.say("\\underline{\\hspace{1em}} s + \\underline{\\hspace{1em}}"),
+            ["blank s plus blank"])
+
+    def test_an_overline_is_a_bar(self):
+        # Was "x horizontal bar" (System Dynamics' equilibria, 46 times).
+        self.assertEqual(
+            self.say("\\overline{\\bm{x}}", "\\bm{u} = \\overline{\\bm{u}}",
+                     "\\check{x}"),
+            ["x bar", "u equals u bar", "x check"])
+
+    def test_a_matrix_inverse_is_inverse(self):
+        # Was "P to the negative 1 power" (147 expressions, mostly robotics'
+        # M^{-1} and T_{sb}^{-1}). A capital, a script letter, a bracket or a
+        # matrix is inverted.
+        self.assertEqual(
+            self.say("P^{-1} A P", "T_{sb}^{-1}", "C(sI - A)^{-1}B",
+                     "\\mathcal{L}^{-1}", "M^{-1}J^{\\mathrm{T}}", "(T')^{-1}",
+                     "\\left(\\mathbf{I} - \\mathbf{J}\\right)^{-1}",
+                     "\\dot{T}_{sb}^{-1}"),
+            ["P inverse A P", "T sub s b inverse",
+             "C times open paren s I minus A close paren inverse times B",
+             "script L inverse", "M inverse J transpose", "T prime inverse",
+             "open paren I minus J close paren inverse",
+             "T sub s b dot inverse"])
+
+    def test_what_sre_already_inverts_is_unchanged(self):
+        self.assertEqual(
+            self.say("\\Phi^{-1}(t)", "R^{-1}[\\omega]R", "\\cos^{-1}(x)",
+                     "T_{sb}^{-1}(\\theta)", "\\mathcal{F}^{-1}(Y(\\omega))",
+                     "\\mathcal{F}^{-1}"),
+            ["Phi inverse of t", "R inverse of omega R",
+             "the inverse cosine of x", "T sub s b inverse of theta",
+             "script F inverse of Y of omega", "script F inverse"])
+
+    def test_an_inverse_times_a_bracket_is_still_inverse(self):
+        # Where SRE does not take the base for a function.
+        self.assertEqual(
+            self.say("M^{-1}(x + y)", "(sI - A)^{-1}(x)",
+                     "A^{-1}\\begin{bmatrix} 1 \\\\ 2 \\end{bmatrix}",
+                     "X_{\\text{start}}^{-1}X_{\\text{end}}",
+                     "\\log(X_{\\text{start}}^{-1}X_{\\text{end}})"),
+            ["M inverse times open paren x plus y close paren",
+             "open paren s I minus A close paren inverse times x",
+             "A inverse times the 2 by 1 column matrix 1 2",
+             "X sub start inverse X sub end",
+             "the log of open paren X sub start inverse X sub end close paren"])
+
+    def test_a_mixed_expression_keeps_its_powers(self):
+        # Which "to the negative 1 power" is which cannot be told from the
+        # words. None of the three books mixes them.
+        self.assertEqual(self.say("M^{-1} x^{-1}"),
+                         ["M to the negative 1 power x to the negative 1 power"])
+
+    def test_a_scalar_keeps_its_power(self):
+        self.assertEqual(
+            self.say("x^{-1}", "0.5\\ \\mathrm{s}^{-1}", "10^{-1}",
+                     "e^{-1}"),
+            ["x to the negative 1 power", "0.5 seconds to the negative 1 power",
+             "10 to the negative 1 power", "e to the negative 1 power"])
+
+    def test_a_brace_reads_as_what_it_names(self):
+        # Was "P to the negative 1 power A P with bottom brace below with A
+        # prime below" (16 expressions, mostly System Dynamics' state space).
+        # Rico, task 981: "P inverse A P, which is A prime".
+        self.assertEqual(
+            self.say("\\underbrace{P^{-1}AP}_{A'} \\bm{x}'",
+                     "\\underbrace{0.1}_{K} \\cdot s",
+                     "\\overbrace{a+b}^{c} + d",
+                     "\\underbrace{a+b} + d",
+                     "y = \\underbrace{a+b}_{c}"),
+            ["P inverse A P, which is A prime, x prime",
+             "0.1, which is K, times s",
+             "a plus b, which is c, plus d",
+             "a plus b plus d",
+             "y equals a plus b, which is c"])
+
+    def test_build_speech_reads_x_one_hat_and_a_brace(self):
+        tokens = [Token("math",
+                        latex="\\hat{x}_1 = \\underbrace{P^{-1}AP}_{A'} x_2")]
+        text, _ = build_speech(tokens, math=SreMath())
+        self.assertEqual(text,
+                         "x 1 hat equals P inverse A P, which is A prime, x 2")

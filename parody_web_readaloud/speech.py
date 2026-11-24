@@ -152,6 +152,20 @@ _LECTURER_WORDS = [
     (re.compile(r"\btwo dots\b"), "double dot"),
     (re.compile("\u20db"), "triple dot"),
     (re.compile("\u20dc"), "quadruple dot"),
+    # \overline's mark SRE calls "horizontal bar" (System Dynamics' equilibrium
+    # x-bar, 46 expressions); \check's it passes through bare; \mathring's is
+    # "ring above". A bar, a check and a ring, as on the board.
+    (re.compile(r"\bhorizontal bar\b"), "bar"),
+    (re.compile("\u02c7"), "check"),
+    (re.compile(r"\bring above\b"), "ring"),
+    # \underbrace{X}_{Y}: speak.mjs reads it X "whichis" Y "endbrace". A pause
+    # before the label, and one after it unless the line ends there anyway.
+    (re.compile(r"\s*\bwhichis\b"), ", which is"),
+    # "which is b times c times endbrace Y": SRE puts the "times" before the
+    # next factor ahead of the marker, so the pause goes before it.
+    (re.compile(r"\s+times\s+endbrace\b"), " endbrace times"),
+    (re.compile(r"\s*\bendbrace\b(?=[.,;:!?]|\s+(?:period|comma)\b|\s*$)"), ""),
+    (re.compile(r"\s*\bendbrace\b"), ","),
 ]
 
 
@@ -192,7 +206,10 @@ def natural_math_words(said):
 # is "dot", not "dot above" ("double dot", not "two dots"), and it is read
 # after a simple subscript: \dot{\theta}_1 is "theta 1 dot". The reordering
 # is in speak.mjs, so the box's copy must be replaced again.
-SPEECH_VERSION = "5"
+# "6": every accent as the dot ("x 1 hat"), \overline a "bar", a matrix's -1
+# "inverse" ("P inverse A P"), and \underbrace{X}_{Y} "X, which is Y". In
+# speak.mjs again: replace the box's copy before the deploy.
+SPEECH_VERSION = "6"
 
 # A subscript on one of these is a LIMIT ("the sum from k equals 0"), which SRE
 # never reads as "sub" — so it is neither simple nor compound for the rule.
@@ -227,10 +244,17 @@ def _braced(latex, start):
 def _subscripts(latex):
     """Each subscript's argument, skipping escaped `\\_` and operator limits."""
     found, i = [], 0
+    labels = set()          # where an \underbrace's argument ends: its _ is a label
     while i < len(latex):
         if latex[i] == "\\":
-            i += len(_COMMAND.match(latex, i).group(0)) if \
-                _COMMAND.match(latex, i) else 1
+            command = _COMMAND.match(latex, i)
+            i += len(command.group(0)) if command else 1
+            if command and command.group(1) == "underbrace":
+                j = i
+                while j < len(latex) and latex[j].isspace():
+                    j += 1
+                if j < len(latex) and latex[j] == "{":
+                    labels.add(_braced(latex, j)[1])
             continue
         if latex[i] != "_":
             i += 1
@@ -257,7 +281,8 @@ def _subscripts(latex):
                 arg = f"{arg}{{{inner}}}"
         else:
             arg, end = latex[j], j + 1
-        if not (base and base.group(1) in _LIMIT_OPERATORS):
+        if not (base and base.group(1) in _LIMIT_OPERATORS) \
+                and len(before) not in labels:
             found.append(arg)
         i = end
     return found

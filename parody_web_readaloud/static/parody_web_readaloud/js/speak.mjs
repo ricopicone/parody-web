@@ -482,54 +482,188 @@ function spellSubscriptDigits(root) {
   });
 }
 
-// \dot{\theta}_1 is "theta 1 dot" (Rico, task 981), not "theta dot sub 1".
-// The dot is set on the symbol so the subscripts line up, but it is the
-// derivative of the subscripted quantity, and that is read first. So
-// msub(mover(θ, ˙), 1) becomes mover(msub(θ, 1), ˙), which SRE reads in that
-// order; an msubsup keeps its superscript outside: \dot{\theta}_1^2 is
-// "theta 1 dot squared". A compound subscript keeps the dot before it: SRE
-// never says where a subscript ends, and "beta sub j plus 1 dot" would hang
-// the dot on the 1.
-const DOTS = new Set(['\u02d9', '\u00a8', '\u20db', '\u20dc']);   // \dot … \ddddot
+// \dot{\theta}_1 is "theta 1 dot" (Rico, task 981), not "theta dot sub 1",
+// and \hat{x}_1 is "x 1 hat": every accent, as the dot. It is set on the
+// symbol so the subscripts line up, but it marks the subscripted quantity,
+// and that is read first. So msub(mover(θ, ˙), 1) becomes
+// mover(msub(θ, 1), ˙), which SRE reads in that order; an msubsup keeps its
+// superscript outside: \dot{\theta}_1^2 is "theta 1 dot squared". A compound
+// subscript keeps the accent before it: SRE never says where a subscript
+// ends, and "beta sub j plus 1 dot" would hang the dot on the 1.
+const ACCENTS = new Set([
+  '\u02d9', '\u00a8', '\u20db', '\u20dc',           // \dot \ddot \dddot \ddddot
+  '^', '\u02c6',                                    // \hat \widehat
+  '\u00af', '\u02c9', '\u2015', '\u203e',           // \bar \overline
+  '~', '\u02dc',                                    // \tilde \widetilde
+  '\u02c7', '\u02d8', '\u00b4', '`', '\u02da',      // \check \breve \acute \grave \mathring
+]);
 
-function dotted(node) {
+function accented(node) {
   const over = lone(node);
-  if (!over || !over.isKind('mover')) return null;
+  if (!over || over.kind !== 'mover') return null;
   const mark = lone(over.childNodes[over.over]);
-  return mark && mark.isKind('mo') && DOTS.has(mark.getText()) ? over : null;
+  return mark && mark.isKind('mo') && ACCENTS.has(mark.getText()) ? over : null;
 }
 
-// One symbol, a word in \text{}, or a run of letters and digits (T_{sb}).
+// One symbol, a word in \text{}, or a run of Latin letters and digits
+// (T_{sb}): what speech.py's terse_subscripts calls simple too. J\infty and
+// \alpha\beta are not.
 function isSimpleSubscript(node) {
   const isPlain = (token) => !!token && token.isToken
     && (token.isKind('mi') || token.isKind('mn') || token.isKind('mtext'));
+  const isLatin = (token) => isPlain(token) && /^[A-Za-z0-9]+$/.test(token.getText());
   const sub = lone(node);
   if (!sub) return false;
   if (sub.isToken) return isPlain(sub);
-  return isRow(sub) && members(sub).every((part) => isPlain(lone(part)));
+  return isRow(sub) && members(sub).every((part) => isLatin(lone(part)));
 }
 
-function speakDotsAfterSubscripts(root) {
+function speakAccentsAfterSubscripts(root) {
   const scripts = [];
   // .kind, not isKind: an msub and an msup are each an isKind('msubsup').
   root.walkTree((node) => {
     if (node.kind === 'msub' || node.kind === 'msubsup') scripts.push(node);
   });
   for (const script of scripts) {
-    const over = dotted(script.childNodes[0]);
+    const over = accented(script.childNodes[0]);
     if (!over || !isSimpleSubscript(script.childNodes[script.sub])) continue;
+    // \overline{T_s}_\mathrm{max}: the bar is on T_s, and "max" qualifies it.
+    const accentee = lone(over.childNodes[over.base]);
+    if (accentee && SCRIPTS.has(accentee.kind)) continue;
     const up = parentOf(script) || script.parent;
     if (!up) continue;
     const { factory } = script;
     const base = over.childNodes[over.base];
     over.replaceChild(factory.create('msub', {}, [base, script.childNodes[script.sub]]), base);
-    let read = script.childNodes[0];                 // the dotted base, now subscripted
+    let read = script.childNodes[0];                 // the accented base, now subscripted
     if (script.kind === 'msubsup') {
       read = factory.create('msup', {}, [read, script.childNodes[script.sup]]);
     }
     up.replaceChild(read, script);
   }
 }
+
+function word(factory, text) {
+  return factory.create('mtext', {}, [factory.create('text').setText(text)]);
+}
+
+// \underbrace{P^{-1}AP}_{A'} is "P inverse A P, which is A prime" (Rico,
+// task 981), not "... with bottom brace below with A prime below": the brace
+// draws a grouping the words already make, and its label names the group.
+// \overbrace likewise; a brace with no label is just its contents. SRE reads
+// a comma in an mtext as "comma", so the pauses go in as words — "whichis"
+// before the label, "endbrace" after it — and speech.py punctuates them.
+const BRACES = new Map([['munder', '\u23df'], ['mover', '\u23de']]);   // ⏟ ⏞
+
+function isBrace(node) {
+  if (!BRACES.has(node.kind)) return false;
+  const mark = lone(node.childNodes[node.kind === 'munder' ? node.under : node.over]);
+  return !!mark && mark.isKind('mo') && mark.getText() === BRACES.get(node.kind);
+}
+
+// \underline{\hspace{1em}}: a line to write on, in a fill-in equation (System
+// Dynamics' H(s)). SRE said "horizontal bar".
+function speakBlanks(root) {
+  const blanks = [];
+  root.walkTree((node) => {
+    if (node.kind !== 'munder') return;
+    const mark = lone(node.childNodes[node.under]);
+    const base = node.childNodes[node.base];
+    if (mark && mark.isKind('mo') && mark.getText() === '\u2015'
+        && (isSpace(base) || (!base.isToken && members(base).every(isSpace)))) {
+      blanks.push(node);
+    }
+  });
+  for (const blank of blanks) {
+    const up = parentOf(blank) || blank.parent;
+    if (up) up.replaceChild(word(blank.factory, 'blank'), blank);
+  }
+}
+
+function speakBraces(root) {
+  const braces = [];
+  root.walkTree((node) => { if (isBrace(node)) braces.push(node); });
+  for (const brace of braces) {
+    const { factory } = brace;
+    const body = brace.childNodes[brace.base];
+    // TeX makes the brace an operator, a TeXAtom, and its label a second
+    // munder (mover) around that.
+    let at = brace;
+    let up = parentOf(at);
+    while (up && !up.isKind('math') && !up.isToken && up.childNodes.length === 1) {
+      at = up;
+      up = parentOf(up);
+    }
+    if (!up) continue;
+    if (up.kind === brace.kind && up.childNodes[up.base] === at) {
+      const label = up.childNodes[brace.kind === 'munder' ? up.under : up.over];
+      const read = factory.create('mrow', {}, [
+        body, word(factory, 'whichis'), label, word(factory, 'endbrace')]);
+      const holder = parentOf(up) || up.parent;
+      if (holder) holder.replaceChild(read, up);
+    } else {
+      up.replaceChild(body, at);
+    }
+  }
+}
+
+// P^{-1} is "P inverse" (Rico, task 981: "P inverse A P"). It was "P to the
+// negative 1 power", 147 times, mostly robotics' M^{-1} and T_{sb}^{-1}. Only
+// what is inverted as a matrix or an operator: a capital (M, T_{sb}, \dot{T},
+// \Phi), a script letter (\mathcal{L}), or a bracket, (sI - A)^{-1},
+// \left(...\right)^{-1}, a matrix. x^{-1}, 10^{-1} and \mathrm{s}^{-1} keep
+// their power.
+//
+// The tree is left alone, and SRE's words are changed instead: where SRE
+// takes the base for a function it already says "inverse" — T_{sb}^{-1}(\theta)
+// is "T s b inverse of theta" — and where it decides that depends on what is
+// around the power (\log(X^{-1}Y) is a function, X^{-1}Y alone is not), which
+// no rule here could follow. Anything put in the power's place garbled those.
+// So an expression whose every -1 is a matrix's has its "to the negative 1
+// power" said "inverse"; one that mixes the two (none of the three books
+// does) keeps SRE's words.
+const CAPITAL = /^[A-ZΑ-Ω]$/u;
+const CLOSERS = new Set([')', ']']);
+
+function isMinusOne(node) {
+  const sup = lone(node);
+  if (!sup || sup.isToken || !isRow(sup)) return false;
+  const parts = members(sup).map(lone);
+  return parts.length === 2 && parts[0].isKind('mo') && /^[-−]$/.test(parts[0].getText())
+    && parts[1].isKind('mn') && parts[1].getText() === '1';
+}
+
+function isInvertible(node) {
+  let base = lone(node);
+  while (base && (base.kind === 'msub' || accented(base))) {      // T_{sb}, \dot{T}
+    base = lone(base.kind === 'msub' ? base.childNodes[0] : base.childNodes[base.base]);
+  }
+  if (!base) return false;
+  if (base.isKind('mo')) return CLOSERS.has(base.getText());       // (sI - A)^{-1}
+  if (base.isKind('mi')) {
+    return CAPITAL.test(base.getText()) && !(isUpright(base) && isUnit(base));
+  }
+  if (isRow(base)) {                                 // \left(...\right), a bmatrix
+    const parts = members(base);
+    const last = parts.length ? lone(parts[parts.length - 1]) : null;
+    return !!last && last.isKind('mo') && CLOSERS.has(last.getText());
+  }
+  return false;
+}
+
+function invertsEveryPower(root) {
+  const bases = [];
+  root.walkTree((node) => {
+    if ((node.kind === 'msup' || node.kind === 'msubsup')
+        && isMinusOne(node.childNodes[node.sup])) {
+      bases.push(node.childNodes[0]);
+    }
+  });
+  return bases.length > 0 && bases.every(isInvertible);
+}
+
+const POWER_OF_MINUS_ONE = /\b(?:raised )?to the negative 1 power\b/g;
+let INVERTS = false;                                 // set by forSpeech, per expression
 
 function reindex(root) {
   PARENTS = new Map();
@@ -538,8 +672,13 @@ function reindex(root) {
 
 function forSpeech(root) {
   reindex(root);
-  speakDotsAfterSubscripts(root);
+  speakAccentsAfterSubscripts(root);
   reindex(root);                                     // the tree changed
+  speakBraces(root);
+  reindex(root);
+  speakBlanks(root);
+  reindex(root);
+  INVERTS = invertsEveryPower(root);
   speakDerivativeFractions(root);
   reindex(root);
   markTransposes(root);
@@ -628,7 +767,8 @@ async function main() {
   const texts = items.map(({ latex, display }) => {
     try {
       const node = doc.convert(latex, { display: !!display, end: STATE.CONVERT });
-      return SRE.toSpeech(visitor.visitTree(forSpeech(node)));
+      const said = SRE.toSpeech(visitor.visitTree(forSpeech(node)));
+      return INVERTS ? said.replace(POWER_OF_MINUS_ONE, 'inverse') : said;
     } catch (err) {
       // One unparseable expression costs itself its narration, nothing more.
       return null;
