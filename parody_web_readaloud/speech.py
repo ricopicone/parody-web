@@ -208,8 +208,10 @@ def natural_math_words(said):
 # is in speak.mjs, so the box's copy must be replaced again.
 # "6": every accent as the dot ("x 1 hat"), \overline a "bar", a matrix's -1
 # "inverse" ("P inverse A P"), and \underbrace{X}_{Y} "X, which is Y". In
-# speak.mjs again: replace the box's copy before the deploy.
-SPEECH_VERSION = "6"
+# speak.mjs again: replace the box's copy before the deploy. "7": an
+# expression mixing a matrix's -1 and a unit's (J^{-1} = [...]\ \mathrm{m}^{-1})
+# inverts the matrix only; it kept every power. speak.mjs again.
+SPEECH_VERSION = "7"
 
 # A subscript on one of these is a LIMIT ("the sum from k equals 0"), which SRE
 # never reads as "sub" — so it is neither simple nor compound for the rule.

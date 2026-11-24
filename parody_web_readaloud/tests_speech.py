@@ -732,11 +732,17 @@ class LecturerReadingTests(SimpleTestCase):
              "X sub start inverse X sub end",
              "the log of open paren X sub start inverse X sub end close paren"])
 
-    def test_a_mixed_expression_keeps_its_powers(self):
-        # Which "to the negative 1 power" is which cannot be told from the
-        # words. None of the three books mixes them.
-        self.assertEqual(self.say("M^{-1} x^{-1}"),
-                         ["M to the negative 1 power x to the negative 1 power"])
+    def test_a_mixed_expression_inverts_only_the_matrix(self):
+        # Robotics' task space: J^{-1} = [...]\ \mathrm{m}^{-1}. Each -1 is one
+        # phrase, in reading order, so each is said as what it is.
+        self.assertEqual(
+            self.say("J^{-1} = 3\\ \\mathrm{m}^{-1}", "M^{-1} x^{-1}",
+                     "x^{-1} M^{-1}", "(P^{-1} A)^{-1} x^{-1}"),
+            ["J inverse equals 3 meters to the negative 1 power",
+             "M inverse x to the negative 1 power",
+             "x to the negative 1 power M inverse",
+             "open paren P inverse A close paren inverse times x to the negative 1 "
+             "power"])
 
     def test_a_scalar_keeps_its_power(self):
         self.assertEqual(

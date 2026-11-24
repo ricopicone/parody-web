@@ -619,9 +619,12 @@ function speakBraces(root) {
 // is "T s b inverse of theta" — and where it decides that depends on what is
 // around the power (\log(X^{-1}Y) is a function, X^{-1}Y alone is not), which
 // no rule here could follow. Anything put in the power's place garbled those.
-// So an expression whose every -1 is a matrix's has its "to the negative 1
-// power" said "inverse"; one that mixes the two (none of the three books
-// does) keeps SRE's words.
+// So each -1 is judged here, in reading order, and SRE's words are changed
+// after: where SRE said one "to the negative 1 power" per -1, the phrases
+// are the powers in order (robotics' J^{-1} = [...]\ \mathrm{m}^{-1} is "J
+// inverse ... meters to the negative 1 power"). Where it said fewer, it read
+// some as a function's, and which phrase is which cannot be told: every
+// phrase is "inverse" if every -1 is a matrix's, and none is otherwise.
 const CAPITAL = /^[A-ZΑ-Ω]$/u;
 const CLOSERS = new Set([')', ']']);
 
@@ -651,19 +654,30 @@ function isInvertible(node) {
   return false;
 }
 
-function invertsEveryPower(root) {
-  const bases = [];
-  root.walkTree((node) => {
-    if ((node.kind === 'msup' || node.kind === 'msubsup')
-        && isMinusOne(node.childNodes[node.sup])) {
-      bases.push(node.childNodes[0]);
-    }
-  });
-  return bases.length > 0 && bases.every(isInvertible);
+// Is each -1 power a matrix's, in the order SRE reads them: a power's base
+// first, then the power ((P^{-1}A)^{-1}: the inner one, then the outer).
+function inverses(node, found = []) {
+  if (node.isToken) return found;
+  for (const child of node.childNodes) if (child && child.kind !== 'text') inverses(child, found);
+  if ((node.kind === 'msup' || node.kind === 'msubsup') && isMinusOne(node.childNodes[node.sup])) {
+    found.push(isInvertible(node.childNodes[0]));
+  }
+  return found;
 }
 
 const POWER_OF_MINUS_ONE = /\b(?:raised )?to the negative 1 power\b/g;
-let INVERTS = false;                                 // set by forSpeech, per expression
+
+function sayInverses(said, matrices) {
+  if (!said || !matrices.some(Boolean)) return said;
+  const phrases = said.match(POWER_OF_MINUS_ONE) || [];
+  if (phrases.length !== matrices.length) {
+    return matrices.every(Boolean) ? said.replace(POWER_OF_MINUS_ONE, 'inverse') : said;
+  }
+  let k = 0;
+  return said.replace(POWER_OF_MINUS_ONE, (phrase) => (matrices[k++] ? 'inverse' : phrase));
+}
+
+let INVERSES = [];                                   // set by forSpeech, per expression
 
 function reindex(root) {
   PARENTS = new Map();
@@ -678,7 +692,7 @@ function forSpeech(root) {
   reindex(root);
   speakBlanks(root);
   reindex(root);
-  INVERTS = invertsEveryPower(root);
+  INVERSES = inverses(root);
   speakDerivativeFractions(root);
   reindex(root);
   markTransposes(root);
@@ -768,7 +782,7 @@ async function main() {
     try {
       const node = doc.convert(latex, { display: !!display, end: STATE.CONVERT });
       const said = SRE.toSpeech(visitor.visitTree(forSpeech(node)));
-      return INVERTS ? said.replace(POWER_OF_MINUS_ONE, 'inverse') : said;
+      return sayInverses(said, INVERSES);
     } catch (err) {
       // One unparseable expression costs itself its narration, nothing more.
       return null;
