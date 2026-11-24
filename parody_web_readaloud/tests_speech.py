@@ -480,6 +480,14 @@ class NaturalMathWordsTests(SimpleTestCase):
             with self.subTest(said=said):
                 self.assertEqual(self.say(said), said)
 
+    def test_a_dot_accent_is_a_dot(self):
+        # SRE names \dot's mark "dot above" and \ddot's "two dots"; \dddot's
+        # it does not name at all and passes the combining character through.
+        self.assertEqual(self.say("theta dot above equals omega"),
+                         "theta dot equals omega")
+        self.assertEqual(self.say("x two dots plus x"), "x double dot plus x")
+        self.assertEqual(self.say("s \u20db of t"), "s triple dot of t")
+
 
 @unittest.skipUnless(shutil.which("node") and _sre_script().exists(),
                      "needs node and the SRE script")
@@ -550,7 +558,7 @@ class LecturerReadingTests(SimpleTestCase):
         self.assertEqual(
             self.say("\\frac{d\\theta}{ds}\\,\\dot{s}",
                      "m\\, \\frac{d^2}{dt^2} x"),
-            ["d theta d s times s dot above", "m times d squared d t squared x"])
+            ["d theta d s times s dot", "m times d squared d t squared x"])
 
     def test_a_partial_derivative_too(self):
         # Was "the fraction with numerator partial differential f and ...".
@@ -585,3 +593,34 @@ class LecturerReadingTests(SimpleTestCase):
         tokens = [Token("math", latex="c_{11}")]
         text, _ = build_speech(tokens, math=SreMath())
         self.assertEqual(text, "c 1 1")
+
+    def test_a_dot_is_a_dot_not_a_dot_above(self):
+        # Rico, task 981: "theta dot above" (320 expressions) and "theta two
+        # dots" (60). \dddot was "s" and the bare combining mark, U+20DB.
+        self.assertEqual(
+            self.say("\\dot\\theta", "\\ddot\\theta", "\\dddot{s}",
+                     "\\dot{\\bm{x}}' = A\\bm{x}"),
+            ["theta dot", "theta double dot", "s triple dot",
+             "x dot prime equals A x"])
+
+    def test_a_dot_is_read_after_a_simple_subscript(self):
+        # Rico: "\\dot{\\theta}_1 gets read 'theta dot above 1'. Ideally it
+        # would say 'theta 1 dot'." The dot is set on the symbol, but it
+        # differentiates the subscripted quantity, which is read first.
+        self.assertEqual(
+            self.say("\\dot{\\theta}_1", "\\ddot{x}_K", "\\dot{T}_{sb}",
+                     "\\dot{x}_\\text{fr}", "\\dot{\\theta}_1^2"),
+            ["theta sub 1 dot", "x sub K double dot", "T sub s b dot",
+             "x sub fr dot", "theta sub 1 dot squared"])
+
+    def test_a_dot_stays_before_a_compound_subscript(self):
+        # SRE never says where a subscript ends, so "beta sub j plus 1 dot"
+        # would hang the dot on the 1.
+        self.assertEqual(
+            self.say("\\dot\\beta_{j+1}", "\\dot{v}_{C_2}"),
+            ["beta dot sub j plus 1", "v dot sub C sub 2"])
+
+    def test_build_speech_reads_theta_one_dot(self):
+        tokens = [Token("math", latex="\\dot{\\theta}_1 = \\omega_1")]
+        text, _ = build_speech(tokens, math=SreMath())
+        self.assertEqual(text, "theta 1 dot equals omega 1")

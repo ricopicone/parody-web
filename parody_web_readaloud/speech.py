@@ -146,6 +146,12 @@ _LECTURER_WORDS = [
     (re.compile(r"\bdivided by\b"), "over"),
     # What is left is a slash written in text, \text{rad/s}: always a unit.
     (re.compile(r"\bslash\b"), "per"),
+    # Rico, task 981: "theta dot above". SRE's names for \dot's and \ddot's
+    # marks; \dddot's (U+20DB) and \ddddot's (U+20DC) it passes through bare.
+    (re.compile(r"\bdot above\b"), "dot"),
+    (re.compile(r"\btwo dots\b"), "double dot"),
+    (re.compile("\u20db"), "triple dot"),
+    (re.compile("\u20dc"), "quadruple dot"),
 ]
 
 
@@ -155,7 +161,8 @@ def natural_math_words(said):
     Rico, task 981, after listening to Puck: "slash" for a ratio is awkward,
     "over" is better — and between units it is "per", with the unit after it
     singular ("0.5 rad per second"). A transpose was "R to the T power" or
-    "raised to the down tack power"; ∂ was "partial differential".
+    "raised to the down tack power"; ∂ was "partial differential"; \\dot's
+    mark was "dot above".
 
     Words, not tree, because these are SRE's own phrases for a symbol and the
     symbol is all that decides them. What depends on the expression around a
@@ -181,8 +188,11 @@ def natural_math_words(said):
 # copy: bumping this is what makes the queue re-voice, but the box only says
 # the new words once its speak.mjs is replaced. "4": a transpose on a
 # bracketed base, (A^T \lambda)^T, was still "raised to the exponent down tack
-# end exponent" (robotics 8.x); words only, no speak.mjs change.
-SPEECH_VERSION = "4"
+# end exponent" (robotics 8.x); words only, no speak.mjs change. "5": a dot
+# is "dot", not "dot above" ("double dot", not "two dots"), and it is read
+# after a simple subscript: \dot{\theta}_1 is "theta 1 dot". The reordering
+# is in speak.mjs, so the box's copy must be replaced again.
+SPEECH_VERSION = "5"
 
 # A subscript on one of these is a LIMIT ("the sum from k equals 0"), which SRE
 # never reads as "sub" — so it is neither simple nor compound for the rule.

@@ -482,12 +482,66 @@ function spellSubscriptDigits(root) {
   });
 }
 
-function forSpeech(root) {
+// \dot{\theta}_1 is "theta 1 dot" (Rico, task 981), not "theta dot sub 1".
+// The dot is set on the symbol so the subscripts line up, but it is the
+// derivative of the subscripted quantity, and that is read first. So
+// msub(mover(θ, ˙), 1) becomes mover(msub(θ, 1), ˙), which SRE reads in that
+// order; an msubsup keeps its superscript outside: \dot{\theta}_1^2 is
+// "theta 1 dot squared". A compound subscript keeps the dot before it: SRE
+// never says where a subscript ends, and "beta sub j plus 1 dot" would hang
+// the dot on the 1.
+const DOTS = new Set(['\u02d9', '\u00a8', '\u20db', '\u20dc']);   // \dot … \ddddot
+
+function dotted(node) {
+  const over = lone(node);
+  if (!over || !over.isKind('mover')) return null;
+  const mark = lone(over.childNodes[over.over]);
+  return mark && mark.isKind('mo') && DOTS.has(mark.getText()) ? over : null;
+}
+
+// One symbol, a word in \text{}, or a run of letters and digits (T_{sb}).
+function isSimpleSubscript(node) {
+  const isPlain = (token) => !!token && token.isToken
+    && (token.isKind('mi') || token.isKind('mn') || token.isKind('mtext'));
+  const sub = lone(node);
+  if (!sub) return false;
+  if (sub.isToken) return isPlain(sub);
+  return isRow(sub) && members(sub).every((part) => isPlain(lone(part)));
+}
+
+function speakDotsAfterSubscripts(root) {
+  const scripts = [];
+  // .kind, not isKind: an msub and an msup are each an isKind('msubsup').
+  root.walkTree((node) => {
+    if (node.kind === 'msub' || node.kind === 'msubsup') scripts.push(node);
+  });
+  for (const script of scripts) {
+    const over = dotted(script.childNodes[0]);
+    if (!over || !isSimpleSubscript(script.childNodes[script.sub])) continue;
+    const up = parentOf(script) || script.parent;
+    if (!up) continue;
+    const { factory } = script;
+    const base = over.childNodes[over.base];
+    over.replaceChild(factory.create('msub', {}, [base, script.childNodes[script.sub]]), base);
+    let read = script.childNodes[0];                 // the dotted base, now subscripted
+    if (script.kind === 'msubsup') {
+      read = factory.create('msup', {}, [read, script.childNodes[script.sup]]);
+    }
+    up.replaceChild(read, script);
+  }
+}
+
+function reindex(root) {
   PARENTS = new Map();
   indexParents(root);
+}
+
+function forSpeech(root) {
+  reindex(root);
+  speakDotsAfterSubscripts(root);
+  reindex(root);                                     // the tree changed
   speakDerivativeFractions(root);
-  PARENTS = new Map();                               // the tree changed
-  indexParents(root);
+  reindex(root);
   markTransposes(root);
   spellSubscriptDigits(root);
   const tokens = [];
